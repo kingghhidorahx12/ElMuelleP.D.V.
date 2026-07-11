@@ -2,6 +2,12 @@ const $ = (id) => document.getElementById(id);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 const ADMIN_PIN = "1234";
+const SESSION_KEY = "elMuelleSession";
+const ADMIN_VIEWS = new Set(["dashboard", "products", "inventory", "settings"]);
+const USERS = {
+  employee: { id: "mostrador", name: "Mostrador", role: "employee" },
+  admin: { id: "admin", name: "Administrador", role: "admin" }
+};
 const MIN_SCALE_WEIGHT_KG = 0.1;
 const MAX_SCALE_WEIGHT_KG = 40;
 const PAGE_SIZE = 12;
@@ -90,6 +96,122 @@ function loadStoredCashShifts() {
   }
 }
 
+
+function normalizeSessionUser(user) {
+  if (user?.role === "admin") return USERS.admin;
+  return USERS.employee;
+}
+
+function loadStoredSession() {
+  try {
+    return normalizeSessionUser(JSON.parse(localStorage.getItem(SESSION_KEY) || "null"));
+  } catch (error) {
+    return USERS.employee;
+  }
+}
+
+function saveSessionUser(user) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+}
+
+function isAdminUser() {
+  return state.currentUser?.role === "admin";
+}
+
+function isAdminView(viewName) {
+  return ADMIN_VIEWS.has(viewName);
+}
+
+function canAccessView(viewName) {
+  return !isAdminView(viewName) || isAdminUser();
+}
+
+function getRoleLabel(role) {
+  return role === "admin" ? "Administrador" : "Empleado";
+}
+
+function setCurrentUser(user) {
+  state.currentUser = normalizeSessionUser(user);
+  saveSessionUser(state.currentUser);
+  renderSessionUi();
+}
+
+function renderSessionUi() {
+  if (!state.currentUser) return;
+
+  const isAdminMode = isAdminUser();
+  document.body.classList.toggle("role-admin", isAdminMode);
+  document.body.classList.toggle("role-employee", !isAdminMode);
+
+  if ($("sessionRoleLabel")) $("sessionRoleLabel").textContent = getRoleLabel(state.currentUser.role);
+  if ($("sessionUserName")) $("sessionUserName").textContent = state.currentUser.name;
+  if ($("sessionSwitchBtn")) {
+    $("sessionSwitchBtn").setAttribute(
+      "title",
+      isAdminMode ? "Cambiar a modo empleado" : "Entrar como administrador"
+    );
+  }
+
+  $$(".nav-item").forEach((button) => {
+    const locked = isAdminView(button.dataset.view) && !isAdminMode;
+    button.classList.toggle("locked", locked);
+    button.setAttribute("aria-label", locked ? `${button.dataset.label} requiere PIN` : button.dataset.label);
+  });
+}
+
+function openAdminAccess(viewName = null) {
+  state.pendingAdminView = viewName;
+  const label = viewLabels[viewName]?.[0] || "administracion";
+
+  if ($("authMessage")) {
+    $("authMessage").textContent = viewName
+      ? `Ingresa el PIN para abrir ${label}.`
+      : "Ingresa el PIN para activar el modo administrador.";
+  }
+
+  if ($("authPinInput")) $("authPinInput").value = "";
+  $("authModal")?.classList.remove("hidden");
+  window.setTimeout(() => $("authPinInput")?.focus(), 0);
+}
+
+function closeAuthModal() {
+  $("authModal")?.classList.add("hidden");
+  state.pendingAdminView = null;
+}
+
+function confirmAdminAccess() {
+  const pin = String($("authPinInput")?.value || "").trim();
+
+  if (pin !== ADMIN_PIN) {
+    showToast("PIN incorrecto.");
+    $("authPinInput")?.focus();
+    return;
+  }
+
+  const nextView = state.pendingAdminView;
+  setCurrentUser(USERS.admin);
+  closeAuthModal();
+  showToast("Modo administrador activo.");
+
+  if (nextView) {
+    setView(nextView);
+  } else {
+    updateShellState();
+  }
+}
+
+function useEmployeeSession() {
+  setCurrentUser(USERS.employee);
+  closeAuthModal();
+  showToast("Modo empleado activo.");
+
+  if (isAdminView(state.activeView)) {
+    setView("pos");
+  } else {
+    updateShellState();
+  }
+}
+
 function getCashShiftTimestamp(shift) {
   return new Date(shift?.closedAt || shift?.openedAt || 0).getTime() || 0;
 }
@@ -119,6 +241,8 @@ function mergeCashShifts(...shiftGroups) {
 const state = {
   products: [],
   sales: [],
+  currentUser: loadStoredSession(),
+  pendingAdminView: null,
   activeView: "pos",
   activeCategory: "all",
   activeUnitFilter: "all",
@@ -338,6 +462,7 @@ function updateShellState() {
   document.body.classList.toggle("ticket-collapsed", state.ticketCollapsed);
   document.body.classList.toggle("not-pos", state.activeView !== "pos");
   document.body.classList.toggle("ticket-has-items", state.ticket.length > 0);
+  renderSessionUi();
   document.body.classList.toggle(
     "product-selected",
     state.activeView === "pos" && state.posStep === "product" && Boolean(state.selectedProduct)
@@ -435,6 +560,11 @@ function toggleTicketPanel(forceOpen = false) {
 }
 
 function setView(viewName) {
+  if (!canAccessView(viewName)) {
+    openAdminAccess(viewName);
+    return;
+  }
+
   state.activeView = viewName;
 
   $$(".nav-item").forEach((button) => {
@@ -826,11 +956,11 @@ function openManualModal() {
     return;
   }
 
-  $("adminPinInput").value = "";
+  $("adminPinInput").value = isAdminUser() ? ADMIN_PIN : "";
   $("manualQuantityInput").value = state.selectedProduct.unit === "pieza" ? "1" : "";
   $("manualQuantityInput").step = state.selectedProduct.unit === "kg" ? "0.001" : "1";
   $("manualModal").classList.remove("hidden");
-  $("adminPinInput").focus();
+  (isAdminUser() ? $("manualQuantityInput") : $("adminPinInput"))?.focus();
 }
 
 function closeManualModal() {
@@ -841,7 +971,7 @@ function saveManualQuantity() {
   const pin = $("adminPinInput").value.trim();
   const quantity = Number($("manualQuantityInput").value || 0);
 
-  if (pin !== ADMIN_PIN) {
+  if (!isAdminUser() && pin !== ADMIN_PIN) {
     showToast("PIN incorrecto.");
     return;
   }
@@ -1491,10 +1621,10 @@ function renderSaleDetail(saleId) {
 }
 
 async function cancelSale(saleId) {
-  const adminPin = window.prompt("PIN de administrador:");
+  const adminPin = isAdminUser() ? ADMIN_PIN : window.prompt("PIN de administrador:");
   if (!adminPin) return;
 
-  const reason = window.prompt("Motivo de cancelación:", "Cancelación en caja") || "";
+  const reason = window.prompt("Motivo de cancelacion:", "Cancelacion en caja") || "";
 
   try {
     const updatedSale = await fetchJson(`/api/sales/${saleId}/cancel`, {
@@ -2554,6 +2684,22 @@ function bindEvents() {
   on($("openCashFromSaleBtn"), "click", goToCashRegister);
   on($("ticketSideToggleBtn"), "click", () => toggleTicketPanel());
   on($("closeTicketPanelBtn"), "click", () => setPosStep("product"));
+  on($("sessionSwitchBtn"), "click", () => {
+    if (isAdminUser()) {
+      useEmployeeSession();
+    } else {
+      openAdminAccess();
+    }
+  });
+  on($("authConfirmBtn"), "click", confirmAdminAccess);
+  on($("authEmployeeBtn"), "click", useEmployeeSession);
+  on($("authCloseBtn"), "click", closeAuthModal);
+  on($("authPinInput"), "keydown", (event) => {
+    if (event.key === "Enter") confirmAdminAccess();
+  });
+  on($("authModal"), "click", (event) => {
+    if (event.target === $("authModal")) closeAuthModal();
+  });
 
   $$("[data-pos-step]").forEach((button) => {
     button.addEventListener("click", () => setPosStep(button.dataset.posStep));

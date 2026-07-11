@@ -3938,6 +3938,74 @@ body:not(.sidebar-collapsed) .session-box {
   }
 }
 
+
+.session-button {
+  width: 100%;
+  display: grid;
+  gap: 3px;
+  padding: 0;
+  background: transparent;
+  color: #fff;
+  text-align: left;
+}
+
+.session-button span {
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.session-button strong {
+  margin: 0;
+  color: #fff;
+  font-size: 18px;
+  line-height: 1.05;
+}
+
+.role-admin .session-box {
+  border-color: rgba(201, 154, 62, 0.42);
+  background: rgba(201, 154, 62, 0.1);
+}
+
+.nav-item.locked span::after {
+  content: "PIN";
+  margin-left: 8px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(201, 154, 62, 0.2);
+  color: #f4d58d;
+  font-size: 9px;
+  font-weight: 950;
+  vertical-align: middle;
+}
+
+body.sidebar-collapsed .nav-item.locked::before {
+  border: 1px solid rgba(201, 154, 62, 0.38);
+}
+
+.auth-card label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.auth-card input {
+  height: 50px;
+  text-align: center;
+  font-size: 22px;
+  letter-spacing: 0.24em;
+}
+
+body:not(.sidebar-collapsed) .session-button span {
+  font-size: 11px;
+}
+
+body:not(.sidebar-collapsed) .session-button strong {
+  font-size: 16px;
+}
 @media print {
   body > *:not(.print-area) {
     display: none !important;

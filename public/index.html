@@ -50,8 +50,10 @@
     </section>
 
     <div class="session-box">
-      <span>Cajero</span>
-      <strong>Mostrador</strong>
+      <button id="sessionSwitchBtn" class="session-button" type="button">
+        <span id="sessionRoleLabel">Empleado</span>
+        <strong id="sessionUserName">Mostrador</strong>
+      </button>
     </div>
   </aside>
 
@@ -682,6 +684,26 @@
     </div>
   </div>
 
+
+  <div id="authModal" class="modal hidden">
+    <div class="modal-card auth-card">
+      <div class="modal-head">
+        <div>
+          <h3>Acceso administrativo</h3>
+          <p id="authMessage">Ingresa el PIN para entrar.</p>
+        </div>
+        <button id="authCloseBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
+      </div>
+      <label>
+        PIN
+        <input id="authPinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="1234" />
+      </label>
+      <div class="modal-actions">
+        <button id="authConfirmBtn" class="solid-btn" type="button">Entrar como admin</button>
+        <button id="authEmployeeBtn" class="quiet-btn" type="button">Modo empleado</button>
+      </div>
+    </div>
+  </div>
   <section id="printArea" class="print-area"></section>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
