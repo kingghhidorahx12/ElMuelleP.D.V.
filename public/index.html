@@ -622,6 +622,70 @@
             </div>
             <pre id="settingsScaleRaw" class="raw-box">Sin datos</pre>
           </section>
+
+          <section class="work-panel users-settings-panel">
+            <div class="form-title">
+              <span class="eyebrow">Usuarios</span>
+              <h3>Acceso y PIN</h3>
+              <p>Administra el nombre del encargado, el PIN protegido y las cuentas de mostrador.</p>
+            </div>
+
+            <div class="users-settings-grid">
+              <section class="users-settings-card">
+                <div class="users-card-head">
+                  <div>
+                    <h4>Administrador</h4>
+                    <p>El PIN nunca se muestra ni se guarda en el navegador.</p>
+                  </div>
+                  <span class="user-role-badge admin">Admin</span>
+                </div>
+
+                <label class="wide">
+                  Nombre del administrador
+                  <input id="adminUserNameInput" type="text" maxlength="60" placeholder="Administrador" autocomplete="off" />
+                </label>
+
+                <div class="users-pin-grid">
+                  <label>
+                    PIN actual
+                    <input id="currentAdminPinInput" type="password" inputmode="numeric" maxlength="12" placeholder="PIN actual" autocomplete="current-password" />
+                  </label>
+                  <label>
+                    PIN nuevo
+                    <input id="newAdminPinInput" type="password" inputmode="numeric" maxlength="12" placeholder="Dejar vacío para conservar" autocomplete="new-password" />
+                  </label>
+                  <label>
+                    Confirmar PIN nuevo
+                    <input id="confirmAdminPinInput" type="password" inputmode="numeric" maxlength="12" placeholder="Repite el PIN nuevo" autocomplete="new-password" />
+                  </label>
+                </div>
+              </section>
+
+              <section class="users-settings-card">
+                <div class="users-card-head">
+                  <div>
+                    <h4>Empleados</h4>
+                    <p>Los nombres aparecen al trabajar en modo mostrador.</p>
+                  </div>
+                  <span class="user-role-badge">Mostrador</span>
+                </div>
+
+                <div class="employee-add-row">
+                  <input id="newEmployeeNameInput" type="text" maxlength="60" placeholder="Nombre del empleado" autocomplete="off" />
+                  <button id="addEmployeeBtn" class="quiet-btn" type="button">Agregar</button>
+                </div>
+
+                <div id="employeesList" class="users-list">
+                  <p class="empty-list">No hay empleados cargados.</p>
+                </div>
+              </section>
+            </div>
+
+            <div class="form-actions users-settings-actions">
+              <button id="saveUserSettingsBtn" class="solid-btn" type="button">Guardar usuarios</button>
+              <button id="resetUserSettingsBtn" class="quiet-btn" type="button">Descartar cambios</button>
+            </div>
+          </section>
         </div>
       </section>
     </section>

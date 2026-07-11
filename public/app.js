@@ -1,7 +1,6 @@
 const $ = (id) => document.getElementById(id);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
-const ADMIN_PIN = "1234";
 const SESSION_KEY = "elMuelleSession";
 const ADMIN_VIEWS = new Set(["dashboard", "products", "inventory", "settings"]);
 const USERS = {
@@ -98,16 +97,36 @@ function loadStoredCashShifts() {
 
 
 function normalizeSessionUser(user) {
-  if (user?.role === "admin") return USERS.admin;
-  return USERS.employee;
+  const role = user?.role === "admin" ? "admin" : "employee";
+  const fallback = role === "admin" ? USERS.admin : USERS.employee;
+
+  return {
+    id: String(user?.id || fallback.id),
+    name: String(user?.name || fallback.name),
+    role,
+    active: user?.active !== false
+  };
 }
 
 function loadStoredSession() {
   try {
-    return normalizeSessionUser(JSON.parse(localStorage.getItem(SESSION_KEY) || "null"));
+    const storedUser = normalizeSessionUser(
+      JSON.parse(localStorage.getItem(SESSION_KEY) || "null")
+    );
+
+    // El modo administrador siempre requiere validar el PIN después de recargar.
+    return storedUser.role === "admin" ? normalizeSessionUser(USERS.employee) : storedUser;
   } catch (error) {
-    return USERS.employee;
+    return normalizeSessionUser(USERS.employee);
   }
+}
+
+function getEmployeeSessionUser() {
+  const employee = state.settings?.users?.find((user) => {
+    return user.role === "employee" && user.active !== false;
+  });
+
+  return normalizeSessionUser(employee || USERS.employee);
 }
 
 function saveSessionUser(user) {
@@ -179,29 +198,46 @@ function closeAuthModal() {
   state.pendingAdminView = null;
 }
 
-function confirmAdminAccess() {
+async function confirmAdminAccess() {
   const pin = String($("authPinInput")?.value || "").trim();
 
-  if (pin !== ADMIN_PIN) {
-    showToast("PIN incorrecto.");
+  if (!pin) {
+    showToast("Ingresa el PIN de administrador.");
     $("authPinInput")?.focus();
     return;
   }
 
-  const nextView = state.pendingAdminView;
-  setCurrentUser(USERS.admin);
-  closeAuthModal();
-  showToast("Modo administrador activo.");
+  const confirmButton = $("authConfirmBtn");
+  if (confirmButton) confirmButton.disabled = true;
 
-  if (nextView) {
-    setView(nextView);
-  } else {
-    updateShellState();
+  try {
+    const result = await verifyAdminPin(pin);
+    const nextView = state.pendingAdminView;
+
+    state.adminPin = pin;
+    applyPublicSettings(result.settings);
+    setCurrentUser(result.user || USERS.admin);
+    closeAuthModal();
+    showToast("Modo administrador activo.");
+
+    if (nextView) {
+      setView(nextView);
+    } else {
+      updateShellState();
+    }
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "PIN incorrecto.");
+    $("authPinInput")?.focus();
+    $("authPinInput")?.select();
+  } finally {
+    if (confirmButton) confirmButton.disabled = false;
   }
 }
 
 function useEmployeeSession() {
-  setCurrentUser(USERS.employee);
+  state.adminPin = "";
+  setCurrentUser(getEmployeeSessionUser());
   closeAuthModal();
   showToast("Modo empleado activo.");
 
@@ -242,6 +278,12 @@ const state = {
   products: [],
   sales: [],
   currentUser: loadStoredSession(),
+  adminPin: "",
+  settings: {
+    users: [normalizeSessionUser(USERS.employee), normalizeSessionUser(USERS.admin)],
+    updatedAt: null
+  },
+  settingsDraft: null,
   pendingAdminView: null,
   activeView: "pos",
   activeCategory: "all",
@@ -586,7 +628,10 @@ function setView(viewName) {
   if (viewName === "reports") loadCashCut();
   if (viewName === "inventory") renderInventory();
   if (viewName === "products") renderAdminProducts();
-  if (viewName === "settings") updateScaleUi();
+  if (viewName === "settings") {
+    updateScaleUi();
+    renderUserSettings();
+  }
 }
 
 async function fetchJson(url, options) {
@@ -598,6 +643,281 @@ async function fetchJson(url, options) {
   }
 
   return response.json();
+}
+
+function normalizePublicSettings(settings = {}) {
+  const incomingUsers = Array.isArray(settings.users) ? settings.users : [];
+  const users = incomingUsers
+    .map((user) => normalizeSessionUser(user))
+    .filter((user) => user.active !== false);
+
+  if (!users.some((user) => user.role === "admin")) {
+    users.push(normalizeSessionUser(USERS.admin));
+  }
+
+  if (!users.some((user) => user.role === "employee")) {
+    users.push(normalizeSessionUser(USERS.employee));
+  }
+
+  return {
+    users,
+    updatedAt: settings.updatedAt || null
+  };
+}
+
+function cloneSettingsUsers(users = []) {
+  return users.map((user) => ({ ...normalizeSessionUser(user) }));
+}
+
+function applyPublicSettings(settings = {}) {
+  state.settings = normalizePublicSettings(settings);
+  state.settingsDraft = cloneSettingsUsers(state.settings.users);
+
+  if (!isAdminUser()) {
+    const matchingEmployee = state.settings.users.find((user) => {
+      return user.role === "employee" && user.id === state.currentUser?.id;
+    });
+
+    state.currentUser = normalizeSessionUser(matchingEmployee || getEmployeeSessionUser());
+    saveSessionUser(state.currentUser);
+  } else {
+    const adminUser = state.settings.users.find((user) => user.role === "admin");
+    if (adminUser) {
+      state.currentUser = normalizeSessionUser(adminUser);
+      saveSessionUser(state.currentUser);
+    }
+  }
+
+  renderSessionUi();
+}
+
+async function loadSettings() {
+  try {
+    const settings = await fetchJson("/api/settings");
+    applyPublicSettings(settings);
+  } catch (error) {
+    console.error(error);
+    applyPublicSettings(state.settings);
+    showToast("No se pudo cargar la configuración de usuarios.");
+  }
+}
+
+async function verifyAdminPin(pin) {
+  const normalizedPin = String(pin || "").trim();
+
+  if (!normalizedPin) {
+    throw new Error("Ingresa el PIN de administrador.");
+  }
+
+  return fetchJson("/api/auth/admin", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ pin: normalizedPin })
+  });
+}
+
+function getSettingsDraftUsers() {
+  if (!Array.isArray(state.settingsDraft)) {
+    state.settingsDraft = cloneSettingsUsers(state.settings.users);
+  }
+
+  return state.settingsDraft;
+}
+
+function renderUserSettings() {
+  const adminNameInput = $("adminUserNameInput");
+  const employeesList = $("employeesList");
+
+  if (!adminNameInput || !employeesList) return;
+
+  const draftUsers = getSettingsDraftUsers();
+  const adminUser = draftUsers.find((user) => user.role === "admin") || normalizeSessionUser(USERS.admin);
+  const employees = draftUsers.filter((user) => user.role === "employee");
+
+  adminNameInput.value = adminUser.name;
+
+  if (employees.length === 0) {
+    employeesList.innerHTML = '<p class="empty-list">Agrega al menos un empleado de mostrador.</p>';
+    return;
+  }
+
+  employeesList.innerHTML = employees
+    .map((employee) => {
+      return `
+        <article class="user-row">
+          <div>
+            <strong>${escapeHtml(employee.name)}</strong>
+            <span>Empleado de mostrador</span>
+          </div>
+          <button class="user-remove-btn" type="button" data-remove-employee="${escapeHtml(employee.id)}">
+            Quitar
+          </button>
+        </article>
+      `;
+    })
+    .join("");
+
+  employeesList.querySelectorAll("[data-remove-employee]").forEach((button) => {
+    button.addEventListener("click", () => removeEmployeeDraft(button.dataset.removeEmployee));
+  });
+}
+
+function updateAdminNameDraft() {
+  const input = $("adminUserNameInput");
+  const draftUsers = getSettingsDraftUsers();
+  const adminUser = draftUsers.find((user) => user.role === "admin");
+
+  if (input && adminUser) {
+    adminUser.name = input.value;
+  }
+}
+
+function addEmployeeDraft() {
+  const input = $("newEmployeeNameInput");
+  const name = String(input?.value || "").trim();
+
+  if (!name) {
+    showToast("Escribe el nombre del empleado.");
+    input?.focus();
+    return;
+  }
+
+  const draftUsers = getSettingsDraftUsers();
+  const duplicated = draftUsers.some((user) => {
+    return user.name.toLocaleLowerCase("es-MX") === name.toLocaleLowerCase("es-MX");
+  });
+
+  if (duplicated) {
+    showToast("Ya existe un usuario con ese nombre.");
+    input?.focus();
+    return;
+  }
+
+  draftUsers.push({
+    id: `empleado-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
+    name,
+    role: "employee",
+    active: true
+  });
+
+  input.value = "";
+  renderUserSettings();
+  input.focus();
+}
+
+function removeEmployeeDraft(employeeId) {
+  const draftUsers = getSettingsDraftUsers();
+  const employees = draftUsers.filter((user) => user.role === "employee");
+
+  if (employees.length <= 1) {
+    showToast("Debe quedar al menos un empleado de mostrador.");
+    return;
+  }
+
+  state.settingsDraft = draftUsers.filter((user) => user.id !== employeeId);
+  renderUserSettings();
+}
+
+function resetUserSettings() {
+  state.settingsDraft = cloneSettingsUsers(state.settings.users);
+
+  ["currentAdminPinInput", "newAdminPinInput", "confirmAdminPinInput", "newEmployeeNameInput"].forEach((id) => {
+    const input = $(id);
+    if (input) input.value = "";
+  });
+
+  renderUserSettings();
+  showToast("Cambios descartados.");
+}
+
+async function saveUserSettings() {
+  const currentPin = String($("currentAdminPinInput")?.value || "").trim();
+  const newPin = String($("newAdminPinInput")?.value || "").trim();
+  const confirmPin = String($("confirmAdminPinInput")?.value || "").trim();
+  const adminName = String($("adminUserNameInput")?.value || "").trim();
+
+  if (!adminName) {
+    showToast("Escribe el nombre del administrador.");
+    $("adminUserNameInput")?.focus();
+    return;
+  }
+
+  if (!currentPin) {
+    showToast("Ingresa el PIN actual para guardar.");
+    $("currentAdminPinInput")?.focus();
+    return;
+  }
+
+  if (newPin && !/^\d{4,12}$/.test(newPin)) {
+    showToast("El PIN nuevo debe tener de 4 a 12 dígitos.");
+    $("newAdminPinInput")?.focus();
+    return;
+  }
+
+  if (newPin !== confirmPin) {
+    showToast("La confirmación del PIN no coincide.");
+    $("confirmAdminPinInput")?.focus();
+    return;
+  }
+
+  const draftUsers = getSettingsDraftUsers();
+  const employees = draftUsers.filter((user) => user.role === "employee");
+
+  if (employees.length === 0) {
+    showToast("Agrega al menos un empleado de mostrador.");
+    return;
+  }
+
+  const users = [
+    {
+      ...(draftUsers.find((user) => user.role === "admin") || USERS.admin),
+      name: adminName,
+      role: "admin",
+      active: true
+    },
+    ...employees.map((employee) => ({
+      ...employee,
+      role: "employee",
+      active: true
+    }))
+  ];
+
+  const saveButton = $("saveUserSettingsBtn");
+  if (saveButton) saveButton.disabled = true;
+
+  try {
+    const settings = await fetchJson("/api/settings", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        adminPin: currentPin,
+        newAdminPin: newPin,
+        users
+      })
+    });
+
+    state.adminPin = newPin || currentPin;
+    applyPublicSettings(settings);
+
+    ["currentAdminPinInput", "newAdminPinInput", "confirmAdminPinInput", "newEmployeeNameInput"].forEach((id) => {
+      const input = $(id);
+      if (input) input.value = "";
+    });
+
+    renderUserSettings();
+    updateShellState();
+    showToast("Usuarios y PIN actualizados.");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "No se pudo guardar la configuración.");
+    $("currentAdminPinInput")?.focus();
+  } finally {
+    if (saveButton) saveButton.disabled = false;
+  }
 }
 
 async function loadCashShifts() {
@@ -956,7 +1276,7 @@ function openManualModal() {
     return;
   }
 
-  $("adminPinInput").value = isAdminUser() ? ADMIN_PIN : "";
+  $("adminPinInput").value = isAdminUser() ? state.adminPin : "";
   $("manualQuantityInput").value = state.selectedProduct.unit === "pieza" ? "1" : "";
   $("manualQuantityInput").step = state.selectedProduct.unit === "kg" ? "0.001" : "1";
   $("manualModal").classList.remove("hidden");
@@ -967,13 +1287,19 @@ function closeManualModal() {
   $("manualModal").classList.add("hidden");
 }
 
-function saveManualQuantity() {
+async function saveManualQuantity() {
   const pin = $("adminPinInput").value.trim();
   const quantity = Number($("manualQuantityInput").value || 0);
 
-  if (!isAdminUser() && pin !== ADMIN_PIN) {
-    showToast("PIN incorrecto.");
-    return;
+  if (!isAdminUser()) {
+    try {
+      await verifyAdminPin(pin);
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || "PIN incorrecto.");
+      $("adminPinInput")?.focus();
+      return;
+    }
   }
 
   if (quantity <= 0) {
@@ -1621,8 +1947,14 @@ function renderSaleDetail(saleId) {
 }
 
 async function cancelSale(saleId) {
-  const adminPin = isAdminUser() ? ADMIN_PIN : window.prompt("PIN de administrador:");
-  if (!adminPin) return;
+  const adminPin = isAdminUser()
+    ? state.adminPin
+    : window.prompt("PIN de administrador:");
+
+  if (!adminPin) {
+    showToast("Se requiere el PIN de administrador.");
+    return;
+  }
 
   const reason = window.prompt("Motivo de cancelacion:", "Cancelacion en caja") || "";
 
@@ -2792,6 +3124,17 @@ function bindEvents() {
     if (event.target === $("productConfirmModal")) closeProductConfirm(false);
   });
 
+  on($("adminUserNameInput"), "input", updateAdminNameDraft);
+  on($("addEmployeeBtn"), "click", addEmployeeDraft);
+  on($("newEmployeeNameInput"), "keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addEmployeeDraft();
+    }
+  });
+  on($("saveUserSettingsBtn"), "click", saveUserSettings);
+  on($("resetUserSettingsBtn"), "click", resetUserSettings);
+
   on($("connectScaleBtn"), "click", connectScale);
   on($("requestScaleBtn"), "click", requestScaleWeight);
   on($("disconnectScaleBtn"), "click", disconnectScale);
@@ -2814,6 +3157,7 @@ function initSettings() {
 async function init() {
   bindEvents();
   initSettings();
+  await loadSettings();
   ["salesDateInput", "dashboardDateInput", "recentSalesDateInput", "cutDateInput"].forEach((id) => {
     const input = $(id);
     if (input && !input.value) input.value = getLocalDateString();

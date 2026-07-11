@@ -6,6 +6,7 @@ node_modules/
 # Datos operativos del negocio
 data/sales.json
 data/cash-shifts.json
+data/settings.json
 data/*.bak
 
 # Archivos locales de Codex y revisiones visuales

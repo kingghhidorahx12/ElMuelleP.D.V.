@@ -11,10 +11,88 @@ const dataDir = path.join(__dirname, "..", "data");
 const productsPath = path.join(dataDir, "products.json");
 const salesPath = path.join(dataDir, "sales.json");
 const cashShiftsPath = path.join(dataDir, "cash-shifts.json");
+const settingsPath = path.join(dataDir, "settings.json");
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "..", "public")));
+
+
+function getDefaultSettings() {
+  return {
+    adminPin: ADMIN_PIN,
+    users: [
+      { id: "mostrador", name: "Mostrador", role: "employee", active: true },
+      { id: "admin", name: "Administrador", role: "admin", active: true }
+    ],
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function normalizeUser(user, fallback = {}) {
+  const role = user?.role === "admin" ? "admin" : "employee";
+  const idBase = role === "admin" ? "admin" : "empleado";
+  const id = String(user?.id || fallback.id || `${idBase}-${Date.now()}`).trim();
+  const name = String(user?.name || fallback.name || (role === "admin" ? "Administrador" : "Empleado")).trim();
+
+  return {
+    id,
+    name,
+    role,
+    active: user?.active !== false
+  };
+}
+
+function normalizeSettings(settings = {}) {
+  const defaults = getDefaultSettings();
+  const rawUsers = Array.isArray(settings.users) && settings.users.length > 0
+    ? settings.users
+    : defaults.users;
+  let users = rawUsers.map((user) => normalizeUser(user));
+
+  if (!users.some((user) => user.role === "admin")) {
+    users.push(defaults.users.find((user) => user.role === "admin"));
+  }
+
+  if (!users.some((user) => user.role === "employee")) {
+    users.push(defaults.users.find((user) => user.role === "employee"));
+  }
+
+  users = users.map((user, index) => ({
+    ...user,
+    id: user.id || `usuario-${index + 1}`
+  }));
+
+  return {
+    adminPin: String(settings.adminPin || ADMIN_PIN).trim() || ADMIN_PIN,
+    users,
+    updatedAt: settings.updatedAt || new Date().toISOString()
+  };
+}
+
+function readSettings() {
+  return normalizeSettings(readJson(settingsPath, getDefaultSettings()));
+}
+
+function writeSettings(settings) {
+  const normalized = normalizeSettings({
+    ...settings,
+    updatedAt: new Date().toISOString()
+  });
+  writeJson(settingsPath, normalized);
+  return normalized;
+}
+
+function getPublicSettings(settings = readSettings()) {
+  return {
+    users: settings.users,
+    updatedAt: settings.updatedAt
+  };
+}
+
+function isAdminPin(pin) {
+  return String(pin || "").trim() === readSettings().adminPin;
+}
 
 function ensureDataDir() {
   if (!fs.existsSync(dataDir)) {
@@ -176,6 +254,70 @@ app.get("/api/health", (req, res) => {
         "Báscula RHINO BAR-9 por Web Serial: 9600 BPS, 8N1, sin flujo, comando P."
     }
   });
+});
+
+
+app.get("/api/settings", (req, res) => {
+  res.json(getPublicSettings());
+});
+
+app.post("/api/auth/admin", (req, res) => {
+  if (!isAdminPin(req.body?.pin)) {
+    return res.status(401).json({
+      message: "PIN de administrador incorrecto."
+    });
+  }
+
+  const settings = readSettings();
+  const adminUser = settings.users.find((user) => user.role === "admin") || {
+    id: "admin",
+    name: "Administrador",
+    role: "admin",
+    active: true
+  };
+
+  res.json({ ok: true, user: adminUser, settings: getPublicSettings(settings) });
+});
+
+app.put("/api/settings", (req, res) => {
+  if (!isAdminPin(req.body?.adminPin)) {
+    return res.status(401).json({
+      message: "PIN de administrador incorrecto."
+    });
+  }
+
+  const current = readSettings();
+  const newPin = String(req.body?.newAdminPin || "").trim();
+  const requestedUsers = Array.isArray(req.body?.users) ? req.body.users : current.users;
+
+  if (newPin && !/^\d{4,12}$/.test(newPin)) {
+    return res.status(400).json({
+      message: "El PIN nuevo debe tener de 4 a 12 dígitos."
+    });
+  }
+
+  const adminUser = requestedUsers.find((user) => user?.role === "admin");
+  const employeeUsers = requestedUsers.filter((user) => user?.role !== "admin");
+
+  if (!String(adminUser?.name || "").trim()) {
+    return res.status(400).json({
+      message: "El nombre del administrador es obligatorio."
+    });
+  }
+
+  if (employeeUsers.length === 0) {
+    return res.status(400).json({
+      message: "Debe existir al menos un empleado de mostrador."
+    });
+  }
+
+  const settings = writeSettings({
+    ...current,
+    users: requestedUsers,
+    adminPin: newPin || current.adminPin
+  });
+
+  res.json(getPublicSettings(settings));
 });
 
 app.get("/api/products", (req, res) => {
@@ -427,7 +569,7 @@ app.patch("/api/sales/:id/cancel", (req, res) => {
     });
   }
 
-  if (String(req.body.adminPin || "").trim() !== ADMIN_PIN) {
+  if (!isAdminPin(req.body.adminPin)) {
     return res.status(401).json({
       message: "PIN de administrador incorrecto."
     });
