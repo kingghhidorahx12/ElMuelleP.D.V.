@@ -2,6 +2,7 @@ const $ = (id) => document.getElementById(id);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 const SESSION_KEY = "elMuelleSession";
+const SESSION_TOKEN_KEY = "elMuelleSessionToken";
 const ADMIN_VIEWS = new Set(["dashboard", "products", "inventory", "settings"]);
 const USERS = {
   employee: { id: "mostrador", name: "Mostrador", role: "employee" },
@@ -104,20 +105,18 @@ function normalizeSessionUser(user) {
     id: String(user?.id || fallback.id),
     name: String(user?.name || fallback.name),
     role,
-    active: user?.active !== false
+    active: user?.active !== false,
+    hasPin: user?.hasPin !== false
   };
 }
 
 function loadStoredSession() {
   try {
-    const storedUser = normalizeSessionUser(
-      JSON.parse(localStorage.getItem(SESSION_KEY) || "null")
-    );
-
-    // El modo administrador siempre requiere validar el PIN después de recargar.
-    return storedUser.role === "admin" ? normalizeSessionUser(USERS.employee) : storedUser;
+    const rawSession = sessionStorage.getItem(SESSION_KEY);
+    if (!rawSession) return null;
+    return normalizeSessionUser(JSON.parse(rawSession));
   } catch (error) {
-    return normalizeSessionUser(USERS.employee);
+    return null;
   }
 }
 
@@ -130,7 +129,7 @@ function getEmployeeSessionUser() {
 }
 
 function saveSessionUser(user) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
 }
 
 function isAdminUser() {
@@ -165,17 +164,125 @@ function renderSessionUi() {
   if ($("sessionRoleLabel")) $("sessionRoleLabel").textContent = getRoleLabel(state.currentUser.role);
   if ($("sessionUserName")) $("sessionUserName").textContent = state.currentUser.name;
   if ($("sessionSwitchBtn")) {
-    $("sessionSwitchBtn").setAttribute(
-      "title",
-      isAdminMode ? "Cambiar a modo empleado" : "Entrar como administrador"
-    );
+    $("sessionSwitchBtn").setAttribute("title", "Cambiar usuario");
   }
 
   $$(".nav-item").forEach((button) => {
-    const locked = isAdminView(button.dataset.view) && !isAdminMode;
-    button.classList.toggle("locked", locked);
-    button.setAttribute("aria-label", locked ? `${button.dataset.label} requiere PIN` : button.dataset.label);
+    const adminOnly = isAdminView(button.dataset.view);
+    const shouldHide = adminOnly && !isAdminMode;
+    button.hidden = shouldHide;
+    button.classList.remove("locked");
+    button.setAttribute("aria-label", button.dataset.label);
   });
+
+  updateNavGroupVisibility();
+}
+
+function updateNavGroupVisibility() {
+  const nav = document.querySelector(".nav");
+  if (!nav) return;
+
+  const children = Array.from(nav.children);
+  children.forEach((child, index) => {
+    if (!child.classList.contains("nav-group-label")) return;
+
+    let hasVisibleButton = false;
+    for (let cursor = index + 1; cursor < children.length; cursor += 1) {
+      const next = children[cursor];
+      if (next.classList.contains("nav-group-label")) break;
+      if (next.classList.contains("nav-item") && !next.hidden) {
+        hasVisibleButton = true;
+        break;
+      }
+    }
+
+    child.hidden = !hasVisibleButton;
+  });
+}
+
+function getActiveEmployees() {
+  return (state.settings?.users || []).filter((user) => {
+    return user.role === "employee" && user.active !== false;
+  });
+}
+
+function renderEmployeeLogin() {
+  const select = $("employeeUserSelect");
+  if (!select) return;
+
+  const employees = getActiveEmployees();
+  select.innerHTML = employees
+    .map((employee) => `<option value="${escapeHtml(employee.id)}">${escapeHtml(employee.name)}</option>`)
+    .join("");
+
+  if (state.currentUser?.role === "employee") {
+    select.value = state.currentUser.id;
+  }
+}
+
+function openEmployeeAccess(required = false) {
+  state.employeeLoginRequired = required || !state.sessionAuthenticated;
+  renderEmployeeLogin();
+
+  if ($("employeePinInput")) $("employeePinInput").value = "";
+  if ($("employeeAuthMessage")) {
+    $("employeeAuthMessage").textContent = state.employeeLoginRequired
+      ? "Selecciona tu nombre e ingresa tu PIN personal."
+      : "Cambia de empleado o entra como administrador.";
+  }
+
+  $("employeeAuthModal")?.classList.remove("hidden");
+  window.setTimeout(() => $("employeePinInput")?.focus(), 0);
+}
+
+function closeEmployeeAccess() {
+  if (state.employeeLoginRequired && !state.sessionAuthenticated) {
+    showToast("Debes iniciar sesión para usar el punto de venta.");
+    return;
+  }
+
+  $("employeeAuthModal")?.classList.add("hidden");
+  state.employeeLoginRequired = false;
+}
+
+async function confirmEmployeeAccess() {
+  const userId = String($("employeeUserSelect")?.value || "").trim();
+  const pin = String($("employeePinInput")?.value || "").trim();
+
+  if (!userId || !pin) {
+    showToast("Selecciona tu usuario e ingresa tu PIN.");
+    $("employeePinInput")?.focus();
+    return;
+  }
+
+  const button = $("employeeAuthConfirmBtn");
+  if (button) button.disabled = true;
+
+  try {
+    const result = await fetchJson("/api/auth/employee", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, pin })
+    });
+
+    applyPublicSettings(result.settings);
+    state.adminPin = "";
+    state.sessionToken = result.sessionToken || "";
+    state.sessionAuthenticated = Boolean(state.sessionToken);
+    sessionStorage.setItem(SESSION_TOKEN_KEY, state.sessionToken);
+    setCurrentUser(result.user);
+    state.employeeLoginRequired = false;
+    $("employeeAuthModal")?.classList.add("hidden");
+    setView("pos");
+    showToast(`Sesión iniciada: ${result.user.name}.`);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Usuario o PIN incorrecto.");
+    $("employeePinInput")?.focus();
+    $("employeePinInput")?.select();
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function openAdminAccess(viewName = null) {
@@ -215,8 +322,12 @@ async function confirmAdminAccess() {
     const nextView = state.pendingAdminView;
 
     state.adminPin = pin;
+    state.sessionToken = result.sessionToken || "";
+    state.sessionAuthenticated = Boolean(state.sessionToken);
+    sessionStorage.setItem(SESSION_TOKEN_KEY, state.sessionToken);
     applyPublicSettings(result.settings);
     setCurrentUser(result.user || USERS.admin);
+    $("employeeAuthModal")?.classList.add("hidden");
     closeAuthModal();
     showToast("Modo administrador activo.");
 
@@ -237,15 +348,12 @@ async function confirmAdminAccess() {
 
 function useEmployeeSession() {
   state.adminPin = "";
-  setCurrentUser(getEmployeeSessionUser());
+  state.sessionToken = "";
+  sessionStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_TOKEN_KEY);
+  state.sessionAuthenticated = false;
   closeAuthModal();
-  showToast("Modo empleado activo.");
-
-  if (isAdminView(state.activeView)) {
-    setView("pos");
-  } else {
-    updateShellState();
-  }
+  openEmployeeAccess(true);
 }
 
 function getCashShiftTimestamp(shift) {
@@ -274,16 +382,23 @@ function mergeCashShifts(...shiftGroups) {
   });
 }
 
+const storedSessionUser = loadStoredSession();
+const storedSessionToken = sessionStorage.getItem(SESSION_TOKEN_KEY) || "";
+
 const state = {
   products: [],
   sales: [],
-  currentUser: loadStoredSession(),
+  currentUser: storedSessionUser || normalizeSessionUser(USERS.employee),
+  sessionToken: storedSessionToken,
+  sessionAuthenticated: Boolean(storedSessionUser && storedSessionToken),
+  employeeLoginRequired: false,
   adminPin: "",
   settings: {
     users: [normalizeSessionUser(USERS.employee), normalizeSessionUser(USERS.admin)],
     updatedAt: null
   },
   settingsDraft: null,
+  employeePinDrafts: {},
   pendingAdminView: null,
   activeView: "pos",
   activeCategory: "all",
@@ -634,8 +749,16 @@ function setView(viewName) {
   }
 }
 
-async function fetchJson(url, options) {
-  const response = await fetch(url, options);
+async function fetchJson(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (state.sessionToken) {
+    headers.set("X-Session-Token", state.sessionToken);
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    headers
+  });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -689,6 +812,9 @@ function applyPublicSettings(settings = {}) {
   }
 
   renderSessionUi();
+  if (!$("employeeAuthModal")?.classList.contains("hidden")) {
+    renderEmployeeLogin();
+  }
 }
 
 async function loadSettings() {
@@ -716,6 +842,25 @@ async function verifyAdminPin(pin) {
     },
     body: JSON.stringify({ pin: normalizedPin })
   });
+}
+
+async function restoreAuthSession() {
+  if (!state.sessionToken) return false;
+
+  try {
+    const result = await fetchJson("/api/auth/session");
+    applyPublicSettings(result.settings);
+    state.sessionAuthenticated = true;
+    setCurrentUser(result.user);
+    return true;
+  } catch (error) {
+    console.warn(error.message || error);
+    state.sessionToken = "";
+    state.sessionAuthenticated = false;
+    sessionStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    return false;
+  }
 }
 
 function getSettingsDraftUsers() {
@@ -747,10 +892,21 @@ function renderUserSettings() {
     .map((employee) => {
       return `
         <article class="user-row">
-          <div>
+          <div class="user-row-identity">
             <strong>${escapeHtml(employee.name)}</strong>
-            <span>Empleado de mostrador</span>
+            <span>Empleado de mostrador · PIN ${employee.hasPin ? "configurado" : "pendiente"}</span>
           </div>
+          <label class="user-pin-reset">
+            <span>Nuevo PIN</span>
+            <input
+              type="password"
+              inputmode="numeric"
+              maxlength="12"
+              placeholder="Conservar"
+              data-employee-pin="${escapeHtml(employee.id)}"
+              value="${escapeHtml(employee.pendingPin || state.employeePinDrafts[employee.id] || "")}"
+            />
+          </label>
           <button class="user-remove-btn" type="button" data-remove-employee="${escapeHtml(employee.id)}">
             Quitar
           </button>
@@ -758,6 +914,15 @@ function renderUserSettings() {
       `;
     })
     .join("");
+
+  employeesList.querySelectorAll("[data-employee-pin]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const employeeId = input.dataset.employeePin;
+      state.employeePinDrafts[employeeId] = input.value.trim();
+      const employee = getSettingsDraftUsers().find((user) => user.id === employeeId);
+      if (employee) employee.pendingPin = input.value.trim();
+    });
+  });
 
   employeesList.querySelectorAll("[data-remove-employee]").forEach((button) => {
     button.addEventListener("click", () => removeEmployeeDraft(button.dataset.removeEmployee));
@@ -775,12 +940,20 @@ function updateAdminNameDraft() {
 }
 
 function addEmployeeDraft() {
-  const input = $("newEmployeeNameInput");
-  const name = String(input?.value || "").trim();
+  const nameInput = $("newEmployeeNameInput");
+  const pinInput = $("newEmployeePinInput");
+  const name = String(nameInput?.value || "").trim();
+  const pin = String(pinInput?.value || "").trim();
 
   if (!name) {
     showToast("Escribe el nombre del empleado.");
-    input?.focus();
+    nameInput?.focus();
+    return;
+  }
+
+  if (!/^\d{4,12}$/.test(pin)) {
+    showToast("El PIN inicial debe tener de 4 a 12 dígitos.");
+    pinInput?.focus();
     return;
   }
 
@@ -791,20 +964,25 @@ function addEmployeeDraft() {
 
   if (duplicated) {
     showToast("Ya existe un usuario con ese nombre.");
-    input?.focus();
+    nameInput?.focus();
     return;
   }
 
+  const employeeId = `empleado-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`;
+  state.employeePinDrafts[employeeId] = pin;
   draftUsers.push({
-    id: `empleado-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
+    id: employeeId,
     name,
     role: "employee",
-    active: true
+    active: true,
+    hasPin: false,
+    pendingPin: pin
   });
 
-  input.value = "";
+  nameInput.value = "";
+  pinInput.value = "";
   renderUserSettings();
-  input.focus();
+  nameInput.focus();
 }
 
 function removeEmployeeDraft(employeeId) {
@@ -817,13 +995,15 @@ function removeEmployeeDraft(employeeId) {
   }
 
   state.settingsDraft = draftUsers.filter((user) => user.id !== employeeId);
+  delete state.employeePinDrafts[employeeId];
   renderUserSettings();
 }
 
 function resetUserSettings() {
   state.settingsDraft = cloneSettingsUsers(state.settings.users);
+  state.employeePinDrafts = {};
 
-  ["currentAdminPinInput", "newAdminPinInput", "confirmAdminPinInput", "newEmployeeNameInput"].forEach((id) => {
+  ["currentAdminPinInput", "newAdminPinInput", "confirmAdminPinInput", "newEmployeeNameInput", "newEmployeePinInput"].forEach((id) => {
     const input = $(id);
     if (input) input.value = "";
   });
@@ -878,11 +1058,18 @@ async function saveUserSettings() {
       active: true
     },
     ...employees.map((employee) => ({
-      ...employee,
+      id: employee.id,
+      name: employee.name,
       role: "employee",
       active: true
     }))
   ];
+
+  const employeePins = Object.fromEntries(
+    employees
+      .map((employee) => [employee.id, String(employee.pendingPin || state.employeePinDrafts[employee.id] || "").trim()])
+      .filter(([, pin]) => Boolean(pin))
+  );
 
   const saveButton = $("saveUserSettingsBtn");
   if (saveButton) saveButton.disabled = true;
@@ -896,14 +1083,17 @@ async function saveUserSettings() {
       body: JSON.stringify({
         adminPin: currentPin,
         newAdminPin: newPin,
-        users
+        users,
+        employeePins
       })
     });
 
     state.adminPin = newPin || currentPin;
     applyPublicSettings(settings);
 
-    ["currentAdminPinInput", "newAdminPinInput", "confirmAdminPinInput", "newEmployeeNameInput"].forEach((id) => {
+    state.employeePinDrafts = {};
+
+    ["currentAdminPinInput", "newAdminPinInput", "confirmAdminPinInput", "newEmployeeNameInput", "newEmployeePinInput"].forEach((id) => {
       const input = $(id);
       if (input) input.value = "";
     });
@@ -1427,6 +1617,7 @@ function buildReceipt(sale, invoiceRequested = false) {
       <div class="receipt-row"><span>Subtotal</span><strong>${money(sale.subtotal)}</strong></div>
       <div class="receipt-row"><span>Total</span><strong>${money(sale.total)}</strong></div>
       <div class="receipt-row"><span>Pago</span><strong>${escapeHtml(getPaymentLabel(sale.paymentMethod))}</strong></div>
+      <div class="receipt-row"><span>Atendió</span><strong>${escapeHtml(sale.operator?.name || state.currentUser?.name || "Mostrador")}</strong></div>
       <div class="line"></div>
       <p>${invoiceRequested ? "Factura pendiente de datos fiscales." : "Gracias por su compra."}</p>
     </div>
@@ -3016,21 +3207,31 @@ function bindEvents() {
   on($("openCashFromSaleBtn"), "click", goToCashRegister);
   on($("ticketSideToggleBtn"), "click", () => toggleTicketPanel());
   on($("closeTicketPanelBtn"), "click", () => setPosStep("product"));
-  on($("sessionSwitchBtn"), "click", () => {
-    if (isAdminUser()) {
-      useEmployeeSession();
-    } else {
-      openAdminAccess();
-    }
-  });
+  on($("sessionSwitchBtn"), "click", () => openEmployeeAccess(false));
   on($("authConfirmBtn"), "click", confirmAdminAccess);
-  on($("authEmployeeBtn"), "click", useEmployeeSession);
+  on($("authEmployeeBtn"), "click", () => {
+    closeAuthModal();
+    openEmployeeAccess(true);
+  });
   on($("authCloseBtn"), "click", closeAuthModal);
   on($("authPinInput"), "keydown", (event) => {
     if (event.key === "Enter") confirmAdminAccess();
   });
   on($("authModal"), "click", (event) => {
     if (event.target === $("authModal")) closeAuthModal();
+  });
+
+  on($("employeeAuthConfirmBtn"), "click", confirmEmployeeAccess);
+  on($("employeeAuthCloseBtn"), "click", closeEmployeeAccess);
+  on($("employeeOpenAdminBtn"), "click", () => {
+    $("employeeAuthModal")?.classList.add("hidden");
+    openAdminAccess();
+  });
+  on($("employeePinInput"), "keydown", (event) => {
+    if (event.key === "Enter") confirmEmployeeAccess();
+  });
+  on($("employeeAuthModal"), "click", (event) => {
+    if (event.target === $("employeeAuthModal")) closeEmployeeAccess();
   });
 
   $$("[data-pos-step]").forEach((button) => {
@@ -3132,6 +3333,12 @@ function bindEvents() {
       addEmployeeDraft();
     }
   });
+  on($("newEmployeePinInput"), "keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addEmployeeDraft();
+    }
+  });
   on($("saveUserSettingsBtn"), "click", saveUserSettings);
   on($("resetUserSettingsBtn"), "click", resetUserSettings);
 
@@ -3158,6 +3365,10 @@ async function init() {
   bindEvents();
   initSettings();
   await loadSettings();
+  const sessionRestored = await restoreAuthSession();
+  if (!sessionRestored) {
+    openEmployeeAccess(true);
+  }
   ["salesDateInput", "dashboardDateInput", "recentSalesDateInput", "cutDateInput"].forEach((id) => {
     const input = $(id);
     if (input && !input.value) input.value = getLocalDateString();

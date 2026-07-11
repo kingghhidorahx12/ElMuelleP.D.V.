@@ -2,10 +2,14 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const ADMIN_PIN = process.env.ADMIN_PIN || "1234";
+const DEFAULT_EMPLOYEE_PIN = process.env.EMPLOYEE_PIN || "0000";
+const AUTH_SESSION_MS = 12 * 60 * 60 * 1000;
+const authSessions = new Map();
 
 const dataDir = path.join(__dirname, "..", "data");
 const productsPath = path.join(dataDir, "products.json");
@@ -18,11 +22,38 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "..", "public")));
 
 
+function createPinSecret(pin) {
+  const normalizedPin = String(pin || "").trim();
+  const pinSalt = crypto.randomBytes(16).toString("hex");
+  const pinHash = crypto.scryptSync(normalizedPin, pinSalt, 64).toString("hex");
+
+  return { pinSalt, pinHash };
+}
+
+function verifyUserPin(pin, user) {
+  const normalizedPin = String(pin || "").trim();
+
+  if (!normalizedPin || !user?.pinSalt || !user?.pinHash) {
+    return false;
+  }
+
+  const candidate = crypto.scryptSync(normalizedPin, user.pinSalt, 64);
+  const expected = Buffer.from(user.pinHash, "hex");
+
+  return candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
+}
+
 function getDefaultSettings() {
   return {
     adminPin: ADMIN_PIN,
     users: [
-      { id: "mostrador", name: "Mostrador", role: "employee", active: true },
+      {
+        id: "mostrador",
+        name: "Mostrador",
+        role: "employee",
+        active: true,
+        ...createPinSecret(DEFAULT_EMPLOYEE_PIN)
+      },
       { id: "admin", name: "Administrador", role: "admin", active: true }
     ],
     updatedAt: new Date().toISOString()
@@ -34,13 +65,26 @@ function normalizeUser(user, fallback = {}) {
   const idBase = role === "admin" ? "admin" : "empleado";
   const id = String(user?.id || fallback.id || `${idBase}-${Date.now()}`).trim();
   const name = String(user?.name || fallback.name || (role === "admin" ? "Administrador" : "Empleado")).trim();
-
-  return {
+  const normalized = {
     id,
     name,
     role,
     active: user?.active !== false
   };
+
+  if (role === "employee") {
+    if (user?.pinSalt && user?.pinHash) {
+      normalized.pinSalt = String(user.pinSalt);
+      normalized.pinHash = String(user.pinHash);
+    } else if (fallback?.pinSalt && fallback?.pinHash) {
+      normalized.pinSalt = String(fallback.pinSalt);
+      normalized.pinHash = String(fallback.pinHash);
+    } else {
+      Object.assign(normalized, createPinSecret(DEFAULT_EMPLOYEE_PIN));
+    }
+  }
+
+  return normalized;
 }
 
 function normalizeSettings(settings = {}) {
@@ -85,13 +129,57 @@ function writeSettings(settings) {
 
 function getPublicSettings(settings = readSettings()) {
   return {
-    users: settings.users,
+    users: settings.users.map(toPublicUser),
     updatedAt: settings.updatedAt
   };
 }
 
 function isAdminPin(pin) {
   return String(pin || "").trim() === readSettings().adminPin;
+}
+
+function createAuthSession(user) {
+  const token = crypto.randomBytes(32).toString("hex");
+  authSessions.set(token, {
+    userId: user.id,
+    role: user.role,
+    expiresAt: Date.now() + AUTH_SESSION_MS
+  });
+  return token;
+}
+
+function getSessionUser(req) {
+  const token = String(req.get("x-session-token") || "").trim();
+  if (!token) return null;
+
+  const session = authSessions.get(token);
+  if (!session || session.expiresAt <= Date.now()) {
+    authSessions.delete(token);
+    return null;
+  }
+
+  const user = readSettings().users.find((candidate) => {
+    return candidate.id === session.userId && candidate.active !== false;
+  });
+
+  if (!user) {
+    authSessions.delete(token);
+    return null;
+  }
+
+  session.expiresAt = Date.now() + AUTH_SESSION_MS;
+  authSessions.set(token, session);
+  return user;
+}
+
+function toPublicUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    role: user.role,
+    active: user.active !== false,
+    hasPin: user.role === "admin" || Boolean(user.pinSalt && user.pinHash)
+  };
 }
 
 function ensureDataDir() {
@@ -276,7 +364,50 @@ app.post("/api/auth/admin", (req, res) => {
     active: true
   };
 
-  res.json({ ok: true, user: adminUser, settings: getPublicSettings(settings) });
+  res.json({
+    ok: true,
+    user: toPublicUser(adminUser),
+    sessionToken: createAuthSession(adminUser),
+    settings: getPublicSettings(settings)
+  });
+});
+
+app.post("/api/auth/employee", (req, res) => {
+  const userId = String(req.body?.userId || "").trim();
+  const pin = String(req.body?.pin || "").trim();
+  const settings = readSettings();
+  const employee = settings.users.find((user) => {
+    return user.id === userId && user.role === "employee" && user.active !== false;
+  });
+
+  if (!employee || !verifyUserPin(pin, employee)) {
+    return res.status(401).json({
+      message: "Usuario o PIN incorrecto."
+    });
+  }
+
+  res.json({
+    ok: true,
+    user: toPublicUser(employee),
+    sessionToken: createAuthSession(employee),
+    settings: getPublicSettings(settings)
+  });
+});
+
+app.get("/api/auth/session", (req, res) => {
+  const user = getSessionUser(req);
+
+  if (!user) {
+    return res.status(401).json({
+      message: "La sesión venció. Inicia sesión nuevamente."
+    });
+  }
+
+  res.json({
+    ok: true,
+    user: toPublicUser(user),
+    settings: getPublicSettings()
+  });
 });
 
 app.put("/api/settings", (req, res) => {
@@ -289,6 +420,9 @@ app.put("/api/settings", (req, res) => {
   const current = readSettings();
   const newPin = String(req.body?.newAdminPin || "").trim();
   const requestedUsers = Array.isArray(req.body?.users) ? req.body.users : current.users;
+  const employeePins = req.body?.employeePins && typeof req.body.employeePins === "object"
+    ? req.body.employeePins
+    : {};
 
   if (newPin && !/^\d{4,12}$/.test(newPin)) {
     return res.status(400).json({
@@ -311,9 +445,50 @@ app.put("/api/settings", (req, res) => {
     });
   }
 
+  let normalizedUsers;
+
+  try {
+    normalizedUsers = [
+    normalizeUser({ ...adminUser, role: "admin", active: true }),
+    ...employeeUsers.map((requestedUser) => {
+      const existing = current.users.find((user) => {
+        return user.id === requestedUser?.id && user.role === "employee";
+      });
+      const employeePin = String(employeePins[requestedUser?.id] || "").trim();
+
+      if (employeePin && !/^\d{4,12}$/.test(employeePin)) {
+        const error = new Error(`El PIN de ${requestedUser?.name || "empleado"} debe tener de 4 a 12 dígitos.`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      if (!existing && !employeePin) {
+        const error = new Error(`Asigna un PIN inicial a ${requestedUser?.name || "el empleado nuevo"}.`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const normalizedEmployee = normalizeUser(
+        { ...requestedUser, role: "employee", active: true },
+        existing || {}
+      );
+
+      if (employeePin) {
+        Object.assign(normalizedEmployee, createPinSecret(employeePin));
+      }
+
+      return normalizedEmployee;
+    })
+    ];
+  } catch (error) {
+    return res.status(error.statusCode || 400).json({
+      message: error.message || "No se pudieron guardar los usuarios."
+    });
+  }
+
   const settings = writeSettings({
     ...current,
-    users: requestedUsers,
+    users: normalizedUsers,
     adminPin: newPin || current.adminPin
   });
 
@@ -489,6 +664,13 @@ app.post("/api/sales", (req, res) => {
     : "efectivo";
   const cashShiftId = String(req.body.cashShiftId || "").trim() || null;
   const cashShiftDate = String(req.body.cashShiftDate || "").trim() || null;
+  const operator = getSessionUser(req);
+
+  if (!operator) {
+    return res.status(401).json({
+      message: "La sesión venció. Inicia sesión nuevamente antes de vender."
+    });
+  }
 
   const sale = {
     id: getNextSaleId(sales),
@@ -496,6 +678,11 @@ app.post("/api/sales", (req, res) => {
     status: "completada",
     cashShiftId,
     cashShiftDate,
+    operator: {
+      id: operator.id,
+      name: operator.name,
+      role: operator.role
+    },
     items,
     paymentMethod,
     subtotal,
@@ -581,10 +768,15 @@ app.patch("/api/sales/:id/cancel", (req, res) => {
     });
   }
 
+  const cancelUser = getSessionUser(req);
+
   sales[saleIndex] = {
     ...sales[saleIndex],
     status: "cancelada",
     canceledAt: new Date().toISOString(),
+    canceledBy: cancelUser
+      ? { id: cancelUser.id, name: cancelUser.name, role: cancelUser.role }
+      : { id: "admin", name: "Administrador", role: "admin" },
     cancelReason: String(
       req.body.reason || "Cancelación desde módulo de ventas"
     ).trim(),

@@ -4343,3 +4343,99 @@ body.sidebar-collapsed .nav-item:focus-visible::after {
     grid-template-columns: 1fr auto auto;
   }
 }
+
+
+/* =========================================
+   ACCESO POR EMPLEADO Y VISIBILIDAD POR ROL
+   ========================================= */
+
+.nav-item[hidden],
+.nav-group-label[hidden] {
+  display: none !important;
+}
+
+.employee-auth-card select {
+  width: 100%;
+  height: 50px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.employee-auth-card input {
+  letter-spacing: 0.24em;
+}
+
+.employee-add-row {
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.55fr) auto;
+}
+
+.users-helper-text {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.user-row {
+  grid-template-columns: minmax(0, 1fr) minmax(116px, 0.55fr) auto;
+}
+
+.user-row-identity {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.user-pin-reset {
+  min-width: 0;
+  gap: 4px !important;
+}
+
+.user-pin-reset > span {
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.user-pin-reset input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  text-align: center;
+  letter-spacing: 0.12em;
+}
+
+body.role-employee .nav {
+  align-content: start;
+}
+
+body.role-employee:not(.sidebar-collapsed) .nav-item {
+  animation: employeeNavIn 0.2s ease both;
+}
+
+@keyframes employeeNavIn {
+  from {
+    opacity: 0;
+    transform: translateX(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 980px) {
+  .employee-add-row,
+  .user-row {
+    grid-template-columns: 1fr;
+  }
+
+  .user-remove-btn {
+    width: 100%;
+  }
+}

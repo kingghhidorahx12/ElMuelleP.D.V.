@@ -31,7 +31,7 @@
       <button class="nav-item" type="button" data-view="inventory" data-short="I" data-label="Inventario"><span>Inventario</span></button>
       <button class="nav-item" type="button" data-view="reports" data-short="$" data-label="Corte de Caja"><span>Corte de Caja</span></button>
       <span class="nav-group-label">Sistema</span>
-      <button class="nav-item" type="button" data-view="settings" data-short="A" data-label="Configuración"><span>Configuración</span></button>
+      <button class="nav-item" type="button" data-view="settings" data-short="C" data-label="Configuración"><span>Configuración</span></button>
     </nav>
 
     <section class="scale-card" aria-live="polite">
@@ -672,8 +672,10 @@
 
                 <div class="employee-add-row">
                   <input id="newEmployeeNameInput" type="text" maxlength="60" placeholder="Nombre del empleado" autocomplete="off" />
+                  <input id="newEmployeePinInput" type="password" inputmode="numeric" maxlength="12" placeholder="PIN inicial" autocomplete="new-password" />
                   <button id="addEmployeeBtn" class="quiet-btn" type="button">Agregar</button>
                 </div>
+                <p class="users-helper-text">Cada empleado entra con su propio PIN. El PIN inicial del usuario Mostrador es 0000 hasta que lo cambies.</p>
 
                 <div id="employeesList" class="users-list">
                   <p class="empty-list">No hay empleados cargados.</p>
@@ -748,6 +750,30 @@
     </div>
   </div>
 
+
+  <div id="employeeAuthModal" class="modal hidden">
+    <div class="modal-card auth-card employee-auth-card">
+      <div class="modal-head">
+        <div>
+          <h3>Acceso de empleado</h3>
+          <p id="employeeAuthMessage">Selecciona tu nombre e ingresa tu PIN personal.</p>
+        </div>
+        <button id="employeeAuthCloseBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
+      </div>
+      <label>
+        Empleado
+        <select id="employeeUserSelect"></select>
+      </label>
+      <label>
+        PIN personal
+        <input id="employeePinInput" type="password" inputmode="numeric" maxlength="12" autocomplete="current-password" placeholder="••••" />
+      </label>
+      <div class="modal-actions">
+        <button id="employeeAuthConfirmBtn" class="solid-btn" type="button">Entrar</button>
+        <button id="employeeOpenAdminBtn" class="quiet-btn" type="button">Entrar como administrador</button>
+      </div>
+    </div>
+  </div>
 
   <div id="authModal" class="modal hidden">
     <div class="modal-card auth-card">
