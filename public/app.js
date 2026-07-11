@@ -16,6 +16,7 @@ const DEFAULT_CATEGORIES = [
 
 const viewLabels = {
   pos: ["Punto de Venta", ""],
+  dashboard: ["Panel", ""],
   sales: ["Ventas", ""],
   products: ["Productos", ""],
   inventory: ["Inventario", ""],
@@ -450,6 +451,7 @@ function setView(viewName) {
   updateShellState();
 
   if (viewName === "sales") loadSalesAdmin();
+  if (viewName === "dashboard") loadDashboard();
   if (viewName === "billing") loadRecentSales();
   if (viewName === "reports") loadCashCut();
   if (viewName === "inventory") renderInventory();
@@ -492,6 +494,7 @@ async function loadProducts() {
     renderWeighPanel();
     renderAdminProducts();
     renderInventory();
+    if (state.activeView === "dashboard") renderDashboard();
   } catch (error) {
     console.error(error);
     showToast("No se pudieron cargar los productos.");
@@ -503,6 +506,7 @@ async function loadSales() {
     state.sales = await fetchJson("/api/sales");
     updateTicketId();
     renderProducts();
+    if (state.activeView === "dashboard") renderDashboard();
   } catch (error) {
     console.error(error);
   }
@@ -1683,6 +1687,180 @@ function getSaleProfit(sale) {
   };
 }
 
+async function loadDashboard() {
+  try {
+    if (state.products.length === 0) {
+      state.products = await fetchJson("/api/products");
+    }
+
+    state.sales = await fetchJson("/api/sales");
+    updateTicketId();
+    renderProducts();
+    renderDashboard();
+  } catch (error) {
+    console.error(error);
+    showToast("No se pudo cargar el panel.");
+  }
+}
+
+function getCompletedSalesForPeriod(period, dateString) {
+  return state.sales.filter((sale) => {
+    return getSaleStatus(sale) !== "cancelada" && saleMatchesPeriod(sale, period, dateString);
+  });
+}
+
+function getSalesTotals(sales) {
+  return sales.reduce(
+    (acc, sale) => {
+      const total = Number(sale.total || 0);
+      const profit = getSaleProfit(sale);
+
+      acc.total += total;
+      acc.cost += profit.totalCost;
+      acc.profit += profit.grossProfit;
+      acc.count += 1;
+
+      if (sale.paymentMethod === "tarjeta") acc.card += total;
+      else if (sale.paymentMethod === "transferencia") acc.transfer += total;
+      else acc.cash += total;
+
+      return acc;
+    },
+    { total: 0, cost: 0, profit: 0, count: 0, cash: 0, card: 0, transfer: 0 }
+  );
+}
+
+function getProductSalesFromSales(sales) {
+  const productMap = new Map();
+
+  sales.forEach((sale) => {
+    (sale.items || []).forEach((item) => {
+      const current = productMap.get(item.productId) || {
+        productId: item.productId,
+        name: item.name,
+        unit: item.unit,
+        quantity: 0,
+        total: 0
+      };
+
+      current.quantity += Number(item.quantity || 0);
+      current.total += Number(item.total || 0);
+      productMap.set(item.productId, current);
+    });
+  });
+
+  return productMap;
+}
+
+function renderDashboardList(elementId, items, emptyText, options = {}) {
+  const list = $(elementId);
+  if (!list) return;
+
+  if (items.length === 0) {
+    list.innerHTML = `<p class="empty-state">${escapeHtml(emptyText)}</p>`;
+    return;
+  }
+
+  list.innerHTML = items
+    .map((item, index) => {
+      const noRank = options.showRank === false;
+      const rank = noRank ? "" : `<span class="dashboard-rank">${index + 1}</span>`;
+      const quantity = item.unit ? quantityText(item.quantity || 0, item.unit) : item.detail || "";
+      const amount =
+        typeof item.total === "number"
+          ? `<b>${money(item.total)}</b>`
+          : `<b class="${item.kind || ""}">${escapeHtml(item.value || "")}</b>`;
+
+      return `
+        <article class="dashboard-row ${noRank ? "no-rank" : ""} ${escapeHtml(item.kind || "")}">
+          ${rank}
+          <div>
+            <strong>${escapeHtml(item.name)}</strong>
+            <span>${escapeHtml(quantity)}</span>
+          </div>
+          ${amount}
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function getInventoryAlerts() {
+  return state.products
+    .filter((product) => {
+      return typeof product.stockQuantity === "number" && typeof product.minStock === "number";
+    })
+    .map((product) => {
+      const minStock = Number(product.minStock || 0);
+      const stock = Number(product.stockQuantity || 0);
+      const ratio = minStock > 0 ? stock / minStock : stock > 0 ? 999 : 0;
+
+      return {
+        name: product.name,
+        detail: `Existencia ${quantityText(stock, product.unit)} · mínimo ${quantityText(minStock, product.unit)}`,
+        value: ratio <= 1 ? "Bajo" : "Ok",
+        kind: ratio <= 1 ? "warn" : "ok",
+        ratio
+      };
+    })
+    .filter((item) => item.ratio <= 1.25)
+    .sort((a, b) => a.ratio - b.ratio)
+    .slice(0, 6);
+}
+
+function renderDashboard() {
+  if (!$("dashboardView")) return;
+
+  syncPeriodInput("dashboardPeriodFilter", "dashboardDateInput");
+
+  const period = $("dashboardPeriodFilter")?.value || "day";
+  const dateString = $("dashboardDateInput")?.value || getLocalDateString();
+  const sales = getCompletedSalesForPeriod(period, dateString);
+  const totals = getSalesTotals(sales);
+  const margin = totals.total > 0 ? (totals.profit / totals.total) * 100 : 0;
+  const averageTicket = totals.count > 0 ? totals.total / totals.count : 0;
+  const productSales = getProductSalesFromSales(sales);
+  const topProducts = [...productSales.values()].sort((a, b) => b.total - a.total).slice(0, 6);
+  const slowProducts = state.products
+    .filter((product) => product.active !== false)
+    .map((product) => {
+      const sold = productSales.get(product.id);
+      return {
+        productId: product.id,
+        name: product.name,
+        unit: product.unit,
+        quantity: sold?.quantity || 0,
+        total: sold?.total || 0
+      };
+    })
+    .sort((a, b) => a.total - b.total || a.name.localeCompare(b.name))
+    .slice(0, 6);
+  const todaysSales = getCompletedSalesForPeriod("day", getLocalDateString());
+  const todaysTotals = getSalesTotals(todaysSales);
+  const activeShift = getSalesCashShift();
+  const expectedCash = activeShift ? Number(activeShift.openingAmount || 0) + todaysTotals.cash : 0;
+
+  $("dashboardProfit").textContent = money(totals.profit);
+  $("dashboardReinvest").textContent = money(totals.cost);
+  $("dashboardCashStatus").textContent = activeShift ? `Abierta · ${money(expectedCash)}` : "Cerrada";
+  $("dashboardCashStatus").classList.toggle("ok", Boolean(activeShift));
+  $("dashboardCashStatus").classList.toggle("warn", !activeShift);
+  $("dashboardTotalSales").textContent = money(totals.total);
+  $("dashboardSalesCount").textContent = String(totals.count);
+  $("dashboardAverageTicket").textContent = money(averageTicket);
+  $("dashboardMargin").textContent = `${margin.toFixed(2)}%`;
+  $("dashboardCash").textContent = money(totals.cash);
+  $("dashboardCard").textContent = money(totals.card);
+  $("dashboardTransfer").textContent = money(totals.transfer);
+  $("dashboardExpectedCash").textContent = money(expectedCash);
+
+  renderDashboardList("dashboardTopProducts", topProducts, "Sin ventas en este periodo.");
+  renderDashboardList("dashboardSlowProducts", slowProducts, "Sin productos activos.");
+  renderDashboardList("dashboardInventoryAlerts", getInventoryAlerts(), "Sin productos en alerta.", {
+    showRank: false
+  });
+}
+
 async function loadCashCut() {
   if (!$("cutDateInput").value) {
     $("cutDateInput").value = getLocalDateString();
@@ -1851,6 +2029,10 @@ function updateCashGateUi() {
 
   if (notice) {
     notice.hidden = isOpen;
+  }
+
+  if (state.activeView === "dashboard") {
+    renderDashboard();
   }
 }
 
@@ -2440,6 +2622,9 @@ function bindEvents() {
   on($("salesStatusFilter"), "change", renderSalesAdmin);
   on($("salesPeriodFilter"), "change", renderSalesAdmin);
   on($("salesDateInput"), "change", renderSalesAdmin);
+  on($("dashboardPeriodFilter"), "change", renderDashboard);
+  on($("dashboardDateInput"), "change", renderDashboard);
+  on($("refreshDashboardBtn"), "click", loadDashboard);
   on($("recentSalesPeriodFilter"), "change", loadRecentSales);
   on($("recentSalesDateInput"), "change", loadRecentSales);
   on($("refreshSalesBtn"), "click", loadRecentSales);
@@ -2483,7 +2668,7 @@ function initSettings() {
 async function init() {
   bindEvents();
   initSettings();
-  ["salesDateInput", "recentSalesDateInput", "cutDateInput"].forEach((id) => {
+  ["salesDateInput", "dashboardDateInput", "recentSalesDateInput", "cutDateInput"].forEach((id) => {
     const input = $(id);
     if (input && !input.value) input.value = getLocalDateString();
   });

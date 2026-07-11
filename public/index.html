@@ -22,10 +22,11 @@
 
     <nav class="nav" aria-label="Módulos">
       <span class="nav-group-label">Operación</span>
-      <button class="nav-item active" type="button" data-view="pos" data-short="C" data-label="Caja"><span>Caja</span></button>
+      <button class="nav-item active" type="button" data-view="pos" data-short="PV" data-label="Punto de Venta"><span>Punto de Venta</span></button>
       <button class="nav-item" type="button" data-view="billing" data-short="F" data-label="Facturación"><span>Facturación</span></button>
       <button class="nav-item" type="button" data-view="sales" data-short="V" data-label="Ventas"><span>Ventas</span></button>
       <span class="nav-group-label">Administración</span>
+      <button class="nav-item" type="button" data-view="dashboard" data-short="D" data-label="Panel"><span>Panel</span></button>
       <button class="nav-item" type="button" data-view="products" data-short="P" data-label="Productos"><span>Productos</span></button>
       <button class="nav-item" type="button" data-view="inventory" data-short="I" data-label="Inventario"><span>Inventario</span></button>
       <button class="nav-item" type="button" data-view="reports" data-short="$" data-label="Corte de Caja"><span>Corte de Caja</span></button>
@@ -188,6 +189,85 @@
             </div>
           </section>
         </div>
+      </section>
+
+      <section id="dashboardView" class="app-view">
+        <section class="work-panel full-panel dashboard-panel">
+          <div class="panel-head">
+            <div>
+              <h3>Panel de Administración</h3>
+            </div>
+            <div class="toolbar">
+              <select id="dashboardPeriodFilter">
+                <option value="day">Día</option>
+                <option value="week">Semana</option>
+                <option value="month">Mes</option>
+                <option value="year">Año</option>
+                <option value="all">Total</option>
+              </select>
+              <input id="dashboardDateInput" type="date" />
+              <button id="refreshDashboardBtn" class="quiet-btn" type="button">Actualizar</button>
+            </div>
+          </div>
+
+          <div class="dashboard-hero">
+            <article>
+              <span>Ganancia</span>
+              <strong id="dashboardProfit">$0.00</strong>
+            </article>
+            <article>
+              <span>Para reinvertir</span>
+              <strong id="dashboardReinvest">$0.00</strong>
+            </article>
+            <article>
+              <span>Caja de hoy</span>
+              <strong id="dashboardCashStatus">Cerrada</strong>
+            </article>
+          </div>
+
+          <div class="kpi-grid dashboard-kpis">
+            <article>
+              <span>Total vendido</span>
+              <strong id="dashboardTotalSales">$0.00</strong>
+            </article>
+            <article>
+              <span>Ventas</span>
+              <strong id="dashboardSalesCount">0</strong>
+            </article>
+            <article>
+              <span>Ticket promedio</span>
+              <strong id="dashboardAverageTicket">$0.00</strong>
+            </article>
+            <article>
+              <span>Margen</span>
+              <strong id="dashboardMargin">0.00%</strong>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="inner-panel">
+              <h4>Más vendidos</h4>
+              <div id="dashboardTopProducts" class="top-products-list"></div>
+            </section>
+            <section class="inner-panel">
+              <h4>Menos vendidos</h4>
+              <div id="dashboardSlowProducts" class="top-products-list"></div>
+            </section>
+            <section class="inner-panel">
+              <h4>Inventario bajo</h4>
+              <div id="dashboardInventoryAlerts" class="top-products-list"></div>
+            </section>
+            <section class="inner-panel">
+              <h4>Pagos</h4>
+              <div class="payment-summary">
+                <div><span>Efectivo</span><strong id="dashboardCash">$0.00</strong></div>
+                <div><span>Tarjeta</span><strong id="dashboardCard">$0.00</strong></div>
+                <div><span>Transferencia</span><strong id="dashboardTransfer">$0.00</strong></div>
+                <div><span>Efectivo esperado</span><strong id="dashboardExpectedCash">$0.00</strong></div>
+              </div>
+            </section>
+          </div>
+        </section>
       </section>
 
       <section id="salesView" class="app-view">
