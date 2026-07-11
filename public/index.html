@@ -26,7 +26,7 @@
       <button class="nav-item" type="button" data-view="billing" data-short="F" data-label="Facturación"><span>Facturación</span></button>
       <button class="nav-item" type="button" data-view="sales" data-short="V" data-label="Ventas"><span>Ventas</span></button>
       <span class="nav-group-label">Administración</span>
-      <button class="nav-item" type="button" data-view="dashboard" data-short="D" data-label="Panel"><span>Panel</span></button>
+      <button class="nav-item" type="button" data-view="dashboard" data-short="PA" data-label="Panel Administrativo"><span>Panel Administrativo</span></button>
       <button class="nav-item" type="button" data-view="products" data-short="P" data-label="Productos"><span>Productos</span></button>
       <button class="nav-item" type="button" data-view="inventory" data-short="I" data-label="Inventario"><span>Inventario</span></button>
       <button class="nav-item" type="button" data-view="reports" data-short="$" data-label="Corte de Caja"><span>Corte de Caja</span></button>
@@ -193,10 +193,7 @@
 
       <section id="dashboardView" class="app-view">
         <section class="work-panel full-panel dashboard-panel">
-          <div class="panel-head">
-            <div>
-              <h3>Panel de Administración</h3>
-            </div>
+          <div class="panel-head dashboard-controls">
             <div class="toolbar">
               <select id="dashboardPeriodFilter">
                 <option value="day">Día</option>
@@ -275,8 +272,7 @@
           <section class="work-panel">
             <div class="panel-head">
               <div>
-                <span class="eyebrow">Historial</span>
-                <h3>Ventas</h3>
+                <h3>Historial</h3>
               </div>
               <div class="toolbar">
                 <input id="salesSearchInput" type="search" placeholder="Folio..." />
@@ -364,7 +360,7 @@
           <section class="work-panel">
             <div class="panel-head">
               <div>
-                <h3>Productos</h3>
+                <h3>Catálogo</h3>
               </div>
               <div class="toolbar">
                 <input id="productAdminSearch" type="search" placeholder="Buscar..." />
@@ -471,12 +467,6 @@
 
       <section id="reportsView" class="app-view">
         <section class="work-panel full-panel">
-          <div class="panel-head">
-            <div>
-              <h3>Corte de Caja</h3>
-            </div>
-          </div>
-
           <section class="inner-panel cash-register-panel">
             <div class="cash-register-head">
               <div>

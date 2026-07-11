@@ -3784,6 +3784,160 @@ body.sidebar-collapsed.ticket-collapsed #posView .product-card.selected span.pro
   }
 }
 
+.app-view.active {
+  animation: viewEnter 0.18s ease both;
+}
+
+@keyframes viewEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+body:not(.sidebar-collapsed) .sidebar {
+  gap: 7px;
+  padding: 12px 14px 9px;
+}
+
+body:not(.sidebar-collapsed) .brand {
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+body:not(.sidebar-collapsed) .brand-mark {
+  width: 44px;
+  height: 44px;
+}
+
+body:not(.sidebar-collapsed) .brand h1 {
+  font-size: 19px;
+}
+
+body:not(.sidebar-collapsed) .nav {
+  gap: 2px;
+}
+
+body:not(.sidebar-collapsed) .nav-item {
+  min-height: 28px;
+  padding: 0 12px;
+  font-size: 15px;
+  line-height: 1.05;
+}
+
+body:not(.sidebar-collapsed) .nav-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.sidebar-collapsed) .nav-group-label {
+  margin: 3px 6px 0;
+  font-size: 8px;
+  line-height: 1;
+}
+
+body:not(.sidebar-collapsed) .scale-card {
+  gap: 4px;
+  padding: 7px 10px;
+}
+
+body:not(.sidebar-collapsed) .scale-card-top strong {
+  padding: 3px 7px;
+  font-size: 10px;
+}
+
+body:not(.sidebar-collapsed) .scale-readout {
+  font-size: 20px;
+}
+
+body:not(.sidebar-collapsed) .scale-card p,
+body:not(.sidebar-collapsed) .scale-card small {
+  max-width: 100%;
+  margin-top: 0;
+  overflow: hidden;
+  font-size: 10.5px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body:not(.sidebar-collapsed) .scale-card small {
+  min-height: 12px;
+  max-height: 13px;
+}
+
+body:not(.sidebar-collapsed) .scale-actions {
+  gap: 6px;
+}
+
+body:not(.sidebar-collapsed) .scale-card .solid-btn,
+body:not(.sidebar-collapsed) .scale-card .quiet-btn {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+body:not(.sidebar-collapsed) .session-box {
+  padding: 7px 10px;
+}
+
+#dashboardView .dashboard-panel {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 10px;
+}
+
+#dashboardView .dashboard-controls {
+  min-height: 42px;
+  justify-content: flex-end;
+}
+
+#dashboardView .dashboard-controls .toolbar {
+  margin-left: auto;
+}
+
+#dashboardView .dashboard-hero article {
+  padding: 14px 16px;
+}
+
+#dashboardView .dashboard-hero strong {
+  font-size: 27px;
+}
+
+#dashboardView .dashboard-kpis article {
+  padding: 10px 12px;
+}
+
+#dashboardView .dashboard-grid {
+  grid-template-rows: minmax(150px, 0.78fr) minmax(214px, 1fr);
+}
+
+#dashboardView .inner-panel {
+  gap: 8px;
+  padding: 10px;
+}
+
+#dashboardView .payment-summary {
+  gap: 6px;
+}
+
+#dashboardView .payment-summary div {
+  min-height: 36px;
+  padding: 6px 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-view.active {
+    animation: none;
+  }
+}
+
 @media print {
   body > *:not(.print-area) {
     display: none !important;

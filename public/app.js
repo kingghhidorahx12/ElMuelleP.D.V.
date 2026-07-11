@@ -16,7 +16,7 @@ const DEFAULT_CATEGORIES = [
 
 const viewLabels = {
   pos: ["Punto de Venta", ""],
-  dashboard: ["Panel", ""],
+  dashboard: ["Panel Administrativo", ""],
   sales: ["Ventas", ""],
   products: ["Productos", ""],
   inventory: ["Inventario", ""],
