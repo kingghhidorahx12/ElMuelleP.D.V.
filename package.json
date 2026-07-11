@@ -1,0 +1,22 @@
+{
+  "name": "el-muelle-pos",
+  "version": "1.0.0",
+  "description": "Punto de venta local para El Muelle Marisquería",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js"
+  },
+  "keywords": [
+    "pos",
+    "marisqueria",
+    "punto-de-venta"
+  ],
+  "author": "El Muelle Marisquería",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  }
+}

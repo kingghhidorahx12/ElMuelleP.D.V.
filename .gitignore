@@ -1,0 +1,17 @@
+node_modules/
+.env
+.repo-git/
+.git-template-empty/
+
+# Datos operativos del negocio
+data/sales.json
+data/cash-shifts.json
+data/*.bak
+
+# Archivos locales de Codex y revisiones visuales
+.agents/
+.codex/
+ui-checks/
+
+# Fuentes pesadas de imagen; la app usa JPG optimizado.
+public/assets/products/*.png

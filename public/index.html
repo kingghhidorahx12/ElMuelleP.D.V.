@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>El Muelle POS</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2310213d'/%3E%3Ccircle cx='32' cy='32' r='22' fill='%23fff' stroke='%23c99a3e' stroke-width='4'/%3E%3Ctext x='32' y='38' text-anchor='middle' font-family='Arial,sans-serif' font-size='18' font-weight='900' fill='%2310213d'%3EEM%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <aside class="sidebar">
+    <button id="sidebarToggleBtn" class="sidebar-toggle" type="button" title="Ocultar menú" aria-label="Ocultar menú">
+      <span id="sidebarToggleIcon">‹</span>
+    </button>
+    <div class="brand">
+      <div class="brand-mark">EM</div>
+      <div>
+        <h1>El Muelle</h1>
+        <p>Marisquería</p>
+      </div>
+    </div>
+
+    <nav class="nav" aria-label="Módulos">
+      <span class="nav-group-label">Operación</span>
+      <button class="nav-item active" type="button" data-view="pos" data-short="C" data-label="Caja"><span>Caja</span></button>
+      <button class="nav-item" type="button" data-view="billing" data-short="F" data-label="Facturación"><span>Facturación</span></button>
+      <button class="nav-item" type="button" data-view="sales" data-short="V" data-label="Ventas"><span>Ventas</span></button>
+      <span class="nav-group-label">Administración</span>
+      <button class="nav-item" type="button" data-view="products" data-short="P" data-label="Productos"><span>Productos</span></button>
+      <button class="nav-item" type="button" data-view="inventory" data-short="I" data-label="Inventario"><span>Inventario</span></button>
+      <button class="nav-item" type="button" data-view="reports" data-short="$" data-label="Corte de Caja"><span>Corte de Caja</span></button>
+      <span class="nav-group-label">Sistema</span>
+      <button class="nav-item" type="button" data-view="settings" data-short="A" data-label="Configuración"><span>Configuración</span></button>
+    </nav>
+
+    <section class="scale-card" aria-live="polite">
+      <div class="scale-card-top">
+        <span>Peso en vivo</span>
+        <strong id="scaleStatusPill">Sin conexión</strong>
+      </div>
+      <div class="scale-readout" id="scaleWeightText">0.000 kg</div>
+      <p id="scaleStatusText">RHINO BAR-9 · 9600 8N1 · comando P.</p>
+      <small id="scaleRawText">Sin lectura</small>
+      <div class="scale-actions">
+        <button id="connectScaleBtn" class="solid-btn" type="button">Conectar</button>
+        <button id="requestScaleBtn" class="quiet-btn" type="button" disabled>Pedir</button>
+        <button id="disconnectScaleBtn" class="quiet-btn" type="button" disabled>Soltar</button>
+      </div>
+    </section>
+
+    <div class="session-box">
+      <span>Cajero</span>
+      <strong>Mostrador</strong>
+    </div>
+  </aside>
+
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button id="mobileSidebarToggleBtn" class="icon-action mobile-menu-toggle" type="button" title="Mostrar menú" aria-label="Mostrar menú">›</button>
+        <div>
+          <h2 id="pageTitle">Punto de Venta</h2>
+          <p id="pageSubtitle"></p>
+        </div>
+      </div>
+      <div class="topbar-meta">
+        <button id="cashStatusBtn" class="cash-status-btn" type="button">Caja cerrada</button>
+        <button id="ticketToggleBtn" class="topbar-ticket-btn" type="button">Venta · $0.00</button>
+        <span id="clockText">--:--</span>
+        <strong id="ticketId">T-000000</strong>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <section id="posView" class="app-view active">
+        <div class="pos-flow" aria-label="Pasos de venta">
+          <button class="flow-step active" type="button" data-pos-step="product">
+            <span>1</span>
+            <strong>Seleccionar producto</strong>
+            <small>Catálogo y peso</small>
+          </button>
+          <button class="flow-step" type="button" data-pos-step="checkout">
+            <span>2</span>
+            <strong>Cobro</strong>
+            <small>Revisar venta</small>
+          </button>
+        </div>
+        <div class="pos-layout">
+          <section class="catalog-panel">
+            <div id="categoryGrid" class="category-grid"></div>
+
+            <div class="catalog-control-row">
+              <div class="filter-row" role="group" aria-label="Filtro de venta">
+                <button id="filterAll" class="chip active" type="button">Todos</button>
+                <button id="filterKg" class="chip" type="button">Por kg</button>
+                <button id="filterPiece" class="chip" type="button">Pieza</button>
+              </div>
+
+              <label class="search-box">
+                <span>Buscar</span>
+                <input id="searchInput" type="search" placeholder="Camarón, filete, pulpo..." />
+              </label>
+
+              <div class="pager">
+                <button id="prevPageBtn" class="quiet-btn" type="button">Anterior</button>
+                <span id="pageIndicator">Página 1</span>
+                <button id="nextPageBtn" class="quiet-btn" type="button">Siguiente</button>
+              </div>
+            </div>
+
+            <div id="productGrid" class="product-grid"></div>
+          </section>
+
+          <aside class="ticket-panel">
+            <div class="panel-head compact">
+              <div>
+                <span class="eyebrow">Venta actual</span>
+                <h3 id="saleBarCount">Sin productos</h3>
+              </div>
+              <div class="ticket-head-actions" hidden>
+                <strong id="saleBarTotal" class="ticket-total">$0.00</strong>
+                <button id="closeTicketPanelBtn" class="quiet-btn" type="button">Agregar más</button>
+              </div>
+            </div>
+
+            <div id="ticketItems" class="ticket-items">
+              <p class="empty-state">Agrega productos para iniciar.</p>
+            </div>
+
+            <div id="cashGateNotice" class="cash-gate-notice" hidden>
+              <div>
+                <strong>Caja cerrada</strong>
+                <span>Abre la caja del día antes de cobrar ventas.</span>
+              </div>
+              <button id="openCashFromSaleBtn" class="quiet-btn" type="button">Abrir caja</button>
+            </div>
+
+            <div class="summary">
+              <div>
+                <span>Subtotal</span>
+                <strong id="subtotalText">$0.00</strong>
+              </div>
+              <div>
+                <span>Descuento</span>
+                <strong id="discountText">$0.00</strong>
+              </div>
+              <div class="summary-total">
+                <span>Total</span>
+                <strong id="totalText">$0.00</strong>
+              </div>
+            </div>
+
+            <div class="payment-methods">
+              <button class="pay-method active" type="button" data-method="efectivo">Efectivo</button>
+              <button class="pay-method" type="button" data-method="tarjeta">Tarjeta</button>
+              <button class="pay-method" type="button" data-method="transferencia">Transferencia</button>
+            </div>
+
+            <button id="chargeBtn" class="charge-btn" type="button" disabled>Cobrar $0.00</button>
+            <button id="clearTicketBtn" class="danger-soft-btn" type="button" disabled>Vaciar venta</button>
+          </aside>
+
+          <section class="weigh-panel">
+            <div>
+              <span class="eyebrow">Pesaje</span>
+              <h3 id="weighProductName">Selecciona un producto</h3>
+              <p id="weighDescription">El peso entra automático al conectar la báscula.</p>
+            </div>
+
+            <div class="weigh-metrics">
+              <article>
+                <span>Precio</span>
+                <strong id="weighPrice">$0.00</strong>
+              </article>
+              <article>
+                <span id="weighQuantityLabel">Peso</span>
+                <strong id="weighQuantity">0.000 kg</strong>
+              </article>
+              <article>
+                <span>Total</span>
+                <strong id="weighTotal">$0.00</strong>
+              </article>
+            </div>
+
+            <div class="weigh-actions">
+              <button id="confirmWeightBtn" class="solid-btn" type="button" disabled>Agregar al carrito</button>
+              <button id="manualWeightBtn" class="warning-btn" type="button">Manual con PIN</button>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="salesView" class="app-view">
+        <div class="split-layout">
+          <section class="work-panel">
+            <div class="panel-head">
+              <div>
+                <span class="eyebrow">Historial</span>
+                <h3>Ventas</h3>
+              </div>
+              <div class="toolbar">
+                <input id="salesSearchInput" type="search" placeholder="Folio..." />
+                <select id="salesPeriodFilter">
+                  <option value="day">Día</option>
+                  <option value="week">Semana</option>
+                  <option value="month">Mes</option>
+                  <option value="year">Año</option>
+                  <option value="all">Total</option>
+                </select>
+                <input id="salesDateInput" type="date" />
+                <select id="salesStatusFilter">
+                  <option value="all">Todas</option>
+                  <option value="completada">Completadas</option>
+                  <option value="cancelada">Canceladas</option>
+                  <option value="factura">Con factura</option>
+                </select>
+              </div>
+            </div>
+            <div id="salesList" class="sales-list"></div>
+          </section>
+          <aside id="salesDetail" class="detail-panel"></aside>
+        </div>
+      </section>
+
+      <section id="productsView" class="app-view">
+        <div class="split-layout products-layout">
+          <section class="work-panel">
+            <form id="productForm" class="product-form">
+              <div class="form-title">
+                <h3 id="productFormStatusTitle">Agregar producto</h3>
+                <p id="productFormStatusText"></p>
+              </div>
+
+              <label class="wide">
+                Producto
+                <input id="productNameInput" type="text" placeholder="Ej. Camarón coctelero" />
+              </label>
+
+              <label>
+                Categoría
+                <select id="productCategoryInput">
+                  <option value="Pescados y mariscos">Pescados y mariscos</option>
+                  <option value="Carnes selectas">Carnes selectas</option>
+                  <option value="Para el antojo">Para el antojo</option>
+                  <option value="Condimentos y salsas">Condimentos y salsas</option>
+                </select>
+              </label>
+
+              <label>
+                Venta
+                <select id="productUnitInput">
+                  <option value="kg">Por kg</option>
+                  <option value="pieza">Por pieza</option>
+                </select>
+              </label>
+
+              <label>
+                Precio
+                <input id="productPriceInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+
+              <label>
+                Costo
+                <input id="productCostInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+
+              <label>
+                Existencia
+                <input id="productStockInput" type="number" min="0" step="0.001" placeholder="0.000" />
+              </label>
+
+              <label>
+                Mínimo
+                <input id="productMinStockInput" type="number" min="0" step="0.001" placeholder="0.000" />
+              </label>
+
+              <div class="form-actions wide">
+                <button id="saveProductBtn" class="solid-btn" type="submit">Guardar</button>
+                <button id="resetProductFormBtn" class="quiet-btn" type="button">Nuevo</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="work-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Productos</h3>
+              </div>
+              <div class="toolbar">
+                <input id="productAdminSearch" type="search" placeholder="Buscar..." />
+                <select id="productAdminCategoryFilter">
+                  <option value="all">Todas</option>
+                  <option value="Pescados y mariscos">Pescados y mariscos</option>
+                  <option value="Carnes selectas">Carnes selectas</option>
+                  <option value="Para el antojo">Para el antojo</option>
+                  <option value="Condimentos y salsas">Condimentos y salsas</option>
+                </select>
+              </div>
+            </div>
+            <div id="productAdminList" class="product-admin-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="inventoryView" class="app-view">
+        <section class="work-panel full-panel">
+          <div class="panel-head">
+            <div>
+              <h3>Existencias</h3>
+            </div>
+            <div class="toolbar">
+              <input id="inventorySearchInput" type="search" placeholder="Buscar..." />
+              <select id="inventoryCategoryFilter">
+                <option value="all">Todas</option>
+                <option value="Pescados y mariscos">Pescados y mariscos</option>
+                <option value="Carnes selectas">Carnes selectas</option>
+                <option value="Para el antojo">Para el antojo</option>
+                <option value="Condimentos y salsas">Condimentos y salsas</option>
+              </select>
+            </div>
+          </div>
+          <div id="inventoryList" class="inventory-list"></div>
+        </section>
+      </section>
+
+      <section id="billingView" class="app-view">
+        <div class="split-layout">
+          <section class="work-panel">
+            <form id="invoiceForm" class="invoice-form">
+              <div class="form-title wide">
+                <span class="eyebrow">Facturación</span>
+                <h3>Datos fiscales</h3>
+              </div>
+              <label>
+                Folio
+                <input id="invoiceSaleId" type="text" placeholder="T-000001" />
+              </label>
+              <label>
+                RFC
+                <input id="invoiceRfc" type="text" placeholder="RFC" />
+              </label>
+              <label class="wide">
+                Razón social
+                <input id="invoiceName" type="text" placeholder="Nombre fiscal" />
+              </label>
+              <label>
+                Código postal
+                <input id="invoiceZip" type="text" placeholder="00000" />
+              </label>
+              <label>
+                Régimen fiscal
+                <input id="invoiceRegime" type="text" placeholder="601, 612, 626..." />
+              </label>
+              <label>
+                Uso CFDI
+                <select id="invoiceUse">
+                  <option value="">Selecciona</option>
+                  <option value="G01">G01 - Mercancías</option>
+                  <option value="G03">G03 - Gastos en general</option>
+                  <option value="S01">S01 - Sin efectos fiscales</option>
+                </select>
+              </label>
+              <label>
+                Correo
+                <input id="invoiceEmail" type="email" placeholder="correo@cliente.com" />
+              </label>
+              <button class="solid-btn wide" type="submit">Registrar solicitud</button>
+            </form>
+          </section>
+          <section class="work-panel">
+            <div class="panel-head compact">
+              <div>
+                <h3>Recientes</h3>
+              </div>
+              <div class="toolbar">
+                <select id="recentSalesPeriodFilter">
+                  <option value="day">Día</option>
+                  <option value="week">Semana</option>
+                  <option value="month">Mes</option>
+                  <option value="year">Año</option>
+                  <option value="all">Total</option>
+                </select>
+                <input id="recentSalesDateInput" type="date" />
+                <button id="refreshSalesBtn" class="quiet-btn" type="button">Actualizar</button>
+              </div>
+            </div>
+            <div id="recentSalesList" class="recent-sales-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="reportsView" class="app-view">
+        <section class="work-panel full-panel">
+          <div class="panel-head">
+            <div>
+              <h3>Corte de Caja</h3>
+            </div>
+          </div>
+
+          <section class="inner-panel cash-register-panel">
+            <div class="cash-register-head">
+              <div>
+                <h4>Apertura y cierre</h4>
+                <p id="cashShiftStatus">Sin caja abierta.</p>
+              </div>
+              <strong id="cashShiftDifference">$0.00</strong>
+            </div>
+            <div class="cash-register-grid">
+              <label>
+                Fondo inicial
+                <input id="openingCashInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+              <button id="openCashShiftBtn" class="solid-btn" type="button">Abrir caja</button>
+              <label>
+                Efectivo contado
+                <input id="countedCashInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+              <button id="toggleCashCounterBtn" class="quiet-btn" type="button">Contador de efectivo</button>
+              <button id="closeCashShiftBtn" class="warning-btn" type="button">Cerrar corte</button>
+            </div>
+            <div id="cashCounterPanel" class="cash-counter-panel hidden">
+              <div id="cashDenominations" class="cash-denominations"></div>
+              <div class="cash-counter-total">
+                <span>Total contado</span>
+                <strong id="cashCounterTotal">$0.00</strong>
+              </div>
+            </div>
+            <div id="cashShiftLog" class="cash-shift-log"></div>
+          </section>
+
+          <div class="cut-filter-bar">
+            <div>
+              <strong>Resumen e historial</strong>
+              <span>Consulta ventas y cortes guardados por periodo.</span>
+            </div>
+            <div class="toolbar">
+              <select id="cutPeriodFilter">
+                <option value="day">Día</option>
+                <option value="week">Semana</option>
+                <option value="month">Mes</option>
+                <option value="year">Año</option>
+                <option value="all">Total</option>
+              </select>
+              <input id="cutDateInput" type="date" />
+              <button id="refreshCutBtn" class="quiet-btn" type="button">Actualizar</button>
+              <button id="printCutBtn" class="solid-btn" type="button">Imprimir</button>
+            </div>
+          </div>
+
+          <div class="kpi-grid">
+            <article>
+              <span>Total vendido</span>
+              <strong id="cutTotalSales">$0.00</strong>
+            </article>
+            <article>
+              <span>Ganancia</span>
+              <strong id="cutGrossProfit">$0.00</strong>
+            </article>
+            <article>
+              <span>Margen</span>
+              <strong id="cutMargin">0.00%</strong>
+            </article>
+            <article>
+              <span>Ventas</span>
+              <strong id="cutSalesCount">0</strong>
+            </article>
+          </div>
+
+          <div class="report-grid">
+            <section class="inner-panel">
+              <h4>Pagos</h4>
+              <div class="payment-summary">
+                <div><span>Efectivo</span><strong id="cutCash">$0.00</strong></div>
+                <div><span>Tarjeta</span><strong id="cutCard">$0.00</strong></div>
+                <div><span>Transferencia</span><strong id="cutTransfer">$0.00</strong></div>
+                <div><span>Canceladas</span><strong id="cutCanceled">0</strong></div>
+              </div>
+            </section>
+            <section class="inner-panel">
+              <h4>Más vendidos</h4>
+              <div id="topProductsList" class="top-products-list"></div>
+            </section>
+          </div>
+
+          <section class="inner-panel cash-history-panel">
+            <h4>Historial de cortes</h4>
+            <div id="cashHistoryList" class="cash-history-list"></div>
+          </section>
+        </section>
+      </section>
+
+      <section id="settingsView" class="app-view">
+        <div class="split-layout settings-layout">
+          <section class="work-panel">
+            <div class="form-title">
+              <span class="eyebrow">Báscula</span>
+              <h3>Puerto serial</h3>
+            </div>
+            <div class="settings-grid">
+              <label class="wide">
+                Modelo
+                <input id="scaleModelInput" type="text" value="RHINO BAR-9" readonly />
+              </label>
+              <label>
+                Baud rate
+                <select id="scaleBaudRateInput">
+                  <option value="9600">9600</option>
+                  <option value="4800">4800</option>
+                  <option value="19200">19200</option>
+                  <option value="38400">38400</option>
+                </select>
+              </label>
+              <label>
+                Comando de peso
+                <input id="scaleCommandInput" type="text" value="P" maxlength="4" />
+              </label>
+              <label>
+                Solicitar cada
+                <select id="scalePollMsInput">
+                  <option value="500">0.5 s</option>
+                  <option value="800">0.8 s</option>
+                  <option value="1000">1 s</option>
+                  <option value="1500">1.5 s</option>
+                </select>
+              </label>
+              <label>
+                Unidad esperada
+                <select id="scaleUnitInput">
+                  <option value="kg">kg</option>
+                  <option value="g">gramos</option>
+                  <option value="lb">libras</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-actions">
+              <button id="connectScaleBtnSettings" class="solid-btn" type="button">Conectar báscula</button>
+              <button id="requestScaleBtnSettings" class="quiet-btn" type="button" disabled>Pedir peso</button>
+              <button id="disconnectScaleBtnSettings" class="quiet-btn" type="button" disabled>Desconectar</button>
+            </div>
+            <div class="scale-protocol-card">
+              <strong>Protocolo RHINO BAR-9</strong>
+              <span>9600 BPS · 8 bits · sin paridad · 1 bit de parada · sin flujo · enviar “P”.</span>
+            </div>
+          </section>
+          <section class="work-panel">
+            <div class="form-title">
+              <span class="eyebrow">Lectura</span>
+              <h3 id="settingsScaleWeight">0.000 kg</h3>
+              <p id="settingsScaleStatus">Sin conexión.</p>
+            </div>
+            <pre id="settingsScaleRaw" class="raw-box">Sin datos</pre>
+          </section>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="manualModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <h3>Captura manual</h3>
+          <p>Solo con autorización.</p>
+        </div>
+        <button id="closeManualModalBtn" class="icon-btn" type="button" aria-label="Cerrar">×</button>
+      </div>
+      <label>
+        PIN administrador
+        <input id="adminPinInput" type="password" placeholder="PIN" />
+      </label>
+      <label>
+        Peso o cantidad
+        <input id="manualQuantityInput" type="number" min="0" step="0.001" placeholder="0.000" />
+      </label>
+      <div class="modal-actions">
+        <button id="saveManualWeightBtn" class="solid-btn" type="button">Aplicar</button>
+        <button id="cancelManualWeightBtn" class="quiet-btn" type="button">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="invoiceDecisionModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <h3>Factura</h3>
+          <p>Confirma antes de cobrar.</p>
+        </div>
+        <button id="closeInvoiceDecisionBtn" class="icon-btn" type="button" aria-label="Cerrar">×</button>
+      </div>
+      <div class="decision-grid">
+        <button id="invoiceYesBtn" class="solid-btn" type="button">Sí requiere</button>
+        <button id="invoiceNoBtn" class="quiet-btn" type="button">No requiere</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="productConfirmModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <h3 id="productConfirmTitle">Confirmar</h3>
+          <p id="productConfirmMessage">Revisa el movimiento.</p>
+        </div>
+        <button id="productConfirmCloseBtn" class="icon-btn" type="button" aria-label="Cerrar">×</button>
+      </div>
+      <div id="productConfirmSummary" class="confirm-summary">Producto</div>
+      <div class="modal-actions">
+        <button id="productConfirmYesBtn" class="solid-btn" type="button">Confirmar</button>
+        <button id="productConfirmNoBtn" class="quiet-btn" type="button">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <section id="printArea" class="print-area"></section>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
