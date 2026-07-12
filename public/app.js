@@ -3,21 +3,36 @@ const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 const SESSION_KEY = "elMuelleSession";
 const SESSION_TOKEN_KEY = "elMuelleSessionToken";
+const SESSION_EXPIRES_KEY = "elMuelleSessionExpiresAt";
+const SESSION_PERSIST_MS = 10 * 60 * 1000;
+const LAST_USER_KEY = "elMuelleLastUser";
 const ADMIN_VIEWS = new Set(["dashboard", "products", "inventory", "settings"]);
 const USERS = {
-  employee: { id: "mostrador", name: "Mostrador", role: "employee" },
+  employee: { id: "mostrador", name: "Encargado", role: "employee" },
   admin: { id: "admin", name: "Administrador", role: "admin" }
 };
 const MIN_SCALE_WEIGHT_KG = 0.1;
 const MAX_SCALE_WEIGHT_KG = 40;
-const PAGE_SIZE = 12;
-const CASH_SHIFTS_KEY = "elMuelleCashShifts";
-const CASH_DENOMINATIONS = [1000, 500, 200, 100, 50, 20, 10, 5, 2, 1, 0.5];
+const PAGE_SIZE = 15;
 const DEFAULT_CATEGORIES = [
   "Pescados y mariscos",
   "Carnes selectas",
   "Para el antojo",
   "Condimentos y salsas"
+];
+
+const CASH_COUNT_DENOMINATIONS = [
+  { label: "$1,000", value: 1000 },
+  { label: "$500", value: 500 },
+  { label: "$200", value: 200 },
+  { label: "$100", value: 100 },
+  { label: "$50", value: 50 },
+  { label: "$20", value: 20 },
+  { label: "$10", value: 10 },
+  { label: "$5", value: 5 },
+  { label: "$2", value: 2 },
+  { label: "$1", value: 1 },
+  { label: "50 c", value: 0.5 }
 ];
 
 const viewLabels = {
@@ -27,7 +42,7 @@ const viewLabels = {
   products: ["Productos", ""],
   inventory: ["Inventario", ""],
   billing: ["Facturación", ""],
-  reports: ["Corte de Caja", ""],
+  reports: ["Caja", ""],
   settings: ["Configuración", ""]
 };
 
@@ -87,37 +102,136 @@ const productIconSvgs = {
 const storedSidebarCollapsed = localStorage.getItem("sidebarCollapsed");
 const storedTicketCollapsed = localStorage.getItem("ticketCollapsed");
 
-function loadStoredCashShifts() {
-  try {
-    const shifts = JSON.parse(localStorage.getItem(CASH_SHIFTS_KEY) || "[]");
-    return Array.isArray(shifts) ? shifts : [];
-  } catch (error) {
-    return [];
-  }
-}
-
-
 function normalizeSessionUser(user) {
   const role = user?.role === "admin" ? "admin" : "employee";
   const fallback = role === "admin" ? USERS.admin : USERS.employee;
+  const id = String(user?.id || fallback.id);
+  const rawName = String(user?.name || fallback.name);
+  const name = role === "employee" && id === "mostrador" && rawName.toLowerCase() === "mostrador"
+    ? "Encargado"
+    : rawName;
 
   return {
-    id: String(user?.id || fallback.id),
-    name: String(user?.name || fallback.name),
+    id,
+    name,
     role,
     active: user?.active !== false,
     hasPin: user?.hasPin !== false
   };
 }
 
+function clearStoredAuthSession() {
+  localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(SESSION_TOKEN_KEY);
+  localStorage.removeItem(SESSION_EXPIRES_KEY);
+
+  // Clean keys from older builds too.
+  sessionStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_TOKEN_KEY);
+}
+
+function getStoredSessionExpiry() {
+  return Number(localStorage.getItem(SESSION_EXPIRES_KEY) || 0);
+}
+
+function hasValidStoredSession() {
+  const expiresAt = getStoredSessionExpiry();
+
+  if (!expiresAt || expiresAt <= Date.now()) {
+    clearStoredAuthSession();
+    return false;
+  }
+
+  return true;
+}
+
+function refreshStoredSessionExpiry() {
+  localStorage.setItem(
+    SESSION_EXPIRES_KEY,
+    String(Date.now() + SESSION_PERSIST_MS)
+  );
+}
+
+let sessionExpiryTimer = null;
+
+function getSessionMsRemaining() {
+  return getStoredSessionExpiry() - Date.now();
+}
+
+function scheduleSessionExpiryLogout() {
+  window.clearTimeout(sessionExpiryTimer);
+
+  if (!state?.sessionAuthenticated) return;
+
+  const remaining = getSessionMsRemaining();
+  if (remaining <= 0) {
+    logoutToAccess();
+    return;
+  }
+
+  sessionExpiryTimer = window.setTimeout(() => {
+    if (!hasValidStoredSession()) {
+      logoutToAccess();
+      return;
+    }
+    scheduleSessionExpiryLogout();
+  }, remaining + 250);
+}
+
+function markSessionActivity() {
+  if (!state?.sessionAuthenticated || !state.sessionToken) return;
+  refreshStoredSessionExpiry();
+  scheduleSessionExpiryLogout();
+}
+
+function bindSessionActivityTracking() {
+  ["click", "keydown", "pointerdown", "touchstart"].forEach((eventName) => {
+    window.addEventListener(eventName, markSessionActivity, { passive: true });
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !state?.sessionAuthenticated) return;
+
+    if (!hasValidStoredSession()) {
+      logoutToAccess();
+      return;
+    }
+
+    markSessionActivity();
+  });
+
+  scheduleSessionExpiryLogout();
+}
+
 function loadStoredSession() {
   try {
-    const rawSession = sessionStorage.getItem(SESSION_KEY);
+    if (!hasValidStoredSession()) return null;
+
+    const rawSession = localStorage.getItem(SESSION_KEY);
     if (!rawSession) return null;
+
     return normalizeSessionUser(JSON.parse(rawSession));
   } catch (error) {
+    clearStoredAuthSession();
     return null;
   }
+}
+
+function loadStoredSessionToken() {
+  if (!hasValidStoredSession()) return "";
+  return String(localStorage.getItem(SESSION_TOKEN_KEY) || "");
+}
+
+function saveSessionToken(token) {
+  const normalizedToken = String(token || "");
+
+  if (!normalizedToken) {
+    clearStoredAuthSession();
+    return;
+  }
+
+  localStorage.setItem(SESSION_TOKEN_KEY, normalizedToken);
+  refreshStoredSessionExpiry();
 }
 
 function getEmployeeSessionUser() {
@@ -129,7 +243,8 @@ function getEmployeeSessionUser() {
 }
 
 function saveSessionUser(user) {
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
+  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+  refreshStoredSessionExpiry();
 }
 
 function isAdminUser() {
@@ -145,7 +260,7 @@ function canAccessView(viewName) {
 }
 
 function getRoleLabel(role) {
-  return role === "admin" ? "Administrador" : "Empleado";
+  return role === "admin" ? "Administrador" : "Encargado";
 }
 
 function setCurrentUser(user) {
@@ -201,11 +316,172 @@ function updateNavGroupVisibility() {
 }
 
 function getActiveEmployees() {
-  return (state.settings?.users || []).filter((user) => {
-    return user.role === "employee" && user.active !== false;
-  });
+  return (state.settings?.users || [])
+    .filter((user) => user.role === "employee" && user.active !== false)
+    .map((user) => normalizeSessionUser(user));
 }
 
+function getAccessUsers() {
+  const admin = normalizeSessionUser(
+    (state.settings?.users || []).find((user) => user.role === "admin" && user.active !== false) || USERS.admin
+  );
+  return [...getActiveEmployees(), admin];
+}
+
+function getLastAccessUserId() {
+  return localStorage.getItem(LAST_USER_KEY) || USERS.employee.id;
+}
+
+function setAccessLocked(isLocked) {
+  document.body.classList.toggle("auth-locked", isLocked);
+  $("accessScreen")?.classList.toggle("hidden", !isLocked);
+}
+
+function selectAccessUser(userId) {
+  const users = getAccessUsers();
+  const selected = users.find((user) => user.id === userId) || users[0] || getEmployeeSessionUser();
+  state.accessSelectedUserId = selected.id;
+  localStorage.setItem(LAST_USER_KEY, selected.id);
+
+  $$('[data-access-user]').forEach((button) => {
+    const active = button.dataset.accessUser === selected.id;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+
+  if ($("accessSelectedName")) {
+    $("accessSelectedName").textContent = selected.role === "admin" ? "Cuenta administrativa" : "Cuenta de mostrador";
+  }
+
+  if ($("accessPinLabelText")) {
+    $("accessPinLabelText").textContent = selected.role === "admin" ? "PIN administrador" : "PIN personal";
+  }
+
+  if ($("accessLoginBtn")) {
+    $("accessLoginBtn").textContent = selected.role === "admin" ? "Entrar al panel" : "Entrar";
+  }
+}
+
+function renderAccessScreen() {
+  const list = $("accessUserList");
+  if (!list) return;
+
+  const users = getAccessUsers();
+  list.innerHTML = users
+    .map((user) => {
+      const isAdmin = user.role === "admin";
+      const initial = isAdmin ? "A" : ((user.name || "E").trim().charAt(0).toUpperCase() || "E");
+      return [
+        '<button class="access-user-card ' + (isAdmin ? 'admin' : '') + '" type="button" data-access-user="' + escapeHtml(user.id) + '">',
+        '<span>' + escapeHtml(initial) + '</span>',
+        '<strong>' + escapeHtml(user.name) + '</strong>',
+        '</button>'
+      ].join('');
+    })
+    .join("");
+
+  $$('[data-access-user]').forEach((button) => {
+    button.addEventListener("click", () => selectAccessUser(button.dataset.accessUser));
+  });
+
+  const lastUser = users.some((user) => user.id === state.accessSelectedUserId)
+    ? state.accessSelectedUserId
+    : getLastAccessUserId();
+  selectAccessUser(lastUser);
+  updateAccessStatus();
+}
+function updateAccessStatus() {
+  if ($("accessServerStatus")) {
+    $("accessServerStatus").textContent = "Servidor listo";
+  }
+
+  if ($("accessScaleStatus")) {
+    $("accessScaleStatus").textContent = scaleState.connected
+      ? "Bascula conectada"
+      : scaleState.supported
+        ? "Bascula lista"
+        : "Bascula no disponible en este navegador";
+  }
+}
+
+function appendAccessPin(value) {
+  const input = $("accessPinInput");
+  if (!input) return;
+  input.value = `${input.value || ""}${value}`.slice(0, 12);
+  input.focus();
+}
+
+function backspaceAccessPin() {
+  const input = $("accessPinInput");
+  if (!input) return;
+  input.value = input.value.slice(0, -1);
+  input.focus();
+}
+
+function clearAccessPin() {
+  if ($("accessPinInput")) {
+    $("accessPinInput").value = "";
+    $("accessPinInput").focus();
+  }
+}
+
+async function confirmAccessLogin() {
+  const userId = String(state.accessSelectedUserId || $("employeeUserSelect")?.value || "").trim();
+  const pin = String($("accessPinInput")?.value || "").trim();
+  const selectedUser = getAccessUsers().find((user) => user.id === userId);
+
+  if (!selectedUser || !pin) {
+    showToast("Selecciona usuario e ingresa tu PIN.");
+    $("accessPinInput")?.focus();
+    return;
+  }
+
+  const button = $("accessLoginBtn");
+  if (button) button.disabled = true;
+
+  try {
+    const result = selectedUser.role === "admin"
+      ? await verifyAdminPin(pin)
+      : await fetchJson("/api/auth/employee", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, pin })
+        });
+
+    applyPublicSettings(result.settings);
+    state.adminPin = selectedUser.role === "admin" ? pin : "";
+    state.sessionToken = result.sessionToken || "";
+    state.sessionAuthenticated = Boolean(state.sessionToken);
+    saveSessionToken(state.sessionToken);
+    setCurrentUser(result.user);
+    state.employeeLoginRequired = false;
+    await loadCashSessions();
+    clearAccessPin();
+    setAccessLocked(false);
+    setView(selectedUser.role === "admin" ? "dashboard" : "pos");
+    showToast("Sesion iniciada: " + result.user.name + ".");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Usuario o PIN incorrecto.");
+    $("accessPinInput")?.focus();
+    $("accessPinInput")?.select();
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+function logoutToAccess() {
+  state.adminPin = "";
+  state.sessionToken = "";
+  state.sessionAuthenticated = false;
+  state.employeeLoginRequired = true;
+  state.cashSessions = [];
+  state.currentCashSession = null;
+  clearStoredAuthSession();
+  renderAccessScreen();
+  setAccessLocked(true);
+  updateShellState();
+  window.setTimeout(() => $("accessPinInput")?.focus(), 0);
+}
 function renderEmployeeLogin() {
   const select = $("employeeUserSelect");
   if (!select) return;
@@ -222,17 +498,7 @@ function renderEmployeeLogin() {
 
 function openEmployeeAccess(required = false) {
   state.employeeLoginRequired = required || !state.sessionAuthenticated;
-  renderEmployeeLogin();
-
-  if ($("employeePinInput")) $("employeePinInput").value = "";
-  if ($("employeeAuthMessage")) {
-    $("employeeAuthMessage").textContent = state.employeeLoginRequired
-      ? "Selecciona tu nombre e ingresa tu PIN personal."
-      : "Cambia de empleado o entra como administrador.";
-  }
-
-  $("employeeAuthModal")?.classList.remove("hidden");
-  window.setTimeout(() => $("employeePinInput")?.focus(), 0);
+  logoutToAccess();
 }
 
 function closeEmployeeAccess() {
@@ -269,9 +535,10 @@ async function confirmEmployeeAccess() {
     state.adminPin = "";
     state.sessionToken = result.sessionToken || "";
     state.sessionAuthenticated = Boolean(state.sessionToken);
-    sessionStorage.setItem(SESSION_TOKEN_KEY, state.sessionToken);
+    saveSessionToken(state.sessionToken);
     setCurrentUser(result.user);
     state.employeeLoginRequired = false;
+    await loadCashSessions();
     $("employeeAuthModal")?.classList.add("hidden");
     setView("pos");
     showToast(`Sesión iniciada: ${result.user.name}.`);
@@ -324,9 +591,10 @@ async function confirmAdminAccess() {
     state.adminPin = pin;
     state.sessionToken = result.sessionToken || "";
     state.sessionAuthenticated = Boolean(state.sessionToken);
-    sessionStorage.setItem(SESSION_TOKEN_KEY, state.sessionToken);
+    saveSessionToken(state.sessionToken);
     applyPublicSettings(result.settings);
     setCurrentUser(result.user || USERS.admin);
+    await loadCashSessions();
     $("employeeAuthModal")?.classList.add("hidden");
     closeAuthModal();
     showToast("Modo administrador activo.");
@@ -347,47 +615,17 @@ async function confirmAdminAccess() {
 }
 
 function useEmployeeSession() {
-  state.adminPin = "";
-  state.sessionToken = "";
-  sessionStorage.removeItem(SESSION_KEY);
-  sessionStorage.removeItem(SESSION_TOKEN_KEY);
-  state.sessionAuthenticated = false;
   closeAuthModal();
-  openEmployeeAccess(true);
-}
-
-function getCashShiftTimestamp(shift) {
-  return new Date(shift?.closedAt || shift?.openedAt || 0).getTime() || 0;
-}
-
-function mergeCashShifts(...shiftGroups) {
-  const shiftMap = new Map();
-
-  shiftGroups.flat().forEach((shift) => {
-    if (!shift?.id) return;
-
-    const current = shiftMap.get(shift.id);
-    const shouldReplace =
-      !current ||
-      (shift.status === "closed" && current.status !== "closed") ||
-      getCashShiftTimestamp(shift) >= getCashShiftTimestamp(current);
-
-    if (shouldReplace) {
-      shiftMap.set(shift.id, shift);
-    }
-  });
-
-  return [...shiftMap.values()].sort((a, b) => {
-    return getCashShiftTimestamp(a) - getCashShiftTimestamp(b);
-  });
+  logoutToAccess();
 }
 
 const storedSessionUser = loadStoredSession();
-const storedSessionToken = sessionStorage.getItem(SESSION_TOKEN_KEY) || "";
+const storedSessionToken = loadStoredSessionToken();
 
 const state = {
   products: [],
   sales: [],
+  inventoryEntries: [],
   currentUser: storedSessionUser || normalizeSessionUser(USERS.employee),
   sessionToken: storedSessionToken,
   sessionAuthenticated: Boolean(storedSessionUser && storedSessionToken),
@@ -415,8 +653,8 @@ const state = {
   selectedSaleId: null,
   productConfirmResolver: null,
   posStep: "product",
-  cashShifts: loadStoredCashShifts(),
-  cashCounterVisible: false,
+  cashSessions: [],
+  currentCashSession: null,
   currentCutTotals: {
     total: 0,
     profit: 0,
@@ -469,6 +707,179 @@ function money(value) {
   });
 }
 
+
+function roundCurrency(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function closeTicketDrawer() {
+  if (state.activeView === "pos" && !state.ticketCollapsed) {
+    setPosStep("product");
+  }
+}
+
+function handleTicketOutsideClick(event) {
+  if (state.activeView !== "pos" || state.ticketCollapsed) return;
+  const target = event.target;
+  if (
+    target.closest(".ticket-panel") ||
+    target.closest("#ticketToggleBtn") ||
+    target.closest("#ticketSideToggleBtn") ||
+    target.closest(".modal")
+  ) {
+    return;
+  }
+  closeTicketDrawer();
+}
+
+function getManualQuantityValue() {
+  const product = state.selectedProduct;
+  const value = String($("manualQuantityInput")?.value || "").trim();
+  if (product?.unit === "kg") return Number(value.replace(",", ".") || 0);
+  return Number(value.replace(/\D/g, "") || 0);
+}
+
+function formatManualQuantityInput() {
+  const input = $("manualQuantityInput");
+  const product = state.selectedProduct;
+  if (!input || !product) return;
+
+  if (product.unit === "kg") {
+    const digits = input.value.replace(/\D/g, "").slice(0, 6);
+    input.dataset.rawDigits = digits;
+    input.value = (Number(digits || 0) / 1000).toFixed(3);
+    input.setSelectionRange(input.value.length, input.value.length);
+    return;
+  }
+
+  const digits = input.value.replace(/\D/g, "").slice(0, 3);
+  input.value = digits || "1";
+  input.setSelectionRange(input.value.length, input.value.length);
+}
+
+function updateManualQuantityUi() {
+  const product = state.selectedProduct;
+  const isKg = product?.unit === "kg";
+  if ($("manualQuantityLabelText")) {
+    $("manualQuantityLabelText").textContent = isKg ? "Peso manual (kg)" : "Cantidad (pzas)";
+  }
+  if ($("manualQuantityHint")) {
+    $("manualQuantityHint").textContent = isKg
+      ? "Escribe gramos: 1250 = 1.250 kg."
+      : "Escribe el numero de piezas.";
+  }
+  if ($("manualQuantityInput")) {
+    $("manualQuantityInput").placeholder = isKg ? "0.000" : "1";
+    $("manualQuantityInput").inputMode = isKg ? "numeric" : "numeric";
+  }
+}
+
+function setPaymentMethod(method = "efectivo") {
+  const nextMethod = ["efectivo", "tarjeta", "transferencia"].includes(method) ? method : "efectivo";
+  state.paymentMethod = nextMethod;
+  $$(".pay-method").forEach((button) => {
+    button.classList.toggle("active", button.dataset.method === nextMethod);
+  });
+  updatePaymentUi();
+}
+
+function updatePaymentUi() {
+  const panel = $("paymentReferencePanel");
+  const input = $("paymentReferenceInput");
+  const label = $("paymentReferenceLabel");
+  const requiresReference = state.paymentMethod === "tarjeta" || state.paymentMethod === "transferencia";
+
+  if (panel) panel.hidden = !requiresReference;
+  if (!input) return;
+
+  if (!requiresReference) {
+    input.value = "";
+    state.paymentReference = "";
+    return;
+  }
+
+  if (label) {
+    label.textContent = state.paymentMethod === "tarjeta"
+      ? "Autorizacion de tarjeta"
+      : "Referencia de transferencia";
+  }
+  input.placeholder = state.paymentMethod === "tarjeta"
+    ? "Ej. voucher, ultimos 4 o autorizacion"
+    : "Ej. folio, cuenta o banco";
+}
+
+function restoreContextTabs(tabs) {
+  const home = tabs?.__homePlaceholder;
+  if (home?.parentNode && tabs.parentElement !== home.parentNode) {
+    home.parentNode.insertBefore(tabs, home);
+  }
+}
+
+function syncTopbarContext() {
+  const slot = $("topbarContextSlot");
+  if (!slot) return;
+
+  const nextTabs =
+    state.activeView === "inventory"
+      ? document.querySelector(".inventory-subview-tabs")
+      : state.activeView === "products"
+        ? document.querySelector(".product-subview-tabs")
+        : null;
+
+  if (syncTopbarContext.currentTabs && syncTopbarContext.currentTabs !== nextTabs) {
+    restoreContextTabs(syncTopbarContext.currentTabs);
+  }
+
+  if (nextTabs) {
+    if (!nextTabs.__homePlaceholder) {
+      nextTabs.__homePlaceholder = document.createComment("topbar-tabs-home");
+      nextTabs.parentNode.insertBefore(nextTabs.__homePlaceholder, nextTabs);
+    }
+
+    if (nextTabs.parentElement !== slot) {
+      slot.appendChild(nextTabs);
+    }
+  }
+
+  syncTopbarContext.currentTabs = nextTabs || null;
+  document.body.classList.toggle("has-topbar-context", Boolean(nextTabs));
+}
+
+function setProductMode(mode = "list") {
+  const validMode = ["list", "form"].includes(mode) ? mode : "list";
+  const root = document.querySelector(".products-layout");
+  if (root) root.dataset.productsMode = validMode;
+
+  $$('[data-products-mode-btn]').forEach((button) => {
+    const isActive = button.dataset.productsModeBtn === validMode;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+
+  syncTopbarContext();
+}
+function setInventoryMode(mode = "stock") {
+  const validMode = ["entry", "stock", "history"].includes(mode) ? mode : "stock";
+  const root = document.querySelector(".inventory-management-layout");
+  if (root) root.dataset.inventoryMode = validMode;
+
+  $$('[data-inventory-mode-btn]').forEach((button) => {
+    const isActive = button.dataset.inventoryModeBtn === validMode;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+
+  syncTopbarContext();
+}
+
+function setSettingsMode(mode = "scale") {
+  const validMode = ["scale", "users"].includes(mode) ? mode : "scale";
+  const root = document.querySelector(".settings-layout");
+  if (root) root.dataset.settingsMode = validMode;
+  $$('[data-settings-mode-btn]').forEach((button) => {
+    button.classList.toggle("active", button.dataset.settingsModeBtn === validMode);
+  });
+}
 function quantityText(quantity, unit) {
   return unit === "kg"
     ? `${Number(quantity || 0).toFixed(3)} kg`
@@ -578,10 +989,24 @@ function updateClock() {
   const clockText = $("clockText");
   if (!clockText) return;
 
-  clockText.textContent = new Date().toLocaleTimeString("es-MX", {
+  const parts = new Intl.DateTimeFormat("es-MX", {
     hour: "2-digit",
-    minute: "2-digit"
-  });
+    minute: "2-digit",
+    hour12: true
+  }).formatToParts(new Date());
+
+  const hour = parts.find((part) => part.type === "hour")?.value || "--";
+  const minute = parts.find((part) => part.type === "minute")?.value || "--";
+  const period = (parts.find((part) => part.type === "dayPeriod")?.value || "")
+    .replace(/\./g, "")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+
+  clockText.innerHTML = `
+    <span class="sidebar-clock-time">${hour}:${minute}</span>
+    <span class="sidebar-clock-period">${period}</span>
+  `;
+  clockText.setAttribute("aria-label", `${hour}:${minute} ${period}`.trim());
 }
 
 function estimateNextTicketId() {
@@ -594,10 +1019,12 @@ function estimateNextTicketId() {
 }
 
 function updateTicketId() {
+  const nextTicketId = estimateNextTicketId();
   const ticketId = $("ticketId");
-  if (ticketId) {
-    ticketId.textContent = estimateNextTicketId();
-  }
+  const drawerTicketId = $("drawerTicketId");
+
+  if (ticketId) ticketId.textContent = nextTicketId;
+  if (drawerTicketId) drawerTicketId.textContent = nextTicketId;
 }
 
 function getTicketTotal() {
@@ -606,10 +1033,12 @@ function getTicketTotal() {
 }
 
 function setPosStep(step) {
-  const nextStep = ["product", "checkout"].includes(step) ? step : "product";
+  const openTicket = step === "checkout";
 
-  state.posStep = nextStep;
-  state.ticketCollapsed = nextStep !== "checkout";
+  // El catálogo permanece siempre en el mismo estado visual. Abrir la venta
+  // únicamente muestra el drawer, sin activar un layout alterno de checkout.
+  state.posStep = "product";
+  state.ticketCollapsed = !openTicket;
   localStorage.setItem("ticketCollapsed", String(state.ticketCollapsed));
   updateShellState();
 }
@@ -668,15 +1097,16 @@ function updateShellState() {
     const isCompactTopbar = window.innerWidth < 760;
     ticketButton.textContent =
       isCompactTopbar
-        ? `${count} · ${money(getTicketTotal())}`
-        : `Venta · ${countText} · ${money(getTicketTotal())}`;
-    ticketButton.setAttribute(
-      "aria-label",
-      state.activeView === "pos" && state.posStep === "checkout"
-        ? "Volver a seleccionar productos"
-        : "Ver venta actual"
-    );
-    ticketButton.classList.toggle("active", state.activeView === "pos" && state.posStep === "checkout");
+        ? `${count} - ${money(getTicketTotal())}`
+        : `Venta - ${countText} - ${money(getTicketTotal())}`;
+    const isTicketOpen = state.activeView === "pos" && !state.ticketCollapsed;
+    const ticketLabel = isTicketOpen
+      ? "Cerrar venta actual"
+      : "Abrir venta actual";
+    ticketButton.setAttribute("aria-label", ticketLabel);
+    ticketButton.setAttribute("title", ticketLabel);
+    ticketButton.setAttribute("aria-expanded", String(isTicketOpen));
+    ticketButton.classList.toggle("active", isTicketOpen);
   }
 
   if (ticketSideButton) {
@@ -699,16 +1129,62 @@ function updateShellState() {
     button.classList.toggle("active", isActive);
     button.setAttribute("aria-current", isActive ? "step" : "false");
   });
+  syncTopbarContext();
+}
+
+let sidebarAnimationTimer = 0;
+
+function syncSidebarToggleUi() {
+  const sidebarButton = $("sidebarToggleBtn");
+  const mobileSidebarButton = $("mobileSidebarToggleBtn");
+  const sidebarToggleIcon = $("sidebarToggleIcon");
+  const actionLabel = state.sidebarCollapsed ? "Mostrar menú" : "Ocultar menú";
+
+  if (sidebarButton) {
+    sidebarButton.setAttribute("aria-label", actionLabel);
+    sidebarButton.setAttribute("title", actionLabel);
+  }
+
+  if (mobileSidebarButton) {
+    mobileSidebarButton.textContent = state.sidebarCollapsed ? "›" : "‹";
+    mobileSidebarButton.setAttribute("aria-label", actionLabel);
+    mobileSidebarButton.setAttribute("title", actionLabel);
+  }
+
+  if (sidebarToggleIcon) {
+    sidebarToggleIcon.textContent = state.sidebarCollapsed ? "›" : "‹";
+  }
 }
 
 function toggleSidebar() {
-  state.sidebarCollapsed = !state.sidebarCollapsed;
-  localStorage.setItem("sidebarCollapsed", String(state.sidebarCollapsed));
-  updateShellState();
+  const nextCollapsed = !state.sidebarCollapsed;
+
+  state.sidebarCollapsed = nextCollapsed;
+  localStorage.setItem("sidebarCollapsed", String(nextCollapsed));
+
+  clearTimeout(sidebarAnimationTimer);
+  document.body.classList.remove("sidebar-expanding", "sidebar-collapsing");
+  document.body.classList.add(
+    "sidebar-transitioning",
+    nextCollapsed ? "sidebar-collapsing" : "sidebar-expanding"
+  );
+
+  requestAnimationFrame(() => {
+    document.body.classList.toggle("sidebar-collapsed", nextCollapsed);
+    syncSidebarToggleUi();
+  });
+
+  sidebarAnimationTimer = window.setTimeout(() => {
+    document.body.classList.remove(
+      "sidebar-transitioning",
+      "sidebar-expanding",
+      "sidebar-collapsing"
+    );
+  }, 280);
 }
 
 function toggleTicketPanel(forceOpen = false) {
-  if (forceOpen || state.posStep !== "checkout") {
+  if (forceOpen || state.ticketCollapsed) {
     setPosStep("checkout");
     return;
   }
@@ -741,7 +1217,7 @@ function setView(viewName) {
   if (viewName === "dashboard") loadDashboard();
   if (viewName === "billing") loadRecentSales();
   if (viewName === "reports") loadCashCut();
-  if (viewName === "inventory") renderInventory();
+  if (viewName === "inventory") loadInventoryEntries();
   if (viewName === "products") renderAdminProducts();
   if (viewName === "settings") {
     updateScaleUi();
@@ -761,8 +1237,16 @@ async function fetchJson(url, options = {}) {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.message || "No se pudo completar la operación.");
+    const payload = await response.json().catch(() => ({}));
+    const error = new Error(payload.message || "No se pudo completar la operación.");
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+
+  if (state.sessionAuthenticated && state.sessionToken) {
+    refreshStoredSessionExpiry();
+    scheduleSessionExpiryLogout();
   }
 
   return response.json();
@@ -812,8 +1296,8 @@ function applyPublicSettings(settings = {}) {
   }
 
   renderSessionUi();
-  if (!$("employeeAuthModal")?.classList.contains("hidden")) {
-    renderEmployeeLogin();
+  if ($("accessScreen") && !$("accessScreen").classList.contains("hidden")) {
+    renderAccessScreen();
   }
 }
 
@@ -849,16 +1333,27 @@ async function restoreAuthSession() {
 
   try {
     const result = await fetchJson("/api/auth/session");
+
+    if (result.authenticated === false || !result.user) {
+      state.sessionToken = "";
+      state.sessionAuthenticated = false;
+      clearStoredAuthSession();
+      return false;
+    }
+
     applyPublicSettings(result.settings);
     state.sessionAuthenticated = true;
+    saveSessionToken(state.sessionToken);
     setCurrentUser(result.user);
     return true;
   } catch (error) {
-    console.warn(error.message || error);
+    if (error?.status !== 401) {
+      console.warn(error.message || error);
+    }
+
     state.sessionToken = "";
     state.sessionAuthenticated = false;
-    sessionStorage.removeItem(SESSION_KEY);
-    sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    clearStoredAuthSession();
     return false;
   }
 }
@@ -1110,20 +1605,29 @@ async function saveUserSettings() {
   }
 }
 
-async function loadCashShifts() {
-  try {
-    const serverShifts = await fetchJson("/api/cash-shifts");
-    state.cashShifts = mergeCashShifts(serverShifts, loadStoredCashShifts());
-    localStorage.setItem(CASH_SHIFTS_KEY, JSON.stringify(state.cashShifts));
+async function loadCashSessions() {
+  if (!state.sessionAuthenticated) {
+    state.cashSessions = [];
+    state.currentCashSession = null;
+    updateCashGateUi();
+    return;
+  }
 
-    if (state.cashShifts.length !== serverShifts.length) {
-      saveCashShifts();
-    }
+  try {
+    state.cashSessions = await fetchJson("/api/cash-sessions");
+    state.currentCashSession = state.cashSessions.find((session) => session.status === "open") || null;
+    renderCashRegister();
+    renderCashHistory();
+    updateCashGateUi();
   } catch (error) {
-    console.warn("No se pudieron sincronizar los cortes.", error);
-    state.cashShifts = loadStoredCashShifts();
+    console.error(error);
+    state.cashSessions = [];
+    state.currentCashSession = null;
+    updateCashGateUi();
+    showToast(error.message || "No se pudo cargar el estado de caja.");
   }
 }
+
 
 async function loadProducts() {
   try {
@@ -1133,7 +1637,11 @@ async function loadProducts() {
     renderProducts();
     renderWeighPanel();
     renderAdminProducts();
+    renderInventoryEntryProductOptions();
     renderInventory();
+    renderInventorySummary();
+    updateProductProjection();
+    updateInventoryEntryProjection();
     if (state.activeView === "dashboard") renderDashboard();
   } catch (error) {
     console.error(error);
@@ -1144,8 +1652,10 @@ async function loadProducts() {
 async function loadSales() {
   try {
     state.sales = await fetchJson("/api/sales");
+    await loadCashSessions();
     updateTicketId();
     renderProducts();
+    renderInventory();
     if (state.activeView === "dashboard") renderDashboard();
   } catch (error) {
     console.error(error);
@@ -1174,13 +1684,10 @@ function renderCategories() {
   categoryGrid.innerHTML = getCategories()
     .map((category) => {
       const label = category === "all" ? "Todos" : category;
-      const description =
-        category === "all" ? "Catálogo completo" : categoryDescriptions[category] || "Producto";
 
       return `
         <button class="category-card ${state.activeCategory === category ? "active" : ""}" type="button" data-category="${escapeHtml(category)}">
           <strong>${escapeHtml(label)}</strong>
-          <span>${escapeHtml(description)}</span>
         </button>
       `;
     })
@@ -1361,7 +1868,7 @@ function addCurrentProductToTicket({ nextStep = "checkout" } = {}) {
   }
 
   if (product.unit === "kg" && quantity > MAX_SCALE_WEIGHT_KG) {
-    showToast(`Peso máximo permitido: ${MAX_SCALE_WEIGHT_KG.toFixed(0)} kg.`);
+    showToast(`Peso maximo permitido: ${MAX_SCALE_WEIGHT_KG.toFixed(0)} kg.`);
     return;
   }
 
@@ -1369,27 +1876,45 @@ function addCurrentProductToTicket({ nextStep = "checkout" } = {}) {
 
   const price = Number(product.price || 0);
   const costPrice = Number(product.costPrice || 0);
-  const total = Math.round(quantity * price * 100) / 100;
-  const lineCost = Math.round(quantity * costPrice * 100) / 100;
+  const total = roundCurrency(quantity * price);
+  const lineCost = roundCurrency(quantity * costPrice);
+  const existingIndex = product.unit === "pieza"
+    ? state.ticket.findIndex((item) => item.productId === product.id && item.unit === product.unit && Number(item.price) === price)
+    : -1;
+  let toastMessage = "Producto agregado.";
 
-  state.ticket.push({
-    productId: product.id,
-    name: product.name,
-    category: product.category,
-    unit: product.unit,
-    price,
-    costPrice,
-    quantity,
-    total,
-    lineCost,
-    grossProfit: Math.round((total - lineCost) * 100) / 100,
-    source: state.quantitySource
-  });
+  if (existingIndex >= 0) {
+    const existing = state.ticket[existingIndex];
+    const nextQuantity = Number(existing.quantity || 0) + quantity;
+    existing.quantity = nextQuantity;
+    existing.total = roundCurrency(nextQuantity * price);
+    existing.lineCost = roundCurrency(nextQuantity * costPrice);
+    existing.grossProfit = roundCurrency(existing.total - existing.lineCost);
+    existing.source = state.quantitySource;
+    toastMessage = `${product.name}: ${quantityText(nextQuantity, product.unit)} en venta.`;
+  } else {
+    state.ticket.push({
+      productId: product.id,
+      name: product.name,
+      category: product.category,
+      unit: product.unit,
+      price,
+      costPrice,
+      quantity,
+      total,
+      lineCost,
+      grossProfit: roundCurrency(total - lineCost),
+      source: state.quantitySource
+    });
+    toastMessage = product.unit === "pieza"
+      ? `${product.name}: ${quantityText(quantity, product.unit)} en venta.`
+      : "Producto agregado.";
+  }
 
   clearSelectedProduct();
   renderTicket();
   setPosStep(nextStep);
-  showToast("Producto agregado.");
+  showToast(toastMessage);
 }
 
 function renderTicket() {
@@ -1431,19 +1956,24 @@ function updateTotals() {
   const count = state.ticket.length;
   const cashOpen = hasOpenCashForSales();
 
-  $("subtotalText").textContent = money(subtotal);
-  $("discountText").textContent = money(state.discount);
-  $("totalText").textContent = money(total);
-  $("saleBarTotal").textContent = money(total);
-  $("saleBarCount").textContent =
-    count === 0 ? "Sin productos" : `${count} producto${count === 1 ? "" : "s"}`;
-  $("chargeBtn").textContent = cashOpen
-    ? `Cobrar ${money(total)}`
-    : count === 0
-      ? "Abrir caja para vender"
-      : "Abrir caja para cobrar";
-  $("chargeBtn").disabled = count === 0 || !cashOpen;
-  $("clearTicketBtn").disabled = count === 0;
+  const saleLabel = count === 0 ? "Sin productos" : `${count} producto${count === 1 ? "" : "s"}`;
+
+  if ($("subtotalText")) $("subtotalText").textContent = money(subtotal);
+  if ($("discountText")) $("discountText").textContent = money(state.discount);
+  if ($("totalText")) $("totalText").textContent = money(total);
+  if ($("saleBarCount")) $("saleBarCount").textContent = saleLabel;
+  if ($("ticketToggleBtn")) {
+    $("ticketToggleBtn").textContent = `Venta - ${count} - ${money(total)}`;
+  }
+  if ($("chargeBtn")) {
+    $("chargeBtn").textContent = cashOpen
+      ? `Cobrar ${money(total)}`
+      : count === 0
+        ? "Abrir caja para vender"
+        : "Abrir caja para cobrar";
+    $("chargeBtn").disabled = count === 0 || !cashOpen;
+  }
+  if ($("clearTicketBtn")) $("clearTicketBtn").disabled = count === 0;
   updateCashGateUi();
   updateShellState();
 }
@@ -1466,11 +1996,15 @@ function openManualModal() {
     return;
   }
 
+  const quantityInput = $("manualQuantityInput");
   $("adminPinInput").value = isAdminUser() ? state.adminPin : "";
-  $("manualQuantityInput").value = state.selectedProduct.unit === "pieza" ? "1" : "";
-  $("manualQuantityInput").step = state.selectedProduct.unit === "kg" ? "0.001" : "1";
+  quantityInput.value = state.selectedProduct.unit === "pieza" ? "1" : "0.000";
+  quantityInput.dataset.rawDigits = state.selectedProduct.unit === "kg" ? "" : "1";
+  updateManualQuantityUi();
   $("manualModal").classList.remove("hidden");
-  (isAdminUser() ? $("manualQuantityInput") : $("adminPinInput"))?.focus();
+  const focusTarget = isAdminUser() ? quantityInput : $("adminPinInput");
+  focusTarget?.focus();
+  focusTarget?.select?.();
 }
 
 function closeManualModal() {
@@ -1479,7 +2013,7 @@ function closeManualModal() {
 
 async function saveManualQuantity() {
   const pin = $("adminPinInput").value.trim();
-  const quantity = Number($("manualQuantityInput").value || 0);
+  const quantity = getManualQuantityValue();
 
   if (!isAdminUser()) {
     try {
@@ -1542,6 +2076,19 @@ async function chargeSale(invoiceRequested = false) {
     return;
   }
 
+  const requiresReference = state.paymentMethod === "tarjeta" || state.paymentMethod === "transferencia";
+  const referenceInput = $("paymentReferenceInput");
+  state.paymentReference = String(referenceInput?.value || state.paymentReference || "").trim();
+
+  if (requiresReference && !state.paymentReference) {
+    closeInvoiceDecisionModal();
+    setPosStep("checkout");
+    updatePaymentUi();
+    showToast(state.paymentMethod === "tarjeta" ? "Captura la autorizacion de la tarjeta." : "Captura la referencia de transferencia.");
+    window.setTimeout(() => referenceInput?.focus(), 80);
+    return;
+  }
+
   const subtotal = state.ticket.reduce((sum, item) => sum + Number(item.total || 0), 0);
   const total = Math.max(subtotal - state.discount, 0);
 
@@ -1554,12 +2101,15 @@ async function chargeSale(invoiceRequested = false) {
       body: JSON.stringify({
         items: state.ticket,
         paymentMethod: state.paymentMethod,
+        paymentDetails: {
+          reference: state.paymentReference
+        },
         subtotal,
         discount: state.discount,
         total,
         invoiceRequested,
-        cashShiftId: cashShift.id,
-        cashShiftDate: cashShift.date
+        cashSessionId: cashShift.id,
+        businessDate: cashShift.businessDate
       })
     });
 
@@ -1567,6 +2117,9 @@ async function chargeSale(invoiceRequested = false) {
 
     state.ticket = [];
     state.discount = 0;
+    state.paymentReference = "";
+    if (referenceInput) referenceInput.value = "";
+    setPaymentMethod("efectivo");
     state.sales.push(sale);
     closeInvoiceDecisionModal();
     renderTicket();
@@ -1574,6 +2127,7 @@ async function chargeSale(invoiceRequested = false) {
     setPosStep("product");
     await loadProducts();
     updateTicketId();
+    await loadCashSessions();
     renderCashRegister();
 
     showToast(`Venta ${sale.id} guardada.`);
@@ -1605,19 +2159,25 @@ function buildReceipt(sale, invoiceRequested = false) {
       `;
     })
     .join("");
+  const paymentReference = String(sale.paymentDetails?.reference || sale.paymentReference || "").trim();
+  const referenceHtml = paymentReference
+    ? `<div class="receipt-row"><span>Referencia</span><strong>${escapeHtml(paymentReference)}</strong></div>`
+    : "";
 
   $("printArea").innerHTML = `
     <div class="receipt">
+      <img class="receipt-logo" src="/assets/brand/el-muelle-logo.png" alt="El Muelle" />
       <h1>EL MUELLE</h1>
-      <h2>Marisquería</h2>
-      <p>${escapeHtml(sale.id)} · ${new Date(sale.createdAt).toLocaleString("es-MX")}</p>
+      <h2>Pescaderia</h2>
+      <p>${escapeHtml(sale.id)} - ${new Date(sale.createdAt).toLocaleString("es-MX")}</p>
       <div class="line"></div>
       ${itemsHtml}
       <div class="line"></div>
       <div class="receipt-row"><span>Subtotal</span><strong>${money(sale.subtotal)}</strong></div>
       <div class="receipt-row"><span>Total</span><strong>${money(sale.total)}</strong></div>
       <div class="receipt-row"><span>Pago</span><strong>${escapeHtml(getPaymentLabel(sale.paymentMethod))}</strong></div>
-      <div class="receipt-row"><span>Atendió</span><strong>${escapeHtml(sale.operator?.name || state.currentUser?.name || "Mostrador")}</strong></div>
+      ${referenceHtml}
+      <div class="receipt-row"><span>Atendio</span><strong>${escapeHtml(sale.operator?.name || state.currentUser?.name || "Encargado")}</strong></div>
       <div class="line"></div>
       <p>${invoiceRequested ? "Factura pendiente de datos fiscales." : "Gracias por su compra."}</p>
     </div>
@@ -1645,6 +2205,50 @@ function closeProductConfirm(value = false) {
   }
 }
 
+function calculateFinancialProjection(quantity, unitCost, salePrice) {
+  const normalizedQuantity = Math.max(Number(quantity || 0), 0);
+  const normalizedCost = Math.max(Number(unitCost || 0), 0);
+  const normalizedPrice = Math.max(Number(salePrice || 0), 0);
+  const investment = normalizedQuantity * normalizedCost;
+  const revenue = normalizedQuantity * normalizedPrice;
+  const profit = revenue - investment;
+  const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+
+  return {
+    quantity: normalizedQuantity,
+    unitCost: normalizedCost,
+    salePrice: normalizedPrice,
+    investment,
+    revenue,
+    profit,
+    margin,
+    unitProfit: normalizedPrice - normalizedCost
+  };
+}
+
+function updateProductProjection() {
+  if (!$('productInvestmentTotal')) return;
+
+  const projection = calculateFinancialProjection(
+    $('productStockInput')?.value,
+    $('productCostInput')?.value,
+    $('productPriceInput')?.value
+  );
+  const unit = getUnitLabel($('productUnitInput')?.value || 'kg');
+
+  const hasUsefulData = projection.quantity > 0 && projection.unitCost > 0 && projection.salePrice > 0;
+
+  $('productInvestmentTotal').textContent = money(projection.investment);
+  $('productProjectedRevenue').textContent = money(projection.revenue);
+  $('productProjectedProfit').textContent = hasUsefulData ? money(projection.profit) : 'Pendiente';
+  $('productMarginPercent').textContent = hasUsefulData ? `${projection.margin.toFixed(2)}%` : 'Pendiente';
+  $('productUnitProfit').textContent = hasUsefulData ? `${money(projection.unitProfit)} / ${unit}` : 'Pendiente';
+  $('productProjectionStatus').textContent = hasUsefulData
+    ? `${quantityText(projection.quantity, $('productUnitInput')?.value || 'kg')} disponibles`
+    : 'Captura costo y existencia';
+  $('productProjectedProfit').classList.toggle('negative-value', hasUsefulData && projection.profit < 0);
+}
+
 function resetProductForm() {
   state.editingProductId = null;
   $("productForm").reset();
@@ -1653,6 +2257,7 @@ function resetProductForm() {
   $("productFormStatusTitle").textContent = "Agregar producto";
   $("productFormStatusText").textContent = "";
   $("saveProductBtn").textContent = "Guardar";
+  updateProductProjection();
 }
 
 function fillProductForm(product) {
@@ -1669,6 +2274,8 @@ function fillProductForm(product) {
   $("productFormStatusTitle").textContent = "Editar producto";
   $("productFormStatusText").textContent = "";
   $("saveProductBtn").textContent = "Actualizar";
+  updateProductProjection();
+  setProductMode("form");
   $("productNameInput").focus();
 }
 
@@ -1717,6 +2324,7 @@ async function saveProductFromAdmin(event) {
 
     await loadProducts();
     resetProductForm();
+    setProductMode("list");
     showToast(isEditing ? "Producto actualizado." : "Producto agregado.");
   } catch (error) {
     console.error(error);
@@ -1745,11 +2353,20 @@ function renderAdminProducts() {
     .map((product) => {
       const isActive = product.active !== false;
 
+      const stock = typeof product.stockQuantity === "number" ? Number(product.stockQuantity) : 0;
+      const projection = calculateFinancialProjection(stock, product.costPrice, product.price);
+      const stockLabel = typeof product.stockQuantity === "number"
+        ? quantityText(product.stockQuantity, product.unit)
+        : "Sin conteo";
+
       return `
         <article class="admin-row ${isActive ? "" : "muted-row"}">
-          <div>
+          <div class="admin-product-main">
             <strong>${escapeHtml(product.name)}</strong>
-            <span>${escapeHtml(product.category)} · ${money(product.costPrice || 0)} costo</span>
+            <span>${escapeHtml(product.category)} · Stock ${escapeHtml(stockLabel)}</span>
+            <small>${Number(product.costPrice || 0) > 0 && typeof product.stockQuantity === "number"
+              ? `Costo ${money(product.costPrice)} · Margen ${projection.margin.toFixed(2)}% · Ganancia inventario ${money(projection.profit)}`
+              : "Costo o existencia pendiente de capturar"}</small>
           </div>
           <b>${money(product.price)} / ${escapeHtml(getUnitLabel(product.unit))}</b>
           <span class="status-badge ${isActive ? "ok" : "off"}">${isActive ? "Activo" : "Inactivo"}</span>
@@ -1818,88 +2435,469 @@ function getStockStatus(product) {
   return ["Ok", "ok"];
 }
 
-function renderInventory() {
-  const list = $("inventoryList");
-  if (!list) return;
+function renderInventoryEntryProductOptions() {
+  const select = $("inventoryEntryProductInput");
+  if (!select) return;
 
-  const query = $("inventorySearchInput").value.trim().toLowerCase();
-  const category = $("inventoryCategoryFilter").value;
-  const filteredProducts = state.products.filter((product) => {
-    const matchesSearch = product.name.toLowerCase().includes(query);
-    const matchesCategory = category === "all" || product.category === category;
-    return matchesSearch && matchesCategory;
+  const currentValue = select.value;
+  const options = [...state.products]
+    .filter((product) => product.active !== false)
+    .sort((a, b) => a.name.localeCompare(b.name, "es"))
+    .map((product) => {
+      return `<option value="${escapeHtml(product.id)}">${escapeHtml(product.name)} · ${escapeHtml(getUnitLabel(product.unit))}</option>`;
+    })
+    .join("");
+
+  select.innerHTML = `<option value="">Selecciona un producto</option>${options}`;
+
+  if (state.products.some((product) => product.id === currentValue)) {
+    select.value = currentValue;
+  }
+}
+
+function getInventoryEntryMode() {
+  const form = $("inventoryEntryForm");
+  return form?.dataset.entryMode === "new" ? "new" : "existing";
+}
+
+function setInventoryEntryMode(mode = "existing") {
+  const entryMode = mode === "new" ? "new" : "existing";
+  const form = $("inventoryEntryForm");
+  if (form) form.dataset.entryMode = entryMode;
+
+  $$(`[data-entry-product-mode]`).forEach((button) => {
+    const isActive = button.dataset.entryProductMode === entryMode;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", String(isActive));
+    button.setAttribute("aria-pressed", String(isActive));
   });
 
-  if (filteredProducts.length === 0) {
-    list.innerHTML = `<p class="empty-state">No hay productos para mostrar.</p>`;
+  if (entryMode === "new" && $("inventoryEntryProductInput")) {
+    $("inventoryEntryProductInput").value = "";
+  }
+
+  updateInventoryEntryProjection();
+}
+
+function getInventoryNewProductDraft() {
+  const unitValue = $("inventoryNewProductUnitInput")?.value === "pieza" ? "pieza" : "kg";
+  const minStockValue = $("inventoryNewProductMinStockInput")?.value ?? "";
+
+  return {
+    id: "",
+    name: $("inventoryNewProductNameInput")?.value.trim() || "",
+    category: $("inventoryNewProductCategoryInput")?.value || "Pescados y mariscos",
+    unit: unitValue,
+    price: Number($("inventoryEntrySalePriceInput")?.value || 0),
+    costPrice: Number($("inventoryEntryUnitCostInput")?.value || 0),
+    stockQuantity: 0,
+    minStock: minStockValue === "" ? null : Number(minStockValue)
+  };
+}
+
+function getSelectedInventoryEntryProduct() {
+  const productId = $("inventoryEntryProductInput")?.value || "";
+  return state.products.find((product) => product.id === productId) || null;
+}
+
+function getInventoryEntryProductContext() {
+  return getInventoryEntryMode() === "new"
+    ? getInventoryNewProductDraft()
+    : getSelectedInventoryEntryProduct();
+}
+
+function populateInventoryEntryDefaults() {
+  if (getInventoryEntryMode() === "new") {
+    updateInventoryEntryProjection();
     return;
   }
 
-  list.innerHTML = filteredProducts
-    .map((product) => {
-      const [statusLabel, statusKind] = getStockStatus(product);
+  const product = getSelectedInventoryEntryProduct();
 
+  if (!product) {
+    updateInventoryEntryProjection();
+    return;
+  }
+
+  $("inventoryEntryUnitCostInput").value = Number(product.costPrice || 0) || "";
+  $("inventoryEntrySalePriceInput").value = Number(product.price || 0) || "";
+  updateInventoryEntryProjection();
+}
+
+function updateInventoryEntryProjection() {
+  if (!$("entryPurchaseTotal")) return;
+
+  const isNewProduct = getInventoryEntryMode() === "new";
+  const product = getInventoryEntryProductContext();
+  const quantity = Number($("inventoryEntryQuantityInput")?.value || 0);
+  const unitCost = Number($("inventoryEntryUnitCostInput")?.value || 0);
+  const salePrice = Number($("inventoryEntrySalePriceInput")?.value || 0);
+  const unit = product?.unit || "kg";
+  const currentStock = !isNewProduct && product && typeof product.stockQuantity === "number"
+    ? Number(product.stockQuantity)
+    : 0;
+  const currentCost = !isNewProduct && product ? Number(product.costPrice || 0) : 0;
+  const newStock = currentStock + Math.max(quantity, 0);
+  const currentValue = currentStock * currentCost;
+  const purchaseValue = Math.max(quantity, 0) * Math.max(unitCost, 0);
+  const weightedCost = newStock > 0 ? (currentValue + purchaseValue) / newStock : 0;
+  const projection = calculateFinancialProjection(quantity, unitCost, salePrice);
+  const hasProductContext = Boolean(product && (product.id || isNewProduct));
+  const displayName = product?.name || (isNewProduct ? "Producto nuevo" : "Selecciona un producto");
+  const metaText = hasProductContext
+    ? `${product.category || "Pescados y mariscos"} · Compra y venta por ${getUnitLabel(unit)}`
+    : "";
+
+  $("inventoryEntryProductName").textContent = displayName;
+  const inventoryEntryProductMeta = $("inventoryEntryProductMeta");
+  if (inventoryEntryProductMeta) {
+    inventoryEntryProductMeta.textContent = metaText;
+    inventoryEntryProductMeta.hidden = !metaText;
+  }
+  $("entryCurrentStock").textContent = quantityText(currentStock, unit);
+  $("entryCurrentCost").textContent = `${money(currentCost)} / ${getUnitLabel(unit)}`;
+  $("entryPurchaseTotal").textContent = money(projection.investment);
+  $("entryProjectedRevenue").textContent = money(projection.revenue);
+  $("entryProjectedProfit").textContent = money(projection.profit);
+  $("entryMargin").textContent = `${projection.margin.toFixed(2)}%`;
+  $("entryNewStock").textContent = quantityText(newStock, unit);
+  $("entryWeightedCost").textContent = `${money(weightedCost)} / ${getUnitLabel(unit)}`;
+  $("entryProjectedProfit").classList.toggle("negative-value", projection.profit < 0);
+}
+
+function resetInventoryEntryForm() {
+  $("inventoryEntryForm")?.reset();
+  if ($("inventoryEntryDateInput")) {
+    $("inventoryEntryDateInput").value = getLocalDateString();
+  }
+  if ($("inventoryNewProductCategoryInput")) {
+    $("inventoryNewProductCategoryInput").value = "Pescados y mariscos";
+  }
+  if ($("inventoryNewProductUnitInput")) {
+    $("inventoryNewProductUnitInput").value = "kg";
+  }
+  setInventoryEntryMode("existing");
+}
+
+async function loadInventoryEntries() {
+  try {
+    state.inventoryEntries = await fetchJson("/api/inventory/entries");
+    renderInventoryEntryProductOptions();
+    renderInventory();
+    renderInventorySummary();
+    renderInventoryEntries();
+    updateInventoryEntryProjection();
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "No se pudieron cargar las entradas de inventario.");
+  }
+}
+
+async function saveInventoryEntry(event) {
+  event.preventDefault();
+
+  const isNewProduct = getInventoryEntryMode() === "new";
+  let product = isNewProduct ? null : getSelectedInventoryEntryProduct();
+  const newProductDraft = getInventoryNewProductDraft();
+  const quantity = Number($("inventoryEntryQuantityInput")?.value || 0);
+  const unitCost = Number($("inventoryEntryUnitCostInput")?.value || 0);
+  const salePrice = Number($("inventoryEntrySalePriceInput")?.value || 0);
+  const minStockValue = $("inventoryNewProductMinStockInput")?.value ?? "";
+  const payload = {
+    productId: product?.id || "",
+    quantity,
+    unitCost,
+    salePrice,
+    supplier: "",
+    receivedAt: $("inventoryEntryDateInput")?.value || getLocalDateString(),
+    notes: $("inventoryEntryNotesInput")?.value.trim() || ""
+  };
+
+  if (isNewProduct) {
+    const duplicateProduct = state.products.some((item) => {
+      return item.name.trim().toLowerCase() === newProductDraft.name.trim().toLowerCase();
+    });
+
+    if (!newProductDraft.name || !newProductDraft.category || !newProductDraft.unit) {
+      showToast("Captura nombre, categoría y tipo de venta del producto nuevo.");
+      return;
+    }
+
+    if (duplicateProduct) {
+      showToast("Ese producto ya existe. Usa Producto existente para registrar la compra.");
+      return;
+    }
+
+    if (quantity <= 0 || unitCost <= 0 || salePrice <= 0) {
+      showToast("Captura cantidad, costo y precio de venta mayores a cero.");
+      return;
+    }
+
+    if (minStockValue !== "" && Number(minStockValue) < 0) {
+      showToast("El mínimo sugerido no puede ser negativo.");
+      return;
+    }
+  } else if (!payload.productId || payload.quantity <= 0 || payload.unitCost <= 0) {
+    showToast("Selecciona producto, cantidad y costo de compra.");
+    return;
+  }
+
+  const unit = isNewProduct ? newProductDraft.unit : product.unit;
+  const productName = isNewProduct ? newProductDraft.name : product.name;
+  const projection = calculateFinancialProjection(payload.quantity, payload.unitCost, payload.salePrice || product?.price || 0);
+  const confirmed = await openProductConfirm({
+    title: isNewProduct ? "Agregar producto y entrada" : "Registrar entrada",
+    message: isNewProduct
+      ? "Se creará el producto en catálogo y después se sumará esta mercancía al inventario."
+      : "La existencia y el costo promedio del producto se actualizarán.",
+    summary: `${productName} · ${quantityText(payload.quantity, unit)} · Inversión ${money(projection.investment)} · Ganancia proyectada ${money(projection.profit)}`,
+    confirmLabel: isNewProduct ? "Crear y registrar" : "Registrar"
+  });
+
+  if (!confirmed) return;
+
+  const button = $("saveInventoryEntryBtn");
+  if (button) button.disabled = true;
+
+  try {
+    if (isNewProduct) {
+      const createdProduct = await fetchJson("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newProductDraft.name,
+          category: newProductDraft.category,
+          unit: newProductDraft.unit,
+          price: salePrice,
+          costPrice: unitCost,
+          stockQuantity: 0,
+          minStock: minStockValue === "" ? null : Number(minStockValue),
+          active: true
+        })
+      });
+      product = createdProduct;
+      payload.productId = createdProduct.id;
+    }
+
+    await fetchJson("/api/inventory/entries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    await loadProducts();
+    await loadInventoryEntries();
+    resetInventoryEntryForm();
+    showToast(isNewProduct ? "Producto y entrada registrados." : "Entrada registrada y costo promedio actualizado.");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "No se pudo registrar la entrada.");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function renderInventorySummary() {
+  if (!$("inventoryInvestmentValue")) return;
+
+  const totals = state.products.reduce((acc, product) => {
+    if (typeof product.stockQuantity !== "number") return acc;
+
+    const stock = Math.max(Number(product.stockQuantity || 0), 0);
+    const cost = Math.max(Number(product.costPrice || 0), 0);
+    const price = Math.max(Number(product.price || 0), 0);
+    acc.investment += stock * cost;
+    acc.revenue += stock * price;
+    return acc;
+  }, { investment: 0, revenue: 0 });
+
+  $("inventoryInvestmentValue").textContent = money(totals.investment);
+  $("inventoryProjectedValue").textContent = money(totals.revenue);
+  $("inventoryProjectedProfit").textContent = money(totals.revenue - totals.investment);
+  $("inventoryEntriesCount").textContent = String(state.inventoryEntries.length);
+}
+
+function renderInventoryEntries() {
+  const list = $("inventoryEntriesList");
+  if (!list) return;
+
+  const query = $("inventoryEntrySearchInput")?.value.trim().toLowerCase() || "";
+  const entries = state.inventoryEntries.filter((entry) => {
+    const haystack = `${entry.id || ""} ${entry.productName || ""} ${entry.notes || ""}`.toLowerCase();
+    return haystack.includes(query);
+  });
+
+  if (entries.length === 0) {
+    list.innerHTML = `<p class="empty-state">No hay entradas con esos criterios.</p>`;
+    return;
+  }
+
+  list.innerHTML = entries.map((entry) => {
+    const date = entry.receivedAt
+      ? new Date(`${entry.receivedAt}T12:00:00`).toLocaleDateString("es-MX")
+      : new Date(entry.createdAt).toLocaleDateString("es-MX");
+
+    return `
+      <article class="inventory-entry-row">
+        <div class="inventory-entry-main">
+          <strong>${escapeHtml(entry.productName)}</strong>
+          <span>${escapeHtml(entry.id)} · ${escapeHtml(date)}${entry.notes ? ` · ${escapeHtml(entry.notes)}` : ""}</span>
+          <small>${quantityText(entry.quantity, entry.unit)} a ${money(entry.unitCost)} · Costo promedio ${money(entry.weightedAverageCost)}</small>
+        </div>
+        <div class="inventory-entry-value"><span>Inversión</span><strong>${money(entry.totalCost)}</strong></div>
+        <div class="inventory-entry-value"><span>Venta proyectada</span><strong>${money(entry.projectedRevenue)}</strong></div>
+        <div class="inventory-entry-value profit"><span>Ganancia</span><strong>${money(entry.projectedProfit)}</strong></div>
+        <span class="status-badge ${Number(entry.projectedProfit) >= 0 ? "ok" : "warn"}">${Number(entry.marginPercent || 0).toFixed(2)}%</span>
+      </article>
+    `;
+  }).join("");
+}
+
+function getInventoryMovementMap(days = 30) {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const movementMap = new Map();
+
+  state.sales
+    .filter((sale) => {
+      const createdAt = new Date(sale.createdAt || 0).getTime();
+      return getSaleStatus(sale) !== "cancelada" && Number.isFinite(createdAt) && createdAt >= cutoff;
+    })
+    .forEach((sale) => {
+      const productsInTicket = new Set();
+
+      (sale.items || []).forEach((item) => {
+        const productId = String(item.productId || "").trim();
+        if (!productId) return;
+
+        const current = movementMap.get(productId) || {
+          ticketCount: 0,
+          quantity: 0,
+          revenue: 0,
+          level: 0,
+          ratio: 0,
+          label: "Sin movimiento"
+        };
+
+        current.quantity += Number(item.quantity || 0);
+        current.revenue += Number(item.total || 0);
+        movementMap.set(productId, current);
+        productsInTicket.add(productId);
+      });
+
+      productsInTicket.forEach((productId) => {
+        const current = movementMap.get(productId);
+        if (current) current.ticketCount += 1;
+      });
+    });
+
+  const maxTickets = Math.max(
+    0,
+    ...state.products.map((product) => movementMap.get(product.id)?.ticketCount || 0)
+  );
+
+  const labels = ["Sin movimiento", "Movimiento bajo", "Movimiento medio", "Movimiento alto", "Más vendido"];
+
+  state.products.forEach((product) => {
+    const current = movementMap.get(product.id) || {
+      ticketCount: 0,
+      quantity: 0,
+      revenue: 0
+    };
+    const ratio = maxTickets > 0 ? current.ticketCount / maxTickets : 0;
+    let level = 0;
+
+    if (current.ticketCount > 0) {
+      if (ratio <= 0.25) level = 1;
+      else if (ratio <= 0.5) level = 2;
+      else if (ratio < 1) level = 3;
+      else level = 4;
+    }
+
+    movementMap.set(product.id, {
+      ...current,
+      ratio,
+      level,
+      label: labels[level]
+    });
+  });
+
+  return movementMap;
+}
+
+function getInventorySalesRanking(days = 30) {
+  const movementMap = getInventoryMovementMap(days);
+
+  return state.products
+    .filter((product) => product.active !== false)
+    .map((product) => {
+      const movement = movementMap.get(product.id) || {
+        ticketCount: 0,
+        quantity: 0,
+        revenue: 0,
+        level: 0,
+        label: "Sin movimiento"
+      };
+
+      return {
+        id: product.id,
+        name: product.name,
+        unit: product.unit,
+        ticketCount: Number(movement.ticketCount || 0),
+        quantity: Number(movement.quantity || 0),
+        revenue: Number(movement.revenue || 0),
+        level: Number(movement.level || 0),
+        label: movement.label || "Sin movimiento"
+      };
+    });
+}
+
+function renderInventorySalesList(elementId, items, emptyText) {
+  const list = $(elementId);
+  if (!list) return;
+
+  if (items.length === 0) {
+    list.innerHTML = `<p class="empty-state">${escapeHtml(emptyText)}</p>`;
+    return;
+  }
+
+  list.innerHTML = items
+    .map((item, index) => {
+      const salesText = item.ticketCount === 1 ? "1 venta" : `${item.ticketCount} ventas`;
       return `
-        <article class="inventory-row">
+        <article class="inventory-sales-item movement-level-${item.level}">
+          <span class="inventory-sales-rank">${index + 1}</span>
           <div>
-            <strong>${escapeHtml(product.name)}</strong>
-            <span>${escapeHtml(product.category)} · ${escapeHtml(getUnitLabel(product.unit))}</span>
+            <strong>${escapeHtml(item.name)}</strong>
+            <small>${escapeHtml(salesText)} · ${escapeHtml(quantityText(item.quantity, item.unit))}</small>
           </div>
-          <label>
-            Existencia
-            <input type="number" min="0" step="0.001" value="${typeof product.stockQuantity === "number" ? product.stockQuantity : ""}" data-stock-product="${escapeHtml(product.id)}" />
-          </label>
-          <label>
-            Mínimo
-            <input type="number" min="0" step="0.001" value="${typeof product.minStock === "number" ? product.minStock : ""}" data-min-product="${escapeHtml(product.id)}" />
-          </label>
-          <span class="status-badge ${statusKind}">${statusLabel}</span>
-          <button class="solid-btn" type="button" data-save-inventory="${escapeHtml(product.id)}">Guardar</button>
+          <b>${money(item.revenue)}</b>
         </article>
       `;
     })
     .join("");
-
-  $$("[data-save-inventory]").forEach((button) => {
-    button.addEventListener("click", () => saveInventory(button.dataset.saveInventory));
-  });
 }
 
-async function saveInventory(productId) {
-  const escapedId =
-    window.CSS && CSS.escape
-      ? CSS.escape(productId)
-      : String(productId).replace(/"/g, '\\"');
-  const stockInput = document.querySelector(`[data-stock-product="${escapedId}"]`);
-  const minInput = document.querySelector(`[data-min-product="${escapedId}"]`);
+function renderInventorySalesInsights() {
+  const ranked = getInventorySalesRanking(30);
+  const topProducts = ranked
+    .filter((item) => item.ticketCount > 0)
+    .sort((a, b) => b.ticketCount - a.ticketCount || b.revenue - a.revenue || a.name.localeCompare(b.name))
+    .slice(0, 4);
+  const slowProducts = ranked
+    .sort((a, b) => a.ticketCount - b.ticketCount || a.revenue - b.revenue || a.name.localeCompare(b.name))
+    .slice(0, 4);
 
-  try {
-    await fetchJson(`/api/products/${productId}/inventory`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        stockQuantity: stockInput.value === "" ? null : Number(stockInput.value),
-        minStock: minInput.value === "" ? null : Number(minInput.value)
-      })
-    });
-
-    await loadProducts();
-    state.inventoryEditingId = null;
-    showToast("Inventario actualizado.");
-  } catch (error) {
-    console.error(error);
-    showToast("No se pudo actualizar inventario.");
-  }
+  renderInventorySalesList("inventoryTopProducts", topProducts, "Sin ventas en los ultimos 30 dias.");
+  renderInventorySalesList("inventorySlowProducts", slowProducts, "Sin productos activos.");
 }
-
 function renderInventory() {
   const list = $("inventoryList");
   if (!list) return;
 
   const query = $("inventorySearchInput").value.trim().toLowerCase();
   const category = $("inventoryCategoryFilter").value;
+  const movementMap = getInventoryMovementMap(30);
+  renderInventorySalesInsights();
   const filteredProducts = state.products.filter((product) => {
     const matchesSearch = product.name.toLowerCase().includes(query);
     const matchesCategory = category === "all" || product.category === category;
@@ -1915,28 +2913,75 @@ function renderInventory() {
     .map((product) => {
       const [statusLabel, statusKind] = getStockStatus(product);
       const isEditing = state.inventoryEditingId === product.id;
-      const stockText =
-        typeof product.stockQuantity === "number"
-          ? quantityText(product.stockQuantity, product.unit)
-          : "Sin conteo";
-      const minText =
-        typeof product.minStock === "number"
-          ? quantityText(product.minStock, product.unit)
-          : "Sin minimo";
+      const stock = typeof product.stockQuantity === "number" ? Number(product.stockQuantity) : 0;
+      const stockText = typeof product.stockQuantity === "number"
+        ? quantityText(product.stockQuantity, product.unit)
+        : "Sin conteo";
+      const minText = typeof product.minStock === "number"
+        ? quantityText(product.minStock, product.unit)
+        : "Sin mínimo";
+      const projection = calculateFinancialProjection(stock, product.costPrice, product.price);
+      const movement = movementMap.get(product.id) || {
+        ticketCount: 0,
+        quantity: 0,
+        revenue: 0,
+        level: 0,
+        ratio: 0,
+        label: "Sin movimiento"
+      };
+      const movementPercent = movement.ticketCount > 0
+        ? Math.max(10, Math.round(movement.ratio * 100))
+        : 0;
+      const movementSalesText = movement.ticketCount === 1
+        ? "1 venta en 30 días"
+        : `${movement.ticketCount} ventas en 30 días`;
+
+const productEntries = state.inventoryEntries
+  .filter((entry) => {
+    return String(entry.productId || "") === String(product.id || "");
+  })
+  .sort((entryA, entryB) => {
+    const dateA = new Date(
+      entryA.receivedAt
+        ? `${entryA.receivedAt}T12:00:00`
+        : entryA.createdAt || 0
+    ).getTime();
+
+    const dateB = new Date(
+      entryB.receivedAt
+        ? `${entryB.receivedAt}T12:00:00`
+        : entryB.createdAt || 0
+    ).getTime();
+
+    return dateB - dateA;
+  });
+
+const lastPurchase = productEntries[0] || null;
+
+const lastPurchaseText = lastPurchase
+  ? `${new Date(
+      lastPurchase.receivedAt
+        ? `${lastPurchase.receivedAt}T12:00:00`
+        : lastPurchase.createdAt
+    ).toLocaleDateString("es-MX")} · ${quantityText(
+      lastPurchase.quantity,
+      lastPurchase.unit || product.unit
+    )} a ${money(lastPurchase.unitCost)}`
+  : "Sin entradas registradas";
 
       if (isEditing) {
         return `
           <article class="inventory-row editing">
             <div>
               <strong>${escapeHtml(product.name)}</strong>
-              <span>${escapeHtml(product.category)} - ${escapeHtml(getUnitLabel(product.unit))}</span>
+              <span>${escapeHtml(product.category)} · ${escapeHtml(getUnitLabel(product.unit))}</span>
             </div>
             <label>
               Existencia
               <input type="number" min="0" step="0.001" value="${typeof product.stockQuantity === "number" ? product.stockQuantity : ""}" data-stock-product="${escapeHtml(product.id)}" />
             </label>
             <label>
-              Minimo
+              Mínimo
               <input type="number" min="0" step="0.001" value="${typeof product.minStock === "number" ? product.minStock : ""}" data-min-product="${escapeHtml(product.id)}" />
             </label>
             <span class="status-badge ${statusKind}">${statusLabel}</span>
@@ -1949,29 +2994,50 @@ function renderInventory() {
       }
 
       return `
-        <article class="inventory-row">
-          <div>
-            <strong>${escapeHtml(product.name)}</strong>
-            <span>${escapeHtml(product.category)} - ${escapeHtml(getUnitLabel(product.unit))}</span>
+        <article class="inventory-row financial movement-level-${movement.level}" style="--movement-fill:${movementPercent}%">
+          <div class="inventory-row-top">
+            <div class="inventory-product-main">
+              <strong>${escapeHtml(product.name)}</strong>
+              <span>${escapeHtml(product.category)} · ${escapeHtml(getUnitLabel(product.unit))}</span>
+              <small>Última compra: ${escapeHtml(lastPurchaseText)}</small>
+            </div>
+
+            <div class="inventory-movement-block">
+              <div class="inventory-movement-head">
+                <span>Ritmo de venta</span>
+                <strong>${escapeHtml(movement.label)}</strong>
+              </div>
+              <div class="inventory-movement-bar" aria-label="${escapeHtml(movement.label)}">
+                <i></i>
+              </div>
+              <small>${escapeHtml(movementSalesText)} · ${money(movement.revenue)}</small>
+            </div>
+
+            <div class="inventory-row-actions">
+              <span class="status-badge ${statusKind}">${statusLabel}</span>
+              <button class="quiet-btn" type="button" data-edit-inventory="${escapeHtml(product.id)}">Ajustar</button>
+            </div>
           </div>
-          <div class="inventory-metric"><span>Existencia</span><strong>${escapeHtml(stockText)}</strong></div>
-          <div class="inventory-metric"><span>Minimo</span><strong>${escapeHtml(minText)}</strong></div>
-          <span class="status-badge ${statusKind}">${statusLabel}</span>
-          <button class="quiet-btn" type="button" data-edit-inventory="${escapeHtml(product.id)}">Ajustar</button>
+
+          <div class="inventory-row-metrics">
+            <div class="inventory-metric"><span>Existencia</span><strong>${escapeHtml(stockText)}</strong><small>Mín. ${escapeHtml(minText)}</small></div>
+            <div class="inventory-metric"><span>Costo promedio</span><strong>${money(product.costPrice || 0)}</strong><small>Venta ${money(product.price || 0)}</small></div>
+            <div class="inventory-metric"><span>Inversión</span><strong>${money(projection.investment)}</strong><small>Ganancia ${money(projection.profit)}</small></div>
+          </div>
         </article>
       `;
     })
     .join("");
 
-  $$("[data-edit-inventory]").forEach((button) => {
-    button.addEventListener("click", () => {
+  $$('[data-edit-inventory]').forEach((button) => {
+    button.addEventListener('click', () => {
       state.inventoryEditingId = button.dataset.editInventory;
       renderInventory();
     });
   });
 
-  $$("[data-cancel-inventory]").forEach((button) => {
-    button.addEventListener("click", () => {
+  $$('[data-cancel-inventory]').forEach((button) => {
+    button.addEventListener('click', () => {
       if (state.inventoryEditingId === button.dataset.cancelInventory) {
         state.inventoryEditingId = null;
       }
@@ -1979,9 +3045,35 @@ function renderInventory() {
     });
   });
 
-  $$("[data-save-inventory]").forEach((button) => {
-    button.addEventListener("click", () => saveInventory(button.dataset.saveInventory));
+  $$('[data-save-inventory]').forEach((button) => {
+    button.addEventListener('click', () => saveInventory(button.dataset.saveInventory));
   });
+}
+
+async function saveInventory(productId) {
+  const escapedId = window.CSS && CSS.escape
+    ? CSS.escape(productId)
+    : String(productId).replace(/"/g, '\"');
+  const stockInput = document.querySelector(`[data-stock-product="${escapedId}"]`);
+  const minInput = document.querySelector(`[data-min-product="${escapedId}"]`);
+
+  try {
+    await fetchJson(`/api/products/${productId}/inventory`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stockQuantity: stockInput.value === "" ? null : Number(stockInput.value),
+        minStock: minInput.value === "" ? null : Number(minInput.value)
+      })
+    });
+
+    await loadProducts();
+    state.inventoryEditingId = null;
+    showToast("Inventario actualizado.");
+  } catch (error) {
+    console.error(error);
+    showToast("No se pudo actualizar inventario.");
+  }
 }
 
 function getSaleStatus(sale) {
@@ -2166,6 +3258,8 @@ async function cancelSale(saleId) {
     });
 
     renderSalesAdmin();
+    await loadCashSessions();
+    renderCashCut();
     showToast("Venta cancelada.");
   } catch (error) {
     console.error(error);
@@ -2347,6 +3441,7 @@ async function loadDashboard() {
     }
 
     state.sales = await fetchJson("/api/sales");
+    await loadCashSessions();
     updateTicketId();
     renderProducts();
     renderDashboard();
@@ -2491,7 +3586,7 @@ function renderDashboard() {
   const todaysSales = getCompletedSalesForPeriod("day", getLocalDateString());
   const todaysTotals = getSalesTotals(todaysSales);
   const activeShift = getSalesCashShift();
-  const expectedCash = activeShift ? Number(activeShift.openingAmount || 0) + todaysTotals.cash : 0;
+  const expectedCash = activeShift ? Number(activeShift.summary?.expectedCash || 0) : 0;
 
   $("dashboardProfit").textContent = money(totals.profit);
   $("dashboardReinvest").textContent = money(totals.cost);
@@ -2515,26 +3610,30 @@ function renderDashboard() {
 }
 
 async function loadCashCut() {
-  if (!$("cutDateInput").value) {
-    $("cutDateInput").value = getLocalDateString();
+  if (!$('cutDateInput').value) {
+    $('cutDateInput').value = getLocalDateString();
   }
 
   try {
-    state.sales = await fetchJson("/api/sales");
+    const [sales] = await Promise.all([
+      fetchJson('/api/sales'),
+      loadCashSessions()
+    ]);
+    state.sales = sales;
     updateTicketId();
     renderCashCut();
   } catch (error) {
     console.error(error);
-    showToast("No se pudo cargar el corte.");
+    showToast(error.message || 'No se pudo cargar el corte.');
   }
 }
 
 function renderCashCut() {
-  syncPeriodInput("cutPeriodFilter", "cutDateInput");
-  const period = $("cutPeriodFilter")?.value || "day";
-  const dateString = $("cutDateInput").value || getLocalDateString();
+  syncPeriodInput('cutPeriodFilter', 'cutDateInput');
+  const period = $('cutPeriodFilter')?.value || 'day';
+  const dateString = $('cutDateInput')?.value || getLocalDateString();
   const periodSales = state.sales.filter((sale) => saleMatchesPeriod(sale, period, dateString));
-  const completedSales = periodSales.filter((sale) => getSaleStatus(sale) !== "cancelada");
+  const completedSales = periodSales.filter((sale) => getSaleStatus(sale) !== 'cancelada');
   const canceledSales = periodSales.length - completedSales.length;
   const totals = completedSales.reduce(
     (acc, sale) => {
@@ -2545,8 +3644,8 @@ function renderCashCut() {
       acc.profit += profit.grossProfit;
       acc.count += 1;
 
-      if (sale.paymentMethod === "tarjeta") acc.card += total;
-      else if (sale.paymentMethod === "transferencia") acc.transfer += total;
+      if (sale.paymentMethod === 'tarjeta') acc.card += total;
+      else if (sale.paymentMethod === 'transferencia') acc.transfer += total;
       else acc.cash += total;
 
       return acc;
@@ -2559,22 +3658,23 @@ function renderCashCut() {
     canceled: canceledSales
   };
 
-  $("cutTotalSales").textContent = money(totals.total);
-  $("cutGrossProfit").textContent = money(totals.profit);
-  $("cutMargin").textContent = `${margin.toFixed(2)}%`;
-  $("cutSalesCount").textContent = String(totals.count);
-  $("cutCash").textContent = money(totals.cash);
-  $("cutCard").textContent = money(totals.card);
-  $("cutTransfer").textContent = money(totals.transfer);
-  $("cutCanceled").textContent = String(canceledSales);
+  $('cutTotalSales').textContent = money(totals.total);
+  $('cutGrossProfit').textContent = money(totals.profit);
+  $('cutMargin').textContent = `${margin.toFixed(2)}%`;
+  $('cutSalesCount').textContent = String(totals.count);
+  $('cutCash').textContent = money(totals.cash);
+  $('cutCard').textContent = money(totals.card);
+  $('cutTransfer').textContent = money(totals.transfer);
+  $('cutCanceled').textContent = String(canceledSales);
 
   renderCashRegister();
   renderCashHistory();
-  renderTopProducts(completedSales);
+
 }
 
 function renderTopProducts(sales) {
   const list = $("topProductsList");
+  if (!list) return;
   const productMap = new Map();
 
   sales.forEach((sale) => {
@@ -2595,7 +3695,7 @@ function renderTopProducts(sales) {
   const products = [...productMap.values()].sort((a, b) => b.total - a.total).slice(0, 8);
 
   if (products.length === 0) {
-    list.innerHTML = `<p class="empty-state">Sin ventas en esta fecha.</p>`;
+    list.innerHTML = '<p class="empty-state">Sin ventas en esta fecha.</p>';
     return;
   }
 
@@ -2611,36 +3711,11 @@ function renderTopProducts(sales) {
         </article>
       `;
     })
-    .join("");
-}
-
-function saveCashShifts() {
-  localStorage.setItem(CASH_SHIFTS_KEY, JSON.stringify(state.cashShifts));
-  fetchJson("/api/cash-shifts", {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      shifts: state.cashShifts
-    })
-  }).catch((error) => {
-    console.warn("No se pudo guardar el corte en servidor.", error);
-  });
-}
-
-function getCutDateString() {
-  return $("cutDateInput")?.value || getLocalDateString();
-}
-
-function getCashShiftForDate(dateString = getCutDateString()) {
-  return [...state.cashShifts]
-    .reverse()
-    .find((shift) => shift.date === dateString && shift.status === "open");
+    .join('');
 }
 
 function getSalesCashShift() {
-  return getCashShiftForDate(getLocalDateString());
+  return state.currentCashSession?.status === 'open' ? state.currentCashSession : null;
 }
 
 function hasOpenCashForSales() {
@@ -2648,295 +3723,485 @@ function hasOpenCashForSales() {
 }
 
 function goToCashRegister() {
-  const periodInput = $("cutPeriodFilter");
-  const dateInput = $("cutDateInput");
+  const periodInput = $('cutPeriodFilter');
+  const dateInput = $('cutDateInput');
 
-  if (periodInput) periodInput.value = "day";
+  if (periodInput) periodInput.value = 'day';
   if (dateInput) dateInput.value = getLocalDateString();
 
-  setView("reports");
-  renderCashCut();
-  window.setTimeout(() => $("openingCashInput")?.focus(), 0);
-}
-
-function updateCashGateUi() {
-  const cashShift = getSalesCashShift();
-  const isOpen = Boolean(cashShift);
-  const statusButton = $("cashStatusBtn");
-  const notice = $("cashGateNotice");
-
-  document.body.classList.toggle("cash-open", isOpen);
-  document.body.classList.toggle("cash-closed", !isOpen);
-
-  if (statusButton) {
-    statusButton.textContent = isOpen ? "Caja abierta" : "Caja cerrada";
-    statusButton.classList.toggle("open", isOpen);
-    statusButton.classList.toggle("closed", !isOpen);
-    statusButton.setAttribute(
-      "title",
-      isOpen
-        ? `Caja abierta con ${money(cashShift.openingAmount)}`
-        : "Abrir caja para vender"
-    );
-  }
-
-  if (notice) {
-    notice.hidden = isOpen;
-  }
-
-  if (state.activeView === "dashboard") {
-    renderDashboard();
-  }
-}
-
-function getCashShiftLogForDate(dateString = getCutDateString()) {
-  return state.cashShifts
-    .filter((shift) => shift.date === dateString)
-    .sort((a, b) => new Date(b.openedAt) - new Date(a.openedAt));
+  setView('reports');
+  loadCashCut();
+  window.setTimeout(() => {
+    const target = state.currentCashSession
+      ? (isAdminUser() ? $('cashMovementAmount') : $('countedCashInput'))
+      : $('openingCashInput');
+    target?.focus();
+  }, 0);
 }
 
 function shiftMatchesPeriod(shift, period, dateString) {
   const range = getPeriodRange(period, dateString);
   if (!range) return true;
 
-  const shiftDate = parseLocalDate(shift.date);
+  const shiftDate = parseLocalDate(shift.date || shift.businessDate);
   return shiftDate >= range.start && shiftDate < range.end;
 }
 
-function getDenominationCounts() {
-  const counts = {};
-  CASH_DENOMINATIONS.forEach((denomination) => {
-    const input = document.querySelector(`[data-denomination="${denomination}"]`);
-    counts[denomination] = Number(input?.value || 0);
-  });
-  return counts;
+function getCurrentCashSummary() {
+  return state.currentCashSession?.summary || {
+    totalSales: 0,
+    grossProfit: 0,
+    salesCount: 0,
+    cashSales: 0,
+    cardSales: 0,
+    transferSales: 0,
+    canceledCount: 0,
+    cashIn: 0,
+    cashOut: 0,
+    expectedCash: 0
+  };
 }
 
-function calculateCashCounterTotal() {
-  const counts = getDenominationCounts();
-  return CASH_DENOMINATIONS.reduce((sum, denomination) => {
-    return sum + denomination * Number(counts[denomination] || 0);
-  }, 0);
-}
+function updateCashGateUi() {
+  const cashSession = getSalesCashShift();
+  const isOpen = Boolean(cashSession);
+  const statusButton = $('cashStatusBtn');
+  const notice = $('cashGateNotice');
 
-function updateCashCounterTotal() {
-  const total = calculateCashCounterTotal();
-  const counterTotal = $("cashCounterTotal");
-  const countedInput = $("countedCashInput");
+  document.body.classList.toggle('cash-open', isOpen);
+  document.body.classList.toggle('cash-closed', !isOpen);
 
-  if (counterTotal) counterTotal.textContent = money(total);
-  if (countedInput && state.cashCounterVisible) countedInput.value = total.toFixed(2);
-  renderCashRegisterSummary();
-}
+  if (statusButton) {
+    statusButton.textContent = isOpen ? 'Caja abierta' : 'Caja cerrada';
+    statusButton.classList.toggle('open', isOpen);
+    statusButton.classList.toggle('closed', !isOpen);
+    statusButton.setAttribute(
+      'title',
+      isOpen
+        ? `Caja abierta por ${cashSession.openedBy?.name || 'usuario'} · ${money(getCurrentCashSummary().expectedCash)}`
+        : 'Abrir caja para vender'
+    );
+  }
 
-function renderCashDenominations() {
-  const container = $("cashDenominations");
-  if (!container) return;
+  if (notice) notice.hidden = isOpen;
 
-  container.innerHTML = CASH_DENOMINATIONS.map((denomination) => {
-    return `
-      <label>
-        ${money(denomination)}
-        <input type="number" min="0" step="1" value="0" data-denomination="${denomination}" />
-      </label>
-    `;
-  }).join("");
-
-  $$("[data-denomination]").forEach((input) => {
-    input.addEventListener("input", updateCashCounterTotal);
-  });
+  if (state.activeView === 'dashboard') renderDashboard();
 }
 
 function renderCashRegisterSummary() {
-  const activeShift = getCashShiftForDate();
-  const counted = Number($("countedCashInput")?.value || 0);
-  const expected = Number(activeShift?.openingAmount || 0) + Number(state.currentCutTotals.cash || 0);
-  const difference = activeShift ? counted - expected : 0;
+  const activeSession = getSalesCashShift();
+  const counted = Number($('countedCashInput')?.value || 0);
+  const expected = Number(getCurrentCashSummary().expectedCash || 0);
+  const difference = activeSession ? counted - expected : 0;
 
-  if ($("cashShiftDifference")) {
-    $("cashShiftDifference").textContent = activeShift ? money(difference) : money(0);
-    $("cashShiftDifference").classList.toggle("negative", difference < 0);
+  if ($('cashShiftDifference')) {
+    $('cashShiftDifference').textContent = activeSession ? money(difference) : money(0);
+    $('cashShiftDifference').classList.toggle('negative', difference < 0);
+    $('cashShiftDifference').classList.toggle('positive', difference > 0);
+  }
+
+  updateCashCountTool();
+}
+
+function renderCashCountTool() {
+  const grid = $('cashCountGrid');
+  if (!grid) return;
+
+  if (!grid.dataset.rendered) {
+    grid.innerHTML = CASH_COUNT_DENOMINATIONS.map((item) => `
+      <label class="cash-count-row">
+        <span>${escapeHtml(item.label)}</span>
+        <input type="number" min="0" step="1" inputmode="numeric" data-cash-count-denomination="${item.value}" placeholder="0" />
+        <small data-cash-count-subtotal="${item.value}">$0.00</small>
+      </label>
+    `).join('');
+    grid.dataset.rendered = 'true';
+    $$('[data-cash-count-denomination]').forEach((input) => {
+      input.addEventListener('input', updateCashCountTool);
+    });
+  }
+
+  updateCashCountTool();
+}
+
+function getCashCountTotal() {
+  return $$('[data-cash-count-denomination]').reduce((total, input) => {
+    const denomination = Number(input.dataset.cashCountDenomination || 0);
+    const quantity = Math.max(0, Number(input.value || 0));
+    return total + (denomination * quantity);
+  }, 0);
+}
+
+function updateCashCountTool() {
+  const panel = $('cashCountTool');
+  if (!panel) return;
+
+  $$('[data-cash-count-denomination]').forEach((input) => {
+    const denomination = Number(input.dataset.cashCountDenomination || 0);
+    const quantity = Math.max(0, Number(input.value || 0));
+    const subtotal = denomination * quantity;
+    const subtotalEl = document.querySelector(`[data-cash-count-subtotal="${input.dataset.cashCountDenomination}"]`);
+    if (subtotalEl) subtotalEl.textContent = money(subtotal);
+  });
+
+  const total = getCashCountTotal();
+  const expected = Number(getCurrentCashSummary().expectedCash || 0);
+  const difference = getSalesCashShift() ? total - expected : 0;
+
+  if ($('cashCountTotal')) $('cashCountTotal').textContent = money(total);
+  if ($('cashCountExpected')) $('cashCountExpected').textContent = money(expected);
+  if ($('cashCountDifference')) {
+    $('cashCountDifference').textContent = money(difference);
+    $('cashCountDifference').classList.toggle('negative', difference < 0);
+    $('cashCountDifference').classList.toggle('positive', difference > 0);
   }
 }
 
+function toggleCashCountTool() {
+  const panel = $('cashCountTool');
+  if (!panel) return;
+
+  const willOpen = panel.classList.contains('hidden');
+  panel.classList.toggle('hidden', !willOpen);
+  renderCashCountTool();
+  $('cashCountToggleBtn')?.classList.toggle('active', willOpen);
+}
+
+function clearCashCountTool() {
+  $$('[data-cash-count-denomination]').forEach((input) => {
+    input.value = '';
+  });
+  updateCashCountTool();
+}
+
+function useCashCountTotal() {
+  const countedInput = $('countedCashInput');
+  if (!countedInput) return;
+  countedInput.value = getCashCountTotal().toFixed(2);
+  renderCashRegisterSummary();
+}
+
+function renderCashMovements() {
+  const list = $('cashMovementsList');
+  if (!list) return;
+
+  const movements = Array.isArray(state.currentCashSession?.movements)
+    ? [...state.currentCashSession.movements].reverse()
+    : [];
+
+  if (movements.length === 0) {
+    list.innerHTML = '<p class="empty-state">Sin movimientos manuales.</p>';
+    return;
+  }
+
+  list.innerHTML = movements.map((movement) => {
+    const isOut = movement.type === 'out';
+    return `
+      <article class="cash-movement-row ${isOut ? 'out' : 'in'}">
+        <div>
+          <strong>${escapeHtml(movement.reason || (isOut ? 'Retiro de efectivo' : 'Entrada de efectivo'))}</strong>
+          <span>${new Date(movement.createdAt).toLocaleString('es-MX')} · ${escapeHtml(movement.createdBy?.name || 'Usuario')}</span>
+        </div>
+        <b>${isOut ? '-' : '+'}${money(movement.amount)}</b>
+      </article>
+    `;
+  }).join('');
+}
+
 function renderCashRegister() {
-  const dateString = getCutDateString();
-  const period = $("cutPeriodFilter")?.value || "day";
-  const activeShift = getCashShiftForDate(dateString);
-  const isDailyCut = period === "day";
-  const expectedCash = Number(activeShift?.openingAmount || 0) + Number(state.currentCutTotals.cash || 0);
+  const session = getSalesCashShift();
+  const summary = getCurrentCashSummary();
+  const isOpen = Boolean(session);
 
-  if ($("cashShiftStatus")) {
-    $("cashShiftStatus").textContent = !isDailyCut
-      ? "La apertura se maneja por dia; cambia el filtro a Dia para abrir o cerrar caja."
-      : activeShift
-        ? `Abierta con ${money(activeShift.openingAmount)}. Efectivo esperado: ${money(expectedCash)}.`
-        : "Sin caja abierta.";
+  if ($('cashSessionStatusBadge')) {
+    $('cashSessionStatusBadge').textContent = isOpen ? 'Abierta' : 'Cerrada';
+    $('cashSessionStatusBadge').classList.toggle('open', isOpen);
+    $('cashSessionStatusBadge').classList.toggle('closed', !isOpen);
   }
 
-  if ($("openCashShiftBtn")) $("openCashShiftBtn").disabled = !isDailyCut || Boolean(activeShift);
-  if ($("closeCashShiftBtn")) $("closeCashShiftBtn").disabled = !isDailyCut || !activeShift;
-  if ($("countedCashInput")) $("countedCashInput").disabled = !isDailyCut || !activeShift;
-  if ($("toggleCashCounterBtn")) $("toggleCashCounterBtn").disabled = !isDailyCut || !activeShift;
-
-  const counterPanel = $("cashCounterPanel");
-  if (counterPanel) {
-    counterPanel.classList.toggle("hidden", !state.cashCounterVisible || !activeShift);
+  if ($('cashShiftStatus')) {
+    $('cashShiftStatus').textContent = isOpen
+      ? `Caja ${session.id} abierta.`
+      : 'Abre la caja para comenzar a cobrar ventas.';
   }
 
-  const log = $("cashShiftLog");
-  if (log) {
-    const shifts = getCashShiftLogForDate(dateString);
-    log.innerHTML = shifts.length === 0
-      ? `<p class="empty-state">Sin registros de caja para este dia.</p>`
-      : shifts.map((shift) => {
-          const closedText = shift.status === "closed"
-            ? `Cierre ${money(shift.countedAmount)} · diferencia ${money(shift.difference)}`
-            : "Caja abierta";
+  $('cashCurrentOpenedAt').textContent = isOpen
+    ? new Date(session.openedAt).toLocaleString('es-MX', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
+    : '--:--';
+  $('cashCurrentOpeningAmount').textContent = money(isOpen ? session.openingAmount : 0);
+  $('cashCurrentExpected').textContent = money(isOpen ? summary.expectedCash : 0);
 
-          return `
-            <article>
-              <strong>${new Date(shift.openedAt).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}</strong>
-              <span>Fondo ${money(shift.openingAmount)} · ${closedText}</span>
-            </article>
-          `;
-        }).join("");
-  }
+  $('cashOpenControls')?.classList.toggle('hidden', isOpen);
+  $('cashLiveControls')?.classList.toggle('hidden', !isOpen);
 
+  const movementsSection = $('cashMovementsSection');
+  const canManageMovements = isOpen && isAdminUser();
+  if (movementsSection) movementsSection.classList.toggle('hidden', !canManageMovements);
+
+  $('sessionTotalSales').textContent = money(summary.totalSales);
+  $('sessionCashSales').textContent = money(summary.cashSales);
+  $('sessionCardSales').textContent = money(summary.cardSales);
+  $('sessionTransferSales').textContent = money(summary.transferSales);
+  $('sessionCashIn').textContent = money(summary.cashIn);
+  $('sessionCashOut').textContent = money(summary.cashOut);
+  $('sessionSalesCount').textContent = String(summary.salesCount || 0);
+  $('sessionCanceledCount').textContent = String(summary.canceledCount || 0);
+
+  renderCashCountTool();
+  renderCashMovements();
   renderCashRegisterSummary();
   updateCashGateUi();
 }
 
 function renderCashHistory() {
-  const list = $("cashHistoryList");
+  const list = $('cashHistoryList');
   if (!list) return;
 
-  const period = $("cutPeriodFilter")?.value || "day";
-  const dateString = $("cutDateInput")?.value || getLocalDateString();
-  const shifts = state.cashShifts
-    .filter((shift) => shiftMatchesPeriod(shift, period, dateString))
+  const period = $('cutPeriodFilter')?.value || 'day';
+  const dateString = $('cutDateInput')?.value || getLocalDateString();
+  const sessions = state.cashSessions
+    .filter((session) => shiftMatchesPeriod({ date: session.businessDate }, period, dateString))
     .sort((a, b) => new Date(b.openedAt) - new Date(a.openedAt));
 
-  if (shifts.length === 0) {
-    list.innerHTML = `<p class="empty-state">Sin cortes guardados en este periodo.</p>`;
+  if (sessions.length === 0) {
+    list.innerHTML = '<p class="empty-state">Sin cortes guardados en este periodo.</p>';
     return;
   }
 
-  list.innerHTML = shifts
-    .map((shift) => {
-      const isClosed = shift.status === "closed";
-      const difference = Number(shift.difference || 0);
+  list.innerHTML = sessions.map((session) => {
+    const isClosed = session.status === 'closed';
+    const summary = session.summary || {};
+    const difference = Number(session.difference || 0);
 
-      return `
-        <article class="cash-history-row ${isClosed ? "closed" : "open"}">
-          <div>
-            <strong>${escapeHtml(shift.date)}</strong>
-            <span>${isClosed ? "Cerrado" : "Abierto"} · fondo ${money(shift.openingAmount)}</span>
-          </div>
-          <div><span>Esperado</span><strong>${isClosed ? money(shift.expectedCash) : "-"}</strong></div>
-          <div><span>Contado</span><strong>${isClosed ? money(shift.countedAmount) : "-"}</strong></div>
-          <div><span>Diferencia</span><strong class="${difference < 0 ? "negative" : ""}">${isClosed ? money(difference) : "-"}</strong></div>
-        </article>
-      `;
-    })
-    .join("");
-}
+    return `
+      <article class="cash-history-row ${isClosed ? 'closed' : 'open'}">
+        <div>
+          <strong>${escapeHtml(session.id)} · ${escapeHtml(session.businessDate)}</strong>
+          <span>${isClosed ? 'Cerrada' : 'Abierta'} · ${new Date(session.openedAt).toLocaleString('es-MX')}</span>
+        </div>
+        <div><span>Total</span><strong>${money(summary.totalSales || 0)}</strong></div>
+        <div><span>Esperado</span><strong>${money(summary.expectedCash || session.expectedCash || 0)}</strong></div>
+        <div><span>Contado</span><strong>${isClosed ? money(session.countedCash) : '-'}</strong></div>
+        <div><span>Diferencia</span><strong class="${difference < 0 ? 'negative' : ''}">${isClosed ? money(difference) : '-'}</strong></div>
+        <button class="quiet-btn" type="button" data-print-cash-session="${escapeHtml(session.id)}">Imprimir</button>
+      </article>
+    `;
+  }).join('');
 
-function openCashShift() {
-  const dateString = getCutDateString();
-  const amount = Number($("openingCashInput")?.value || 0);
-
-  if (($("cutPeriodFilter")?.value || "day") !== "day") {
-    showToast("La caja se abre por dia.");
-    return;
-  }
-
-  if (getCashShiftForDate(dateString)) {
-    showToast("Ya hay una caja abierta.");
-    return;
-  }
-
-  if (amount < 0) {
-    showToast("Revisa el fondo inicial.");
-    return;
-  }
-
-  state.cashShifts.push({
-    id: `C-${dateString}-${Date.now()}`,
-    date: dateString,
-    status: "open",
-    openingAmount: Math.round(amount * 100) / 100,
-    openedAt: new Date().toISOString(),
-    closedAt: null,
-    expectedCash: null,
-    countedAmount: null,
-    difference: null,
-    denominations: null
+  $$('[data-print-cash-session]').forEach((button) => {
+    button.addEventListener('click', () => printCashSession(button.dataset.printCashSession));
   });
-  saveCashShifts();
-  $("openingCashInput").value = "";
-  renderCashRegister();
-  renderCashHistory();
-  renderTicket();
-  showToast("Caja abierta.");
 }
 
-function closeCashShift() {
-  const dateString = getCutDateString();
-  const shift = getCashShiftForDate(dateString);
-  if (!shift) {
-    showToast("Primero abre la caja.");
+async function openCashShift() {
+  const amount = Number($('openingCashInput')?.value || 0);
+
+  if (amount < 0 || !Number.isFinite(amount)) {
+    showToast('Revisa el fondo inicial.');
     return;
   }
 
-  const counted = Number($("countedCashInput")?.value || 0);
-  const expectedCash = Number(shift.openingAmount || 0) + Number(state.currentCutTotals.cash || 0);
-  const difference = Math.round((counted - expectedCash) * 100) / 100;
+  const confirmed = await openProductConfirm({
+    title: 'Abrir caja',
+    message: 'Confirma el fondo con el que inicia la operación.',
+    summary: `Fondo inicial: ${money(amount)}`,
+    confirmLabel: 'Abrir caja'
+  });
+  if (!confirmed) return;
 
-  shift.status = "closed";
-  shift.closedAt = new Date().toISOString();
-  shift.expectedCash = Math.round(expectedCash * 100) / 100;
-  shift.countedAmount = Math.round(counted * 100) / 100;
-  shift.difference = difference;
-  shift.denominations = state.cashCounterVisible ? getDenominationCounts() : null;
-  saveCashShifts();
+  const button = $('openCashShiftBtn');
+  if (button) button.disabled = true;
 
-  $("countedCashInput").value = "";
-  state.cashCounterVisible = false;
-  renderCashRegister();
-  renderCashHistory();
-  renderTicket();
-  showToast("Corte cerrado.");
+  try {
+    const session = await fetchJson('/api/cash-sessions/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        openingAmount: amount,
+        businessDate: getLocalDateString()
+      })
+    });
+
+    state.cashSessions = [session, ...state.cashSessions.filter((item) => item.id !== session.id)];
+    state.currentCashSession = session;
+    $('openingCashInput').value = '';
+    renderCashRegister();
+    renderCashHistory();
+    renderTicket();
+    showToast(`Caja ${session.id} abierta.`);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || 'No se pudo abrir la caja.');
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
-function toggleCashCounter() {
-  state.cashCounterVisible = !state.cashCounterVisible;
-  renderCashRegister();
+async function addCashMovement() {
+  if (!isAdminUser()) {
+    showToast('Solo el administrador puede registrar movimientos de efectivo.');
+    return;
+  }
+
+  const session = getSalesCashShift();
+  if (!session) {
+    showToast('Primero abre la caja.');
+    return;
+  }
+
+  const type = $('cashMovementType')?.value === 'in' ? 'in' : 'out';
+  const amount = Number($('cashMovementAmount')?.value || 0);
+
+  if (amount <= 0) {
+    showToast('Captura un importe mayor a cero.');
+    return;
+  }
+
+  const confirmed = await openProductConfirm({
+    title: type === 'out' ? 'Registrar retiro' : 'Registrar entrada',
+    message: 'Este movimiento afectará el efectivo esperado de la caja.',
+    summary: `${type === 'out' ? 'Retiro' : 'Entrada'}: ${money(amount)}`,
+    confirmLabel: 'Guardar movimiento'
+  });
+  if (!confirmed) return;
+
+  try {
+    const result = await fetchJson(`/api/cash-sessions/${session.id}/movements`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, amount })
+    });
+
+    state.currentCashSession = result.session;
+    state.cashSessions = state.cashSessions.map((item) => item.id === result.session.id ? result.session : item);
+    $('cashMovementAmount').value = '';
+    renderCashRegister();
+    renderCashHistory();
+    showToast('Movimiento guardado.');
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || 'No se pudo guardar el movimiento.');
+  }
 }
 
-function printCashCut() {
-  const dateString = $("cutDateInput").value || getLocalDateString();
+async function closeCashShift() {
+  const session = getSalesCashShift();
+  if (!session) {
+    showToast('Primero abre la caja.');
+    return;
+  }
 
-  $("printArea").innerHTML = `
+  const countedCash = Number($('countedCashInput')?.value || 0);
+
+  if (!Number.isFinite(countedCash) || countedCash < 0) {
+    showToast('Captura el efectivo contado correctamente.');
+    return;
+  }
+
+  const summary = getCurrentCashSummary();
+  const difference = countedCash - Number(summary.expectedCash || 0);
+  const confirmed = await openProductConfirm({
+    title: 'Cerrar caja',
+    message: 'El corte quedará guardado y no podrá recibir más ventas.',
+    summary: `Esperado ${money(summary.expectedCash)} · contado ${money(countedCash)} · diferencia ${money(difference)}`,
+    confirmLabel: 'Cerrar caja'
+  });
+  if (!confirmed) return;
+
+  const button = $('closeCashShiftBtn');
+  if (button) button.disabled = true;
+
+  try {
+    const closedSession = await fetchJson(`/api/cash-sessions/${session.id}/close`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ countedCash })
+    });
+
+    state.cashSessions = state.cashSessions.map((item) => item.id === closedSession.id ? closedSession : item);
+    state.currentCashSession = null;
+    renderCashRegister();
+    renderCashHistory();
+    renderTicket();
+    showToast(`Caja ${closedSession.id} cerrada.`);
+    printCashSession(closedSession.id);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || 'No se pudo cerrar la caja.');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function printCashSession(sessionId) {
+  const session = state.cashSessions.find((item) => item.id === sessionId);
+  if (!session) {
+    showToast('Corte no encontrado.');
+    return;
+  }
+
+  const summary = session.summary || {};
+  const movements = Array.isArray(session.movements) ? session.movements : [];
+  const movementHtml = movements.length === 0
+    ? '<p>Sin movimientos manuales</p>'
+    : movements.map((movement) => `
+        <div class="receipt-row">
+          <span>${movement.type === 'out' ? 'Retiro' : 'Entrada'} · ${escapeHtml(movement.reason)}</span>
+          <strong>${movement.type === 'out' ? '-' : '+'}${money(movement.amount)}</strong>
+        </div>
+      `).join('');
+
+  $('printArea').innerHTML = `
     <div class="receipt">
       <h1>EL MUELLE</h1>
-      <h2>Corte de Caja</h2>
-      <p>${escapeHtml(dateString)}</p>
+      <h2>Caja</h2>
+      <p>${escapeHtml(session.id)} · ${escapeHtml(session.businessDate)}</p>
+      <p>Apertura: ${new Date(session.openedAt).toLocaleString('es-MX')}</p>
+      ${session.closedAt ? `<p>Cierre: ${new Date(session.closedAt).toLocaleString('es-MX')}</p>` : ''}
       <div class="line"></div>
-      <div class="receipt-row"><span>Total</span><strong>${$("cutTotalSales").textContent}</strong></div>
-      <div class="receipt-row"><span>Ganancia</span><strong>${$("cutGrossProfit").textContent}</strong></div>
-      <div class="receipt-row"><span>Margen</span><strong>${$("cutMargin").textContent}</strong></div>
-      <div class="receipt-row"><span>Ventas</span><strong>${$("cutSalesCount").textContent}</strong></div>
+      <div class="receipt-row"><span>Fondo inicial</span><strong>${money(session.openingAmount)}</strong></div>
+      <div class="receipt-row"><span>Ventas efectivo</span><strong>${money(summary.cashSales || 0)}</strong></div>
+      <div class="receipt-row"><span>Tarjeta</span><strong>${money(summary.cardSales || 0)}</strong></div>
+      <div class="receipt-row"><span>Transferencia</span><strong>${money(summary.transferSales || 0)}</strong></div>
+      <div class="receipt-row"><span>Total vendido</span><strong>${money(summary.totalSales || 0)}</strong></div>
+      <div class="receipt-row"><span>Ventas</span><strong>${summary.salesCount || 0}</strong></div>
+      <div class="receipt-row"><span>Canceladas</span><strong>${summary.canceledCount || 0}</strong></div>
       <div class="line"></div>
-      <div class="receipt-row"><span>Efectivo</span><strong>${$("cutCash").textContent}</strong></div>
-      <div class="receipt-row"><span>Tarjeta</span><strong>${$("cutCard").textContent}</strong></div>
-      <div class="receipt-row"><span>Transferencia</span><strong>${$("cutTransfer").textContent}</strong></div>
-      <div class="receipt-row"><span>Canceladas</span><strong>${$("cutCanceled").textContent}</strong></div>
+      ${movementHtml}
+      <div class="line"></div>
+      <div class="receipt-row"><span>Efectivo esperado</span><strong>${money(summary.expectedCash || session.expectedCash || 0)}</strong></div>
+      <div class="receipt-row"><span>Efectivo contado</span><strong>${session.status === 'closed' ? money(session.countedCash) : '-'}</strong></div>
+      <div class="receipt-row"><span>Diferencia</span><strong>${session.status === 'closed' ? money(session.difference) : '-'}</strong></div>
     </div>
   `;
 
   window.print();
 }
+
+function printCashCut() {
+  const dateString = $('cutDateInput').value || getLocalDateString();
+
+  $('printArea').innerHTML = `
+    <div class="receipt">
+      <h1>EL MUELLE</h1>
+      <h2>Resumen de Caja</h2>
+      <p>${escapeHtml(dateString)}</p>
+      <div class="line"></div>
+      <div class="receipt-row"><span>Total</span><strong>${$('cutTotalSales').textContent}</strong></div>
+      <div class="receipt-row"><span>Ganancia</span><strong>${$('cutGrossProfit').textContent}</strong></div>
+      <div class="receipt-row"><span>Margen</span><strong>${$('cutMargin').textContent}</strong></div>
+      <div class="receipt-row"><span>Ventas</span><strong>${$('cutSalesCount').textContent}</strong></div>
+      <div class="line"></div>
+      <div class="receipt-row"><span>Efectivo</span><strong>${$('cutCash').textContent}</strong></div>
+      <div class="receipt-row"><span>Tarjeta</span><strong>${$('cutCard').textContent}</strong></div>
+      <div class="receipt-row"><span>Transferencia</span><strong>${$('cutTransfer').textContent}</strong></div>
+      <div class="receipt-row"><span>Canceladas</span><strong>${$('cutCanceled').textContent}</strong></div>
+    </div>
+  `;
+
+  window.print();
+}
+
 
 function applyScaleSettings() {
   scaleState.baudRate = Number($("scaleBaudRateInput").value || 9600);
@@ -3197,6 +4462,20 @@ function updateScaleUi() {
 
   document.body.classList.toggle("scale-connected", scaleState.connected);
   document.body.classList.toggle("scale-unsupported", !scaleState.supported);
+
+  const sidebarScaleCard = document.querySelector(".scale-card");
+  if (sidebarScaleCard) {
+    const compactScaleStatus = !scaleState.supported
+      ? "Báscula no compatible"
+      : scaleState.connected
+        ? "Báscula conectada"
+        : "Báscula desconectada";
+
+    sidebarScaleCard.setAttribute("title", compactScaleStatus);
+    sidebarScaleCard.setAttribute("aria-label", compactScaleStatus);
+  }
+
+  updateAccessStatus();
 }
 
 function bindEvents() {
@@ -3206,12 +4485,17 @@ function bindEvents() {
   on($("cashStatusBtn"), "click", goToCashRegister);
   on($("openCashFromSaleBtn"), "click", goToCashRegister);
   on($("ticketSideToggleBtn"), "click", () => toggleTicketPanel());
-  on($("closeTicketPanelBtn"), "click", () => setPosStep("product"));
-  on($("sessionSwitchBtn"), "click", () => openEmployeeAccess(false));
+  on($("closeTicketPanelBtn"), "click", closeTicketDrawer);
+  document.addEventListener("pointerdown", handleTicketOutsideClick);
+  on($("sessionSwitchBtn"), "click", logoutToAccess);
+  on($("accessLoginBtn"), "click", confirmAccessLogin);
+  on($("accessPinInput"), "keydown", (event) => {
+    if (event.key === "Enter") confirmAccessLogin();
+  });
   on($("authConfirmBtn"), "click", confirmAdminAccess);
   on($("authEmployeeBtn"), "click", () => {
     closeAuthModal();
-    openEmployeeAccess(true);
+    logoutToAccess();
   });
   on($("authCloseBtn"), "click", closeAuthModal);
   on($("authPinInput"), "keydown", (event) => {
@@ -3270,6 +4554,7 @@ function bindEvents() {
   on($("clearTicketBtn"), "click", clearTicket);
   on($("chargeBtn"), "click", openInvoiceDecisionModal);
 
+  on($("manualQuantityInput"), "input", formatManualQuantityInput);
   on($("saveManualWeightBtn"), "click", saveManualQuantity);
   on($("cancelManualWeightBtn"), "click", closeManualModal);
   on($("closeManualModalBtn"), "click", closeManualModal);
@@ -3280,22 +4565,52 @@ function bindEvents() {
   on($("invoiceDecisionModal"), "click", (event) => {
     if (event.target === $("invoiceDecisionModal")) closeInvoiceDecisionModal();
   });
-
   $$(".pay-method").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.paymentMethod = button.dataset.method;
-      $$(".pay-method").forEach((item) => item.classList.remove("active"));
-      button.classList.add("active");
-    });
+    button.addEventListener("click", () => setPaymentMethod(button.dataset.method));
+  });
+  on($("paymentReferenceInput"), "input", () => {
+    state.paymentReference = String($("paymentReferenceInput")?.value || "").trim();
   });
 
   on($("productForm"), "submit", saveProductFromAdmin);
   on($("resetProductFormBtn"), "click", resetProductForm);
+  ["productPriceInput", "productCostInput", "productStockInput", "productUnitInput"].forEach((id) => {
+    on($(id), "input", updateProductProjection);
+    on($(id), "change", updateProductProjection);
+  });
   on($("productAdminSearch"), "input", renderAdminProducts);
   on($("productAdminCategoryFilter"), "change", renderAdminProducts);
 
+  on($("inventoryEntryForm"), "submit", saveInventoryEntry);
+  on($("resetInventoryEntryBtn"), "click", resetInventoryEntryForm);
+  on($("inventoryEntryProductInput"), "change", populateInventoryEntryDefaults);
+  $$(`[data-entry-product-mode]`).forEach((button) => {
+    button.addEventListener("click", () => {
+      setInventoryEntryMode(button.dataset.entryProductMode);
+      if (button.dataset.entryProductMode === "new") {
+        $("inventoryNewProductNameInput")?.focus();
+      }
+    });
+  });
+  ["inventoryNewProductNameInput", "inventoryNewProductCategoryInput", "inventoryNewProductUnitInput", "inventoryNewProductMinStockInput"].forEach((id) => {
+    on($(id), "input", updateInventoryEntryProjection);
+    on($(id), "change", updateInventoryEntryProjection);
+  });
+  ["inventoryEntryQuantityInput", "inventoryEntryUnitCostInput", "inventoryEntrySalePriceInput"].forEach((id) => {
+    on($(id), "input", updateInventoryEntryProjection);
+  });
+  on($("inventoryEntrySearchInput"), "input", renderInventoryEntries);
   on($("inventorySearchInput"), "input", renderInventory);
   on($("inventoryCategoryFilter"), "change", renderInventory);
+  $$(`[data-inventory-mode-btn]`).forEach((button) => {
+    button.addEventListener("click", () => setInventoryMode(button.dataset.inventoryModeBtn));
+  });
+  $$(`[data-products-mode-btn]`).forEach((button) => {
+    button.addEventListener("click", () => setProductMode(button.dataset.productsModeBtn));
+  });
+  $$(`[data-settings-mode-btn]`).forEach((button) => {
+    button.addEventListener("click", () => setSettingsMode(button.dataset.settingsModeBtn));
+  });
 
   on($("salesSearchInput"), "input", renderSalesAdmin);
   on($("salesStatusFilter"), "change", renderSalesAdmin);
@@ -3314,9 +4629,12 @@ function bindEvents() {
   on($("refreshCutBtn"), "click", loadCashCut);
   on($("printCutBtn"), "click", printCashCut);
   on($("openCashShiftBtn"), "click", openCashShift);
+  on($("addCashMovementBtn"), "click", addCashMovement);
   on($("closeCashShiftBtn"), "click", closeCashShift);
-  on($("toggleCashCounterBtn"), "click", toggleCashCounter);
   on($("countedCashInput"), "input", renderCashRegisterSummary);
+  on($("cashCountToggleBtn"), "click", toggleCashCountTool);
+  on($("cashCountClearBtn"), "click", clearCashCountTool);
+  on($("cashCountUseBtn"), "click", useCashCountTotal);
 
   on($("productConfirmYesBtn"), "click", () => closeProductConfirm(true));
   on($("productConfirmNoBtn"), "click", () => closeProductConfirm(false));
@@ -3367,18 +4685,24 @@ async function init() {
   await loadSettings();
   const sessionRestored = await restoreAuthSession();
   if (!sessionRestored) {
-    openEmployeeAccess(true);
+    logoutToAccess();
   }
-  ["salesDateInput", "dashboardDateInput", "recentSalesDateInput", "cutDateInput"].forEach((id) => {
+  ["salesDateInput", "dashboardDateInput", "recentSalesDateInput", "cutDateInput", "inventoryEntryDateInput"].forEach((id) => {
     const input = $(id);
     if (input && !input.value) input.value = getLocalDateString();
   });
-  renderCashDenominations();
   updateClock();
   window.setInterval(updateClock, 30000);
   resetProductForm();
-  await loadCashShifts();
+  resetInventoryEntryForm();
+  if (state.sessionAuthenticated) {
+    await loadCashSessions();
+  }
   renderTicket();
+  setPaymentMethod(state.paymentMethod);
+  setInventoryMode();
+  setProductMode();
+  setSettingsMode();
   updateShellState();
   updateScaleUi();
   updateCashGateUi();

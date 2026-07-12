@@ -6,6 +6,7 @@ node_modules/
 # Datos operativos del negocio
 data/sales.json
 data/cash-shifts.json
+data/inventory-entries.json
 data/settings.json
 data/*.bak
 
@@ -16,3 +17,7 @@ ui-checks/
 
 # Fuentes pesadas de imagen; la app usa JPG optimizado.
 public/assets/products/*.png
+
+data/cash-sessions.json
+*.zip
+*.log

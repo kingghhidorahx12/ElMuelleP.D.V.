@@ -86,9 +86,10 @@
     "unit": "kg",
     "price": 100,
     "costPrice": 68,
-    "stockQuantity": 18,
+    "stockQuantity": 15,
     "minStock": 5,
-    "active": true
+    "active": true,
+    "updatedAt": "2026-07-12T00:43:15.113Z"
   },
   {
     "id": "sopa-mariscos",
@@ -229,9 +230,10 @@
     "unit": "kg",
     "price": 110,
     "costPrice": 75,
-    "stockQuantity": 16,
+    "stockQuantity": 11,
     "minStock": 4,
-    "active": true
+    "active": true,
+    "updatedAt": "2026-07-12T00:43:15.113Z"
   },
   {
     "id": "carne-hamburguesa",
@@ -295,11 +297,11 @@
     "unit": "pieza",
     "price": 65,
     "costPrice": 34,
-    "stockQuantity": 40,
+    "stockQuantity": 37,
     "minStock": 10,
     "active": true,
     "createdAt": "2026-07-07T18:57:11.255Z",
-    "updatedAt": "2026-07-07T18:57:11.255Z"
+    "updatedAt": "2026-07-12T00:44:00.998Z"
   },
   {
     "id": "salsa-tabasco-1783722675721",
@@ -308,10 +310,10 @@
     "unit": "pieza",
     "price": 49.9,
     "costPrice": 30,
-    "stockQuantity": 10,
+    "stockQuantity": 9,
     "minStock": 3,
     "active": true,
-    "updatedAt": "2026-07-10T22:31:15.720Z",
+    "updatedAt": "2026-07-12T00:44:00.998Z",
     "createdAt": "2026-07-10T22:31:15.721Z"
   }
 ]

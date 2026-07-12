@@ -5,19 +5,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>El Muelle POS</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2310213d'/%3E%3Ccircle cx='32' cy='32' r='22' fill='%23fff' stroke='%23c99a3e' stroke-width='4'/%3E%3Ctext x='32' y='38' text-anchor='middle' font-family='Arial,sans-serif' font-size='18' font-weight='900' fill='%2310213d'%3EEM%3C/text%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
-<body>
+<body class="auth-locked">
+  <section id="accessScreen" class="access-screen" aria-label="Acceso al punto de venta">
+    <div class="access-brand-panel">
+      <img src="./assets/brand/el-muelle-logo.png" alt="El Muelle Pescaderia" />
+      <div>
+        <h1>Punto de Venta</h1>
+        <p>Inicia sesion para abrir tu espacio de trabajo.</p>
+      </div>
+      <div class="access-status-grid">
+        <article>
+          <span>Servidor</span>
+          <strong id="accessServerStatus">Conectando...</strong>
+        </article>
+        <article>
+          <span>Bascula</span>
+          <strong id="accessScaleStatus">Revisando...</strong>
+        </article>
+      </div>
+    </div>
+    <div class="access-login-panel">
+      <div class="access-card-head">
+        <h2>Selecciona usuario</h2>
+        <p id="accessSelectedName">Encargado</p>
+      </div>
+      <div id="accessUserList" class="access-user-list"></div>
+      <label class="access-pin-label">
+        <span id="accessPinLabelText">PIN personal</span>
+        <input id="accessPinInput" type="password" inputmode="numeric" maxlength="12" autocomplete="current-password" placeholder="0000" />
+      </label>
+      <div class="access-actions">
+        <button id="accessLoginBtn" class="solid-btn" type="button">Entrar</button>
+      </div>
+    </div>
+  </section>
+
   <aside class="sidebar">
     <button id="sidebarToggleBtn" class="sidebar-toggle" type="button" title="Ocultar menú" aria-label="Ocultar menú">
-      <span id="sidebarToggleIcon">‹</span>
+      <span id="sidebarToggleIcon">â€¹</span>
     </button>
     <div class="brand">
-      <div class="brand-mark">EM</div>
+      <div class="brand-mark"><img src="./assets/brand/el-muelle-logo.png" alt="El Muelle" /></div>
       <div>
         <h1>El Muelle</h1>
         <p>Marisquería</p>
       </div>
+      <span id="clockText" class="sidebar-clock">--:--</span>
     </div>
 
     <nav class="nav" aria-label="Módulos">
@@ -29,7 +67,7 @@
       <button class="nav-item" type="button" data-view="dashboard" data-short="PA" data-label="Panel Administrativo"><span>Panel Administrativo</span></button>
       <button class="nav-item" type="button" data-view="products" data-short="P" data-label="Productos"><span>Productos</span></button>
       <button class="nav-item" type="button" data-view="inventory" data-short="I" data-label="Inventario"><span>Inventario</span></button>
-      <button class="nav-item" type="button" data-view="reports" data-short="$" data-label="Corte de Caja"><span>Corte de Caja</span></button>
+      <button class="nav-item" type="button" data-view="reports" data-short="$" data-label="Caja"><span>Caja</span></button>
       <span class="nav-group-label">Sistema</span>
       <button class="nav-item" type="button" data-view="settings" data-short="C" data-label="Configuración"><span>Configuración</span></button>
     </nav>
@@ -44,50 +82,91 @@
       <small id="scaleRawText">Sin lectura</small>
       <div class="scale-actions">
         <button id="connectScaleBtn" class="solid-btn" type="button">Conectar</button>
-        <button id="requestScaleBtn" class="quiet-btn" type="button" disabled>Pedir</button>
-        <button id="disconnectScaleBtn" class="quiet-btn" type="button" disabled>Soltar</button>
       </div>
     </section>
 
     <div class="session-box">
       <button id="sessionSwitchBtn" class="session-button" type="button">
-        <span id="sessionRoleLabel">Empleado</span>
-        <strong id="sessionUserName">Mostrador</strong>
+        <span id="sessionRoleLabel">Encargado</span>
+        <strong id="sessionUserName">Encargado</strong>
       </button>
     </div>
   </aside>
 
   <main class="app-shell">
-    <header class="topbar">
+            <header class="topbar">
       <div class="topbar-left">
-        <button id="mobileSidebarToggleBtn" class="icon-action mobile-menu-toggle" type="button" title="Mostrar menú" aria-label="Mostrar menú">›</button>
+        <button id="mobileSidebarToggleBtn" class="icon-action mobile-menu-toggle" type="button" title="Mostrar menu" aria-label="Mostrar menu">&rsaquo;</button>
         <div>
           <h2 id="pageTitle">Punto de Venta</h2>
           <p id="pageSubtitle"></p>
         </div>
       </div>
+      <div id="topbarContextSlot" class="topbar-context-slot" aria-label="Acciones de la pantalla actual"></div>
       <div class="topbar-meta">
         <button id="cashStatusBtn" class="cash-status-btn" type="button">Caja cerrada</button>
-        <button id="ticketToggleBtn" class="topbar-ticket-btn" type="button">Venta · $0.00</button>
-        <span id="clockText">--:--</span>
         <strong id="ticketId">T-000000</strong>
+        <button id="ticketToggleBtn" class="topbar-ticket-btn" type="button" aria-expanded="false">Venta - $0.00</button>
       </div>
     </header>
 
+    <aside class="ticket-panel">
+      <div class="ticket-drawer-head">
+        <div>
+          <span class="eyebrow">Venta actual</span>
+          <h3 id="saleBarCount">Sin productos</h3>
+        </div>
+        <div class="ticket-drawer-actions">
+          <strong id="drawerTicketId">T-000000</strong>
+          <button id="closeTicketPanelBtn" class="ticket-close-btn" type="button" aria-label="Cerrar venta actual" title="Cerrar venta actual">&times;</button>
+        </div>
+      </div>
+
+      <div id="ticketItems" class="ticket-items">
+        <p class="empty-state">Agrega productos para iniciar.</p>
+      </div>
+
+      <div id="cashGateNotice" class="cash-gate-notice" hidden>
+        <div>
+          <strong>Caja cerrada</strong>
+          <span>Abre la caja del día antes de cobrar ventas.</span>
+        </div>
+        <button id="openCashFromSaleBtn" class="quiet-btn" type="button">Abrir caja</button>
+      </div>
+
+      <div class="summary">
+        <div>
+          <span>Subtotal</span>
+          <strong id="subtotalText">$0.00</strong>
+        </div>
+        <div>
+          <span>Descuento</span>
+          <strong id="discountText">$0.00</strong>
+        </div>
+        <div class="summary-total">
+          <span>Total</span>
+          <strong id="totalText">$0.00</strong>
+        </div>
+      </div>
+
+      <div class="payment-methods">
+        <button class="pay-method active" type="button" data-method="efectivo">Efectivo</button>
+        <button class="pay-method" type="button" data-method="tarjeta">Tarjeta</button>
+        <button class="pay-method" type="button" data-method="transferencia">Transferencia</button>
+      </div>
+      <label id="paymentReferencePanel" class="payment-reference-panel" hidden>
+        <span id="paymentReferenceLabel">Referencia</span>
+        <input id="paymentReferenceInput" type="text" maxlength="80" autocomplete="off" placeholder="Autorizacion o referencia" />
+      </label>
+
+      <button id="chargeBtn" class="charge-btn" type="button" disabled>Cobrar $0.00</button>
+      <button id="clearTicketBtn" class="danger-soft-btn" type="button" disabled>Vaciar venta</button>
+    </aside>
+
+
     <section class="workspace">
       <section id="posView" class="app-view active">
-        <div class="pos-flow" aria-label="Pasos de venta">
-          <button class="flow-step active" type="button" data-pos-step="product">
-            <span>1</span>
-            <strong>Seleccionar producto</strong>
-            <small>Catálogo y peso</small>
-          </button>
-          <button class="flow-step" type="button" data-pos-step="checkout">
-            <span>2</span>
-            <strong>Cobro</strong>
-            <small>Revisar venta</small>
-          </button>
-        </div>
+        <div class="pos-section-title premium-module-head premium-module-head--pos balanced-module-head"><h3>Selecciona el producto</h3></div>
         <div class="pos-layout">
           <section class="catalog-panel">
             <div id="categoryGrid" class="category-grid"></div>
@@ -113,55 +192,6 @@
 
             <div id="productGrid" class="product-grid"></div>
           </section>
-
-          <aside class="ticket-panel">
-            <div class="panel-head compact">
-              <div>
-                <span class="eyebrow">Venta actual</span>
-                <h3 id="saleBarCount">Sin productos</h3>
-              </div>
-              <div class="ticket-head-actions" hidden>
-                <strong id="saleBarTotal" class="ticket-total">$0.00</strong>
-                <button id="closeTicketPanelBtn" class="quiet-btn" type="button">Agregar más</button>
-              </div>
-            </div>
-
-            <div id="ticketItems" class="ticket-items">
-              <p class="empty-state">Agrega productos para iniciar.</p>
-            </div>
-
-            <div id="cashGateNotice" class="cash-gate-notice" hidden>
-              <div>
-                <strong>Caja cerrada</strong>
-                <span>Abre la caja del día antes de cobrar ventas.</span>
-              </div>
-              <button id="openCashFromSaleBtn" class="quiet-btn" type="button">Abrir caja</button>
-            </div>
-
-            <div class="summary">
-              <div>
-                <span>Subtotal</span>
-                <strong id="subtotalText">$0.00</strong>
-              </div>
-              <div>
-                <span>Descuento</span>
-                <strong id="discountText">$0.00</strong>
-              </div>
-              <div class="summary-total">
-                <span>Total</span>
-                <strong id="totalText">$0.00</strong>
-              </div>
-            </div>
-
-            <div class="payment-methods">
-              <button class="pay-method active" type="button" data-method="efectivo">Efectivo</button>
-              <button class="pay-method" type="button" data-method="tarjeta">Tarjeta</button>
-              <button class="pay-method" type="button" data-method="transferencia">Transferencia</button>
-            </div>
-
-            <button id="chargeBtn" class="charge-btn" type="button" disabled>Cobrar $0.00</button>
-            <button id="clearTicketBtn" class="danger-soft-btn" type="button" disabled>Vaciar venta</button>
-          </aside>
 
           <section class="weigh-panel">
             <div>
@@ -195,7 +225,11 @@
 
       <section id="dashboardView" class="app-view">
         <section class="work-panel full-panel dashboard-panel">
-          <div class="panel-head dashboard-controls">
+          <div class="panel-head dashboard-controls premium-module-head premium-module-head--dashboard">
+            <div class="premium-module-copy">
+              <span class="eyebrow">Panel administrativo</span>
+              <h3>Resumen del negocio</h3>
+            </div>
             <div class="toolbar">
               <select id="dashboardPeriodFilter">
                 <option value="day">Día</option>
@@ -272,9 +306,10 @@
       <section id="salesView" class="app-view">
         <div class="split-layout">
           <section class="work-panel">
-            <div class="panel-head">
+            <div class="panel-head premium-module-head premium-module-head--sales balanced-module-head">
               <div>
-                <h3>Historial</h3>
+                
+                <h3>Historial de ventas</h3>
               </div>
               <div class="toolbar">
                 <input id="salesSearchInput" type="search" placeholder="Folio..." />
@@ -301,10 +336,14 @@
       </section>
 
       <section id="productsView" class="app-view">
-        <div class="split-layout products-layout">
-          <section class="work-panel">
+        <div class="split-layout products-layout" data-products-mode="list">
+          <div class="subview-tabs product-subview-tabs" role="tablist" aria-label="Secciones de productos">
+          <button class="active" type="button" data-products-mode-btn="list">Catálogo</button>
+          <button type="button" data-products-mode-btn="form">Agregar producto</button>
+        </div>
+          <section class="work-panel product-form-panel">
             <form id="productForm" class="product-form">
-              <div class="form-title">
+              <div class="form-title premium-module-head premium-module-head--products balanced-module-head">
                 <h3 id="productFormStatusTitle">Agregar producto</h3>
                 <p id="productFormStatusText"></p>
               </div>
@@ -359,9 +398,30 @@
             </form>
           </section>
 
-          <section class="work-panel">
-            <div class="panel-head">
+          <section class="work-panel product-projection-panel">
+            <div class="product-projection-shell" aria-live="polite">
+              <div class="form-title premium-module-head premium-module-head--products product-projection-head balanced-module-head">
+                <span class="eyebrow">Proyección</span>
+                <h3>Inventario actual</h3>
+                <p id="productProjectionStatus">Captura costo y existencia</p>
+              </div>
+
+              <section class="product-projection">
+                <div class="projection-grid">
+                  <article><span>Inversión</span><strong id="productInvestmentTotal">$0.00</strong></article>
+                  <article><span>Venta proyectada</span><strong id="productProjectedRevenue">$0.00</strong></article>
+                  <article><span>Ganancia</span><strong id="productProjectedProfit">$0.00</strong></article>
+                  <article><span>Margen</span><strong id="productMarginPercent">0.00%</strong></article>
+                  <article class="wide"><span>Ganancia por unidad</span><strong id="productUnitProfit">$0.00</strong></article>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section class="work-panel product-catalog-panel">
+            <div class="panel-head premium-module-head premium-module-head--products balanced-module-head">
               <div>
+                
                 <h3>Catálogo</h3>
               </div>
               <div class="toolbar">
@@ -381,32 +441,186 @@
       </section>
 
       <section id="inventoryView" class="app-view">
-        <section class="work-panel full-panel">
-          <div class="panel-head">
-            <div>
-              <h3>Existencias</h3>
-            </div>
-            <div class="toolbar">
-              <input id="inventorySearchInput" type="search" placeholder="Buscar..." />
-              <select id="inventoryCategoryFilter">
-                <option value="all">Todas</option>
-                <option value="Pescados y mariscos">Pescados y mariscos</option>
-                <option value="Carnes selectas">Carnes selectas</option>
-                <option value="Para el antojo">Para el antojo</option>
-                <option value="Condimentos y salsas">Condimentos y salsas</option>
-              </select>
-            </div>
+        <div class="inventory-management-layout" data-inventory-mode="stock">
+          <div class="subview-tabs inventory-subview-tabs" role="tablist" aria-label="Secciones de inventario">
+            <button class="active" type="button" data-inventory-mode-btn="stock">Existencias</button>
+            <button type="button" data-inventory-mode-btn="entry">Entrada de mercancía</button>
+            <button type="button" data-inventory-mode-btn="history">Historial</button>
           </div>
-          <div id="inventoryList" class="inventory-list"></div>
-        </section>
+          <section class="work-panel inventory-entry-panel">
+            <form id="inventoryEntryForm" class="inventory-entry-form">
+              <div class="form-title wide inventory-entry-title premium-module-head premium-module-head--inventory balanced-module-head">
+                <h3>Entrada de mercancía</h3>
+              </div>
+
+              <div class="entry-mode-toggle wide" role="tablist" aria-label="Tipo de entrada de mercancía">
+                <button class="active" type="button" data-entry-product-mode="existing">Producto existente</button>
+                <button type="button" data-entry-product-mode="new">Producto nuevo</button>
+              </div>
+
+              <label class="wide entry-existing-field">
+                Producto existente
+                <select id="inventoryEntryProductInput">
+                  <option value="">Selecciona un producto</option>
+                </select>
+              </label>
+
+              <div class="entry-new-product-fields wide" aria-label="Datos del producto nuevo">
+                <label class="wide">
+                  Nombre del producto
+                  <input id="inventoryNewProductNameInput" type="text" maxlength="120" placeholder="Ej. Camarón cristal" />
+                </label>
+
+                <label>
+                  Categoría
+                  <select id="inventoryNewProductCategoryInput">
+                    <option value="Pescados y mariscos">Pescados y mariscos</option>
+                    <option value="Carnes selectas">Carnes selectas</option>
+                    <option value="Para el antojo">Para el antojo</option>
+                    <option value="Condimentos y salsas">Condimentos y salsas</option>
+                  </select>
+                </label>
+
+                <label>
+                  Venta
+                  <select id="inventoryNewProductUnitInput">
+                    <option value="kg">Por kg</option>
+                    <option value="pieza">Por pieza</option>
+                  </select>
+                </label>
+
+                <label class="wide">
+                  Mínimo sugerido
+                  <input id="inventoryNewProductMinStockInput" type="number" min="0" step="0.001" placeholder="0.000" />
+                </label>
+              </div>
+
+              <label>
+                Cantidad recibida
+                <input id="inventoryEntryQuantityInput" type="number" min="0" step="0.001" placeholder="0.000" />
+              </label>
+
+              <label>
+                Costo por unidad
+                <input id="inventoryEntryUnitCostInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+
+              <label>
+                Precio de venta
+                <input id="inventoryEntrySalePriceInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+
+              <label>
+                Fecha de compra
+                <input id="inventoryEntryDateInput" type="date" />
+              </label>
+
+              <label class="wide">
+                Nota
+                <input id="inventoryEntryNotesInput" type="text" maxlength="180" placeholder="Factura, lote o detalle opcional" />
+              </label>
+
+              <div class="form-actions wide">
+                <button id="saveInventoryEntryBtn" class="solid-btn" type="submit">Registrar entrada</button>
+                <button id="resetInventoryEntryBtn" class="quiet-btn" type="button">Limpiar</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="work-panel inventory-analysis-panel">
+            <div class="form-title inventory-projection-title">
+              <span class="eyebrow">Proyección</span>
+              <h3 id="inventoryEntryProductName">Selecciona un producto</h3>
+              <p id="inventoryEntryProductMeta" hidden></p>
+            </div>
+
+            <div class="inventory-entry-metrics">
+              <article><span>Existencia actual</span><strong id="entryCurrentStock">0.000</strong></article>
+              <article><span>Costo promedio actual</span><strong id="entryCurrentCost">$0.00</strong></article>
+              <article><span>Gasto de compra</span><strong id="entryPurchaseTotal">$0.00</strong></article>
+              <article><span>Venta proyectada</span><strong id="entryProjectedRevenue">$0.00</strong></article>
+              <article class="profit"><span>Ganancia proyectada</span><strong id="entryProjectedProfit">$0.00</strong></article>
+              <article><span>Margen</span><strong id="entryMargin">0.00%</strong></article>
+              <article><span>Nueva existencia</span><strong id="entryNewStock">0.000</strong></article>
+              <article><span>Nuevo costo promedio</span><strong id="entryWeightedCost">$0.00</strong></article>
+            </div>
+          </section>
+
+          <section class="work-panel inventory-stock-panel">
+            <section class="inventory-overview-column">
+              <div class="panel-head premium-module-head premium-module-head--inventory balanced-module-head">
+                <div class="inventory-overview-title">
+                  <span class="eyebrow">Inventario</span>
+                  <h3>Existencias actuales</h3>
+                </div>
+                <div class="toolbar">
+                  <input id="inventorySearchInput" type="search" placeholder="Buscar producto..." />
+                  <select id="inventoryCategoryFilter">
+                    <option value="all">Todas</option>
+                    <option value="Pescados y mariscos">Pescados y mariscos</option>
+                    <option value="Carnes selectas">Carnes selectas</option>
+                    <option value="Para el antojo">Para el antojo</option>
+                    <option value="Condimentos y salsas">Condimentos y salsas</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="inventory-kpis">
+                <article><span>Valor invertido</span><strong id="inventoryInvestmentValue">$0.00</strong></article>
+                <article><span>Venta proyectada</span><strong id="inventoryProjectedValue">$0.00</strong></article>
+                <article><span>Ganancia proyectada</span><strong id="inventoryProjectedProfit">$0.00</strong></article>
+                <article><span>Entradas registradas</span><strong id="inventoryEntriesCount">0</strong></article>
+              </div>
+
+              <div class="inventory-sales-insights" aria-label="Rotación de productos">
+                <section class="inventory-sales-card top">
+                  <div class="inventory-sales-head">
+                    <span>Rotación 30 días</span>
+                    <strong>Más vendidos</strong>
+                  </div>
+                  <div id="inventoryTopProducts" class="inventory-sales-list"></div>
+                </section>
+                <section class="inventory-sales-card slow">
+                  <div class="inventory-sales-head">
+                    <span>Rotación 30 días</span>
+                    <strong>Menos vendidos</strong>
+                  </div>
+                  <div id="inventorySlowProducts" class="inventory-sales-list"></div>
+                </section>
+              </div>
+            </section>
+
+            <section class="inventory-products-column">
+              <div class="inventory-products-column-head">
+                <div>
+                  <h4>INVENTARIO POR PRODUCTO</h4>
+                </div>
+                <span class="inventory-products-column-note">Existencias, costos y rotación</span>
+              </div>
+              <div id="inventoryList" class="inventory-list"></div>
+            </section>
+          </section>
+
+          <section class="work-panel inventory-history-panel">
+            <div class="panel-head premium-module-head premium-module-head--inventory balanced-module-head">
+              <div>
+                
+                <h3>Historial de entradas</h3>
+              </div>
+              <input id="inventoryEntrySearchInput" type="search" placeholder="Buscar producto, nota o folio..." />
+            </div>
+            <div id="inventoryEntriesList" class="inventory-entries-list">
+              <p class="empty-state">Aún no hay entradas registradas.</p>
+            </div>
+          </section>
+        </div>
       </section>
 
       <section id="billingView" class="app-view">
         <div class="split-layout">
           <section class="work-panel">
             <form id="invoiceForm" class="invoice-form">
-              <div class="form-title wide">
-                <span class="eyebrow">Facturación</span>
+              <div class="form-title wide premium-module-head premium-module-head--billing balanced-module-head">
                 <h3>Datos fiscales</h3>
               </div>
               <label>
@@ -446,9 +660,9 @@
             </form>
           </section>
           <section class="work-panel">
-            <div class="panel-head compact">
+            <div class="panel-head compact premium-module-head premium-module-head--billing premium-module-head--compact balanced-module-head">
               <div>
-                <h3>Recientes</h3>
+                <h3>Solicitudes recientes</h3>
               </div>
               <div class="toolbar">
                 <select id="recentSalesPeriodFilter">
@@ -468,42 +682,158 @@
       </section>
 
       <section id="reportsView" class="app-view">
-        <section class="work-panel full-panel">
-          <section class="inner-panel cash-register-panel">
-            <div class="cash-register-head">
+        <section class="work-panel full-panel cash-control-page">
+          <section class="inner-panel cash-current-panel">
+            <div class="cash-current-head premium-module-head premium-module-head--cash">
               <div>
-                <h4>Apertura y cierre</h4>
+                <h3>Apertura y cierre</h3>
                 <p id="cashShiftStatus">Sin caja abierta.</p>
               </div>
-              <strong id="cashShiftDifference">$0.00</strong>
+              <span id="cashSessionStatusBadge" class="cash-session-status closed">Cerrada</span>
             </div>
-            <div class="cash-register-grid">
+
+            <div class="cash-current-summary">
+              <article>
+                <span>Hora de apertura</span>
+                <strong id="cashCurrentOpenedAt">--:--</strong>
+              </article>
+              <article>
+                <span>Fondo inicial</span>
+                <strong id="cashCurrentOpeningAmount">$0.00</strong>
+              </article>
+              <article>
+                <span>Efectivo esperado</span>
+                <strong id="cashCurrentExpected">$0.00</strong>
+              </article>
+            </div>
+
+            <div id="cashOpenControls" class="cash-open-controls">
               <label>
                 Fondo inicial
                 <input id="openingCashInput" type="number" min="0" step="0.01" placeholder="0.00" />
               </label>
               <button id="openCashShiftBtn" class="solid-btn" type="button">Abrir caja</button>
-              <label>
-                Efectivo contado
-                <input id="countedCashInput" type="number" min="0" step="0.01" placeholder="0.00" />
-              </label>
-              <button id="toggleCashCounterBtn" class="quiet-btn" type="button">Contador de efectivo</button>
-              <button id="closeCashShiftBtn" class="warning-btn" type="button">Cerrar corte</button>
             </div>
-            <div id="cashCounterPanel" class="cash-counter-panel hidden">
-              <div id="cashDenominations" class="cash-denominations"></div>
-              <div class="cash-counter-total">
-                <span>Total contado</span>
-                <strong id="cashCounterTotal">$0.00</strong>
-              </div>
+
+            <div id="cashLiveControls" class="cash-live-controls hidden">
+              <section class="cash-action-card cash-close-card">
+                <div class="cash-action-head">
+                  <div>
+                    <span class="eyebrow">Cierre</span>
+                    <h4>Contar y cerrar caja</h4>
+                  </div>
+                  <div class="cash-difference-indicator">
+                    <span>Diferencia</span>
+                    <strong id="cashShiftDifference">$0.00</strong>
+                  </div>
+                </div>
+                <div class="cash-close-form cash-close-footer">
+                  <label class="cash-close-counted-field">
+                    Efectivo contado
+                    <input id="countedCashInput" type="number" min="0" step="0.01" placeholder="0.00" inputmode="decimal" />
+                  </label>
+                  <button id="cashCountToggleBtn" class="quiet-btn cash-count-toggle" type="button">Calculadora de efectivo</button>
+                  <button id="closeCashShiftBtn" class="warning-btn" type="button">Cerrar caja</button>
+                </div>
+                <section id="cashCountTool" class="cash-count-tool hidden" aria-label="Calculadora de efectivo">
+                  <div class="cash-count-head">
+                    <div>
+                      <span class="eyebrow">Conteo opcional</span>
+                      <h5>Calculadora de efectivo</h5>
+                    </div>
+                    <button id="cashCountClearBtn" class="quiet-btn" type="button">Limpiar</button>
+                  </div>
+                  <div id="cashCountGrid" class="cash-count-grid"></div>
+                  <div class="cash-count-summary">
+                    <article>
+                      <span>Total contado</span>
+                      <strong id="cashCountTotal">$0.00</strong>
+                    </article>
+                    <article>
+                      <span>Efectivo esperado</span>
+                      <strong id="cashCountExpected">$0.00</strong>
+                    </article>
+                    <article>
+                      <span>Diferencia</span>
+                      <strong id="cashCountDifference">$0.00</strong>
+                    </article>
+                    <button id="cashCountUseBtn" class="solid-btn" type="button">Usar total</button>
+                  </div>
+                </section>
+              </section>
             </div>
-            <div id="cashShiftLog" class="cash-shift-log"></div>
           </section>
 
-          <div class="cut-filter-bar">
+          <section class="inner-panel cash-live-summary-panel">
+            <div class="panel-head compact">
+              <div>
+                <span class="eyebrow">Resumen actual</span>
+                <h3>Actividad de la caja abierta</h3>
+              </div>
+            </div>
+            <div class="cash-live-kpis">
+              <article><span>Total vendido</span><strong id="sessionTotalSales">$0.00</strong></article>
+              <article><span>Efectivo</span><strong id="sessionCashSales">$0.00</strong></article>
+              <article><span>Tarjeta</span><strong id="sessionCardSales">$0.00</strong></article>
+              <article><span>Transferencia</span><strong id="sessionTransferSales">$0.00</strong></article>
+              <article><span>Entradas</span><strong id="sessionCashIn">$0.00</strong></article>
+              <article><span>Retiros</span><strong id="sessionCashOut">$0.00</strong></article>
+              <article><span>Ventas</span><strong id="sessionSalesCount">0</strong></article>
+              <article><span>Canceladas</span><strong id="sessionCanceledCount">0</strong></article>
+            </div>
+          </section>
+
+          <section id="cashMovementsSection" class="inner-panel cash-operations-panel admin-only-cash-movements hidden">
+            <div class="panel-head compact">
+              <div>
+                <span class="eyebrow">Operaciones</span>
+                <h3>Movimientos de efectivo</h3>
+                <p>Entradas y retiros manuales de la caja actual. Solo disponibles para el administrador.</p>
+              </div>
+            </div>
+
+            <div class="cash-operations-grid">
+              <section class="cash-action-card">
+                <div class="cash-action-head">
+                  <div>
+                    <span class="eyebrow">Nuevo movimiento</span>
+                    <h4>Registrar entrada o retiro</h4>
+                  </div>
+                </div>
+                <div class="cash-movement-form">
+                  <label>
+                    Tipo
+                    <select id="cashMovementType">
+                      <option value="out">Retiro</option>
+                      <option value="in">Entrada</option>
+                    </select>
+                  </label>
+                  <label>
+                    Importe
+                    <input id="cashMovementAmount" type="number" min="0.01" step="0.01" placeholder="0.00" />
+                  </label>
+                  <button id="addCashMovementBtn" class="quiet-btn" type="button">Guardar movimiento</button>
+                </div>
+              </section>
+
+              <section class="cash-action-card cash-movements-history-card">
+                <div class="cash-action-head">
+                  <div>
+                    <span class="eyebrow">Historial actual</span>
+                    <h4>Movimientos registrados</h4>
+                  </div>
+                </div>
+                <div id="cashMovementsList" class="cash-movements-list">
+                  <p class="empty-state">Sin movimientos manuales.</p>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <div class="cut-filter-bar admin-cash-reporting">
             <div>
-              <strong>Resumen e historial</strong>
-              <span>Consulta ventas y cortes guardados por periodo.</span>
+              <strong>Resumen por periodo</strong>
+              <span>Consulta ventas, rentabilidad y cortes anteriores.</span>
             </div>
             <div class="toolbar">
               <select id="cutPeriodFilter">
@@ -515,30 +845,18 @@
               </select>
               <input id="cutDateInput" type="date" />
               <button id="refreshCutBtn" class="quiet-btn" type="button">Actualizar</button>
-              <button id="printCutBtn" class="solid-btn" type="button">Imprimir</button>
+              <button id="printCutBtn" class="solid-btn" type="button">Imprimir resumen</button>
             </div>
           </div>
 
-          <div class="kpi-grid">
-            <article>
-              <span>Total vendido</span>
-              <strong id="cutTotalSales">$0.00</strong>
-            </article>
-            <article>
-              <span>Ganancia</span>
-              <strong id="cutGrossProfit">$0.00</strong>
-            </article>
-            <article>
-              <span>Margen</span>
-              <strong id="cutMargin">0.00%</strong>
-            </article>
-            <article>
-              <span>Ventas</span>
-              <strong id="cutSalesCount">0</strong>
-            </article>
+          <div class="kpi-grid admin-cash-reporting">
+            <article><span>Total vendido</span><strong id="cutTotalSales">$0.00</strong></article>
+            <article><span>Ganancia</span><strong id="cutGrossProfit">$0.00</strong></article>
+            <article><span>Margen</span><strong id="cutMargin">0.00%</strong></article>
+            <article><span>Ventas</span><strong id="cutSalesCount">0</strong></article>
           </div>
 
-          <div class="report-grid">
+          <div class="report-grid admin-cash-reporting">
             <section class="inner-panel">
               <h4>Pagos</h4>
               <div class="payment-summary">
@@ -548,23 +866,28 @@
                 <div><span>Canceladas</span><strong id="cutCanceled">0</strong></div>
               </div>
             </section>
-            <section class="inner-panel">
-              <h4>Más vendidos</h4>
-              <div id="topProductsList" class="top-products-list"></div>
-            </section>
           </div>
 
-          <section class="inner-panel cash-history-panel">
-            <h4>Historial de cortes</h4>
+          <section class="inner-panel cash-history-panel admin-cash-reporting">
+            <div class="panel-head compact">
+              <div>
+                <span class="eyebrow">Historial</span>
+                <h3>Cortes cerrados</h3>
+              </div>
+            </div>
             <div id="cashHistoryList" class="cash-history-list"></div>
           </section>
         </section>
       </section>
 
       <section id="settingsView" class="app-view">
-        <div class="split-layout settings-layout">
+        <div class="split-layout settings-layout" data-settings-mode="scale">
+          <div class="subview-tabs settings-subview-tabs" role="tablist" aria-label="Secciones de configuracion">
+            <button class="active" type="button" data-settings-mode-btn="scale">Bascula</button>
+            <button type="button" data-settings-mode-btn="users">Usuarios y PIN</button>
+          </div>
           <section class="work-panel">
-            <div class="form-title">
+            <div class="form-title premium-module-head premium-module-head--settings">
               <span class="eyebrow">Báscula</span>
               <h3>Puerto serial</h3>
             </div>
@@ -611,12 +934,12 @@
             </div>
             <div class="scale-protocol-card">
               <strong>Protocolo RHINO BAR-9</strong>
-              <span>9600 BPS · 8 bits · sin paridad · 1 bit de parada · sin flujo · enviar “P”.</span>
+              <span>9600 BPS · 8 bits · sin paridad · 1 bit de parada · sin flujo · enviar &quot;P&quot;.</span>
             </div>
           </section>
           <section class="work-panel">
-            <div class="form-title">
-              <span class="eyebrow">Lectura</span>
+            <div class="form-title premium-module-head premium-module-head--settings premium-module-head--compact">
+              <span class="eyebrow">Lectura en vivo</span>
               <h3 id="settingsScaleWeight">0.000 kg</h3>
               <p id="settingsScaleStatus">Sin conexión.</p>
             </div>
@@ -624,10 +947,10 @@
           </section>
 
           <section class="work-panel users-settings-panel">
-            <div class="form-title">
+            <div class="form-title premium-module-head premium-module-head--settings">
               <span class="eyebrow">Usuarios</span>
               <h3>Acceso y PIN</h3>
-              <p>Administra el nombre del encargado, el PIN protegido y las cuentas de mostrador.</p>
+              <p>Administra el nombre del encargado, el PIN protegido y las cuentas de acceso.</p>
             </div>
 
             <div class="users-settings-grid">
@@ -665,9 +988,9 @@
                 <div class="users-card-head">
                   <div>
                     <h4>Empleados</h4>
-                    <p>Los nombres aparecen al trabajar en modo mostrador.</p>
+                    <p>Los nombres aparecen al trabajar en caja.</p>
                   </div>
-                  <span class="user-role-badge">Mostrador</span>
+                  <span class="user-role-badge">Encargado</span>
                 </div>
 
                 <div class="employee-add-row">
@@ -675,7 +998,7 @@
                   <input id="newEmployeePinInput" type="password" inputmode="numeric" maxlength="12" placeholder="PIN inicial" autocomplete="new-password" />
                   <button id="addEmployeeBtn" class="quiet-btn" type="button">Agregar</button>
                 </div>
-                <p class="users-helper-text">Cada empleado entra con su propio PIN. El PIN inicial del usuario Mostrador es 0000 hasta que lo cambies.</p>
+                <p class="users-helper-text">Cada encargado entra con su propio PIN. El PIN inicial es 0000 hasta que lo cambies.</p>
 
                 <div id="employeesList" class="users-list">
                   <p class="empty-list">No hay empleados cargados.</p>
@@ -698,17 +1021,17 @@
       <div class="modal-head">
         <div>
           <h3>Captura manual</h3>
-          <p>Solo con autorización.</p>
-        </div>
-        <button id="closeManualModalBtn" class="icon-btn" type="button" aria-label="Cerrar">×</button>
+          </div>
+        <button id="closeManualModalBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
       </div>
       <label>
         PIN administrador
         <input id="adminPinInput" type="password" placeholder="PIN" />
       </label>
       <label>
-        Peso o cantidad
-        <input id="manualQuantityInput" type="number" min="0" step="0.001" placeholder="0.000" />
+        <span id="manualQuantityLabelText">Peso manual (kg)</span>
+        <input id="manualQuantityInput" type="text" inputmode="numeric" autocomplete="off" placeholder="0.000" />
+        <small id="manualQuantityHint" class="field-hint">Escribe gramos: 1250 = 1.250 kg.</small>
       </label>
       <div class="modal-actions">
         <button id="saveManualWeightBtn" class="solid-btn" type="button">Aplicar</button>
@@ -724,7 +1047,7 @@
           <h3>Factura</h3>
           <p>Confirma antes de cobrar.</p>
         </div>
-        <button id="closeInvoiceDecisionBtn" class="icon-btn" type="button" aria-label="Cerrar">×</button>
+        <button id="closeInvoiceDecisionBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
       </div>
       <div class="decision-grid">
         <button id="invoiceYesBtn" class="solid-btn" type="button">Sí requiere</button>
@@ -740,7 +1063,7 @@
           <h3 id="productConfirmTitle">Confirmar</h3>
           <p id="productConfirmMessage">Revisa el movimiento.</p>
         </div>
-        <button id="productConfirmCloseBtn" class="icon-btn" type="button" aria-label="Cerrar">×</button>
+        <button id="productConfirmCloseBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
       </div>
       <div id="productConfirmSummary" class="confirm-summary">Producto</div>
       <div class="modal-actions">
@@ -749,32 +1072,6 @@
       </div>
     </div>
   </div>
-
-
-  <div id="employeeAuthModal" class="modal hidden">
-    <div class="modal-card auth-card employee-auth-card">
-      <div class="modal-head">
-        <div>
-          <h3>Acceso de empleado</h3>
-          <p id="employeeAuthMessage">Selecciona tu nombre e ingresa tu PIN personal.</p>
-        </div>
-        <button id="employeeAuthCloseBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
-      </div>
-      <label>
-        Empleado
-        <select id="employeeUserSelect"></select>
-      </label>
-      <label>
-        PIN personal
-        <input id="employeePinInput" type="password" inputmode="numeric" maxlength="12" autocomplete="current-password" placeholder="••••" />
-      </label>
-      <div class="modal-actions">
-        <button id="employeeAuthConfirmBtn" class="solid-btn" type="button">Entrar</button>
-        <button id="employeeOpenAdminBtn" class="quiet-btn" type="button">Entrar como administrador</button>
-      </div>
-    </div>
-  </div>
-
   <div id="authModal" class="modal hidden">
     <div class="modal-card auth-card">
       <div class="modal-head">

@@ -15,7 +15,9 @@ const dataDir = path.join(__dirname, "..", "data");
 const productsPath = path.join(dataDir, "products.json");
 const salesPath = path.join(dataDir, "sales.json");
 const cashShiftsPath = path.join(dataDir, "cash-shifts.json");
+const cashSessionsPath = path.join(dataDir, "cash-sessions.json");
 const settingsPath = path.join(dataDir, "settings.json");
+const inventoryEntriesPath = path.join(dataDir, "inventory-entries.json");
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
@@ -49,7 +51,7 @@ function getDefaultSettings() {
     users: [
       {
         id: "mostrador",
-        name: "Mostrador",
+        name: "Encargado",
         role: "employee",
         active: true,
         ...createPinSecret(DEFAULT_EMPLOYEE_PIN)
@@ -169,6 +171,26 @@ function getSessionUser(req) {
 
   session.expiresAt = Date.now() + AUTH_SESSION_MS;
   authSessions.set(token, session);
+  return user;
+}
+
+function requireAdminUser(req, res) {
+  const user = getSessionUser(req);
+
+  if (!user) {
+    res.status(401).json({
+      message: "La sesión venció. Inicia sesión nuevamente."
+    });
+    return null;
+  }
+
+  if (user.role !== "admin") {
+    res.status(403).json({
+      message: "Esta acción requiere permisos de administrador."
+    });
+    return null;
+  }
+
   return user;
 }
 
@@ -310,6 +332,220 @@ function getNextSaleId(sales) {
   return `T-${String(maxNumber + 1).padStart(6, "0")}`;
 }
 
+function getNextInventoryEntryId(entries) {
+  const maxNumber = entries.reduce((max, entry) => {
+    const match = String(entry.id || "").match(/^ENT-(\d+)$/);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+
+  return `ENT-${String(maxNumber + 1).padStart(6, "0")}`;
+}
+
+function getNextCashSessionId(sessions) {
+  const maxNumber = sessions.reduce((max, session) => {
+    const match = String(session.id || "").match(/^C-(\d+)$/);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+
+  return `C-${String(maxNumber + 1).padStart(6, "0")}`;
+}
+
+function getNextCashMovementId(session) {
+  const movements = Array.isArray(session?.movements) ? session.movements : [];
+  const maxNumber = movements.reduce((max, movement) => {
+    const match = String(movement.id || "").match(/^MOV-(\d+)$/);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+
+  return `MOV-${String(maxNumber + 1).padStart(4, "0")}`;
+}
+
+function requireSessionUser(req, res) {
+  const user = getSessionUser(req);
+
+  if (!user) {
+    res.status(401).json({
+      message: "La sesión venció. Inicia sesión nuevamente."
+    });
+    return null;
+  }
+
+  return user;
+}
+
+function normalizeCashMovement(movement = {}) {
+  return {
+    id: String(movement.id || "").trim(),
+    type: movement.type === "out" ? "out" : "in",
+    amount: Math.max(0, roundMoney(movement.amount || 0)),
+    reason: String(movement.reason || "").trim(),
+    createdAt: movement.createdAt || new Date().toISOString(),
+    createdBy: movement.createdBy || null
+  };
+}
+
+function normalizeCashSession(session = {}) {
+  const businessDate = String(session.businessDate || session.date || "").trim();
+  const movements = Array.isArray(session.movements)
+    ? session.movements.map(normalizeCashMovement).filter((movement) => movement.amount > 0)
+    : [];
+
+  return {
+    id: String(session.id || "").trim(),
+    businessDate,
+    date: businessDate,
+    status: session.status === "closed" ? "closed" : "open",
+    openingAmount: Math.max(0, roundMoney(session.openingAmount || 0)),
+    openingNote: String(session.openingNote || "").trim(),
+    openedAt: session.openedAt || new Date().toISOString(),
+    openedBy: session.openedBy || null,
+    movements,
+    closedAt: session.closedAt || null,
+    closedBy: session.closedBy || null,
+    countedCash:
+      session.countedCash === null || session.countedCash === undefined
+        ? null
+        : Math.max(0, roundMoney(session.countedCash)),
+    expectedCash:
+      session.expectedCash === null || session.expectedCash === undefined
+        ? null
+        : roundMoney(session.expectedCash),
+    difference:
+      session.difference === null || session.difference === undefined
+        ? null
+        : roundMoney(session.difference),
+    closeNote: String(session.closeNote || "").trim(),
+    denominations: session.denominations || null,
+    summary: session.summary || null
+  };
+}
+
+function migrateLegacyCashShifts() {
+  const legacy = readJson(cashShiftsPath, []);
+  if (!Array.isArray(legacy) || legacy.length === 0) return [];
+
+  return legacy
+    .filter((shift) => shift && shift.id && (shift.date || shift.businessDate))
+    .map((shift) => normalizeCashSession({
+      ...shift,
+      id: String(shift.id),
+      businessDate: shift.businessDate || shift.date,
+      countedCash: shift.countedCash ?? shift.countedAmount ?? null,
+      openedBy: shift.openedBy || { id: "legacy", name: "Registro anterior", role: "admin" },
+      closeNote: shift.closeNote || "Migrado desde el formato anterior."
+    }));
+}
+
+function readCashSessions() {
+  let sessions = readJson(cashSessionsPath, []);
+
+  if (!Array.isArray(sessions) || sessions.length === 0) {
+    sessions = migrateLegacyCashShifts();
+    if (sessions.length > 0) writeJson(cashSessionsPath, sessions);
+  }
+
+  return (Array.isArray(sessions) ? sessions : [])
+    .map(normalizeCashSession)
+    .filter((session) => session.id && session.businessDate);
+}
+
+function writeCashSessions(sessions) {
+  const normalized = sessions.map(normalizeCashSession);
+  writeJson(cashSessionsPath, normalized);
+  return normalized;
+}
+
+function getOpenCashSession(sessions = readCashSessions()) {
+  return sessions.find((session) => session.status === "open") || null;
+}
+
+function saleBelongsToCashSession(sale, session) {
+  const sessionId = String(sale.cashSessionId || sale.cashShiftId || "").trim();
+  return sessionId === session.id;
+}
+
+function calculateCashSessionSummary(session, sales = readJson(salesPath, [])) {
+  const relatedSales = sales.filter((sale) => saleBelongsToCashSession(sale, session));
+  const completedSales = relatedSales.filter((sale) => sale.status !== "cancelada");
+  const canceledSales = relatedSales.filter((sale) => sale.status === "cancelada");
+  const totals = completedSales.reduce(
+    (acc, sale) => {
+      const total = roundMoney(sale.total || 0);
+      acc.totalSales = roundMoney(acc.totalSales + total);
+      acc.grossProfit = roundMoney(acc.grossProfit + roundMoney(sale.grossProfit || 0));
+      acc.salesCount += 1;
+
+      if (sale.paymentMethod === "tarjeta") acc.cardSales = roundMoney(acc.cardSales + total);
+      else if (sale.paymentMethod === "transferencia") acc.transferSales = roundMoney(acc.transferSales + total);
+      else acc.cashSales = roundMoney(acc.cashSales + total);
+
+      return acc;
+    },
+    {
+      totalSales: 0,
+      grossProfit: 0,
+      salesCount: 0,
+      cashSales: 0,
+      cardSales: 0,
+      transferSales: 0
+    }
+  );
+
+  const movements = Array.isArray(session.movements) ? session.movements : [];
+  const cashIn = roundMoney(
+    movements
+      .filter((movement) => movement.type === "in")
+      .reduce((sum, movement) => sum + roundMoney(movement.amount || 0), 0)
+  );
+  const cashOut = roundMoney(
+    movements
+      .filter((movement) => movement.type === "out")
+      .reduce((sum, movement) => sum + roundMoney(movement.amount || 0), 0)
+  );
+  const expectedCash = roundMoney(
+    roundMoney(session.openingAmount || 0) + totals.cashSales + cashIn - cashOut
+  );
+
+  return {
+    ...totals,
+    canceledCount: canceledSales.length,
+    cashIn,
+    cashOut,
+    expectedCash
+  };
+}
+
+function serializeCashSession(session, sales = readJson(salesPath, [])) {
+  const normalized = normalizeCashSession(session);
+  const liveSummary = normalized.status === "open"
+    ? calculateCashSessionSummary(normalized, sales)
+    : normalized.summary || calculateCashSessionSummary(normalized, sales);
+
+  return {
+    ...normalized,
+    summary: liveSummary,
+    expectedCash: normalized.status === "closed"
+      ? normalized.expectedCash
+      : liveSummary.expectedCash
+  };
+}
+
+function calculatePurchaseProjection(quantity, unitCost, salePrice) {
+  const totalCost = roundMoney(quantity * unitCost);
+  const projectedRevenue = roundMoney(quantity * salePrice);
+  const projectedProfit = roundMoney(projectedRevenue - totalCost);
+  const marginPercent = projectedRevenue > 0
+    ? Math.round((projectedProfit / projectedRevenue) * 10000) / 100
+    : 0;
+
+  return {
+    totalCost,
+    projectedRevenue,
+    projectedProfit,
+    marginPercent
+  };
+}
+
 function updateInventoryAfterSale(items) {
   const products = readJson(productsPath, []);
   let changed = false;
@@ -398,13 +634,17 @@ app.get("/api/auth/session", (req, res) => {
   const user = getSessionUser(req);
 
   if (!user) {
-    return res.status(401).json({
-      message: "La sesión venció. Inicia sesión nuevamente."
+    return res.json({
+      ok: true,
+      authenticated: false,
+      user: null,
+      settings: getPublicSettings()
     });
   }
 
   res.json({
     ok: true,
+    authenticated: true,
     user: toPublicUser(user),
     settings: getPublicSettings()
   });
@@ -580,6 +820,107 @@ app.patch("/api/products/:id/inventory", (req, res) => {
   res.json(products[productIndex]);
 });
 
+app.get("/api/inventory/entries", (req, res) => {
+  const adminUser = requireAdminUser(req, res);
+  if (!adminUser) return;
+
+  const entries = readJson(inventoryEntriesPath, [])
+    .sort((a, b) => {
+      return new Date(b.createdAt || b.receivedAt || 0) - new Date(a.createdAt || a.receivedAt || 0);
+    });
+
+  res.json(entries);
+});
+
+app.post("/api/inventory/entries", (req, res) => {
+  const adminUser = requireAdminUser(req, res);
+  if (!adminUser) return;
+
+  const productId = String(req.body?.productId || "").trim();
+  const quantity = roundQuantity(req.body?.quantity);
+  const unitCost = roundMoney(req.body?.unitCost);
+  const requestedSalePrice = roundMoney(req.body?.salePrice);
+  const supplier = String(req.body?.supplier || "").trim();
+  const notes = String(req.body?.notes || "").trim();
+  const receivedAt = String(req.body?.receivedAt || "").trim() || new Date().toISOString().slice(0, 10);
+
+  if (!productId || quantity <= 0 || unitCost <= 0) {
+    return res.status(400).json({
+      message: "Selecciona un producto y captura cantidad y costo mayores a cero."
+    });
+  }
+
+  const products = readJson(productsPath, []);
+  const productIndex = products.findIndex((product) => product.id === productId);
+
+  if (productIndex === -1) {
+    return res.status(404).json({
+      message: "Producto no encontrado."
+    });
+  }
+
+  const product = products[productIndex];
+  const currentStock = typeof product.stockQuantity === "number"
+    ? Math.max(roundQuantity(product.stockQuantity), 0)
+    : 0;
+  const currentCost = Math.max(roundMoney(product.costPrice || 0), 0);
+  const salePrice = requestedSalePrice > 0
+    ? requestedSalePrice
+    : Math.max(roundMoney(product.price || 0), 0);
+  const newStock = roundQuantity(currentStock + quantity);
+  const currentInventoryValue = roundMoney(currentStock * currentCost);
+  const newPurchaseValue = roundMoney(quantity * unitCost);
+  const weightedAverageCost = newStock > 0
+    ? roundMoney((currentInventoryValue + newPurchaseValue) / newStock)
+    : unitCost;
+  const projection = calculatePurchaseProjection(quantity, unitCost, salePrice);
+  const entries = readJson(inventoryEntriesPath, []);
+  const now = new Date().toISOString();
+
+  const entry = {
+    id: getNextInventoryEntryId(entries),
+    productId: product.id,
+    productName: product.name,
+    category: product.category,
+    unit: product.unit,
+    quantity,
+    unitCost,
+    totalCost: projection.totalCost,
+    salePrice,
+    projectedRevenue: projection.projectedRevenue,
+    projectedProfit: projection.projectedProfit,
+    marginPercent: projection.marginPercent,
+    previousStock: currentStock,
+    newStock,
+    previousAverageCost: currentCost,
+    weightedAverageCost,
+    supplier,
+    receivedAt,
+    notes,
+    createdBy: toPublicUser(adminUser),
+    createdAt: now
+  };
+
+  products[productIndex] = {
+    ...product,
+    stockQuantity: newStock,
+    costPrice: weightedAverageCost,
+    price: salePrice > 0 ? salePrice : product.price,
+    lastPurchaseAt: receivedAt,
+    lastSupplier: supplier || product.lastSupplier || "",
+    updatedAt: now
+  };
+
+  entries.push(entry);
+  writeJson(productsPath, products);
+  writeJson(inventoryEntriesPath, entries);
+
+  res.status(201).json({
+    entry,
+    product: products[productIndex]
+  });
+});
+
 app.get("/api/sales", (req, res) => {
   res.json(readJson(salesPath, []));
 });
@@ -597,43 +938,177 @@ app.get("/api/sales/:id", (req, res) => {
   res.json(sale);
 });
 
+app.get("/api/cash-sessions", (req, res) => {
+  const user = requireSessionUser(req, res);
+  if (!user) return;
+
+  const sessions = readCashSessions();
+  const sales = readJson(salesPath, []);
+  const visibleSessions = user.role === "admin"
+    ? sessions
+    : sessions.filter((session) => {
+        return session.status === "open" || session.businessDate === new Date().toISOString().slice(0, 10);
+      });
+
+  res.json(
+    visibleSessions
+      .map((session) => serializeCashSession(session, sales))
+      .sort((a, b) => new Date(b.openedAt) - new Date(a.openedAt))
+  );
+});
+
+app.get("/api/cash-sessions/current", (req, res) => {
+  const user = requireSessionUser(req, res);
+  if (!user) return;
+
+  const sessions = readCashSessions();
+  const current = getOpenCashSession(sessions);
+
+  res.json({
+    session: current ? serializeCashSession(current) : null
+  });
+});
+
+app.post("/api/cash-sessions/open", (req, res) => {
+  const user = requireSessionUser(req, res);
+  if (!user) return;
+
+  const sessions = readCashSessions();
+  const current = getOpenCashSession(sessions);
+
+  if (current) {
+    return res.status(409).json({
+      message: `Ya existe una caja abierta por ${current.openedBy?.name || "otro usuario"}.`
+    });
+  }
+
+  const openingAmount = roundMoney(req.body?.openingAmount || 0);
+  const businessDate = String(req.body?.businessDate || "").trim() || new Date().toISOString().slice(0, 10);
+
+  if (openingAmount < 0) {
+    return res.status(400).json({
+      message: "El fondo inicial no puede ser negativo."
+    });
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) {
+    return res.status(400).json({
+      message: "La fecha de apertura no es válida."
+    });
+  }
+
+  const session = normalizeCashSession({
+    id: getNextCashSessionId(sessions),
+    businessDate,
+    status: "open",
+    openingAmount,
+    openingNote: "",
+    openedAt: new Date().toISOString(),
+    openedBy: toPublicUser(user),
+    movements: []
+  });
+
+  sessions.push(session);
+  writeCashSessions(sessions);
+
+  res.status(201).json(serializeCashSession(session));
+});
+
+app.post("/api/cash-sessions/:id/movements", (req, res) => {
+  const user = requireAdminUser(req, res);
+  if (!user) return;
+
+  const sessions = readCashSessions();
+  const sessionIndex = sessions.findIndex((session) => session.id === req.params.id);
+
+  if (sessionIndex === -1) {
+    return res.status(404).json({ message: "Caja no encontrada." });
+  }
+
+  if (sessions[sessionIndex].status !== "open") {
+    return res.status(409).json({ message: "La caja ya está cerrada." });
+  }
+
+  const type = req.body?.type === "out" ? "out" : "in";
+  const amount = roundMoney(req.body?.amount || 0);
+  const reason = type === "out" ? "Retiro de efectivo" : "Entrada de efectivo";
+
+  if (amount <= 0) {
+    return res.status(400).json({
+      message: "Captura un importe mayor a cero."
+    });
+  }
+
+  const movement = normalizeCashMovement({
+    id: getNextCashMovementId(sessions[sessionIndex]),
+    type,
+    amount,
+    reason,
+    createdAt: new Date().toISOString(),
+    createdBy: toPublicUser(user)
+  });
+
+  sessions[sessionIndex].movements.push(movement);
+  writeCashSessions(sessions);
+
+  res.status(201).json({
+    movement,
+    session: serializeCashSession(sessions[sessionIndex])
+  });
+});
+
+app.post("/api/cash-sessions/:id/close", (req, res) => {
+  const user = requireSessionUser(req, res);
+  if (!user) return;
+
+  const sessions = readCashSessions();
+  const sessionIndex = sessions.findIndex((session) => session.id === req.params.id);
+
+  if (sessionIndex === -1) {
+    return res.status(404).json({ message: "Caja no encontrada." });
+  }
+
+  const session = sessions[sessionIndex];
+  if (session.status !== "open") {
+    return res.status(409).json({ message: "La caja ya está cerrada." });
+  }
+
+  const countedCash = roundMoney(req.body?.countedCash);
+  if (!Number.isFinite(Number(req.body?.countedCash)) || countedCash < 0) {
+    return res.status(400).json({ message: "Captura el efectivo contado correctamente." });
+  }
+
+  const summary = calculateCashSessionSummary(session);
+  const difference = roundMoney(countedCash - summary.expectedCash);
+
+  sessions[sessionIndex] = normalizeCashSession({
+    ...session,
+    status: "closed",
+    closedAt: new Date().toISOString(),
+    closedBy: toPublicUser(user),
+    countedCash,
+    expectedCash: summary.expectedCash,
+    difference,
+    closeNote: "",
+    denominations: req.body?.denominations || null,
+    summary
+  });
+
+  writeCashSessions(sessions);
+  res.json(serializeCashSession(sessions[sessionIndex]));
+});
+
+// Compatibilidad de lectura con versiones anteriores del frontend.
 app.get("/api/cash-shifts", (req, res) => {
-  res.json(readJson(cashShiftsPath, []));
+  const user = requireSessionUser(req, res);
+  if (!user) return;
+  res.json(readCashSessions().map((session) => serializeCashSession(session)));
 });
 
 app.put("/api/cash-shifts", (req, res) => {
-  const shifts = Array.isArray(req.body?.shifts)
-    ? req.body.shifts
-    : Array.isArray(req.body)
-      ? req.body
-      : [];
-
-  const normalizedShifts = shifts
-    .filter((shift) => shift && shift.id && shift.date)
-    .map((shift) => ({
-      id: String(shift.id),
-      date: String(shift.date),
-      status: shift.status === "closed" ? "closed" : "open",
-      openingAmount: roundMoney(shift.openingAmount || 0),
-      openedAt: shift.openedAt || new Date().toISOString(),
-      closedAt: shift.closedAt || null,
-      expectedCash:
-        shift.expectedCash === null || shift.expectedCash === undefined
-          ? null
-          : roundMoney(shift.expectedCash),
-      countedAmount:
-        shift.countedAmount === null || shift.countedAmount === undefined
-          ? null
-          : roundMoney(shift.countedAmount),
-      difference:
-        shift.difference === null || shift.difference === undefined
-          ? null
-          : roundMoney(shift.difference),
-      denominations: shift.denominations || null
-    }));
-
-  writeJson(cashShiftsPath, normalizedShifts);
-  res.json(normalizedShifts);
+  res.status(410).json({
+    message: "La caja ahora se administra con sesiones y movimientos protegidos en el servidor."
+  });
 });
 
 app.post("/api/sales", (req, res) => {
@@ -662,8 +1137,13 @@ app.post("/api/sales", (req, res) => {
   )
     ? req.body.paymentMethod
     : "efectivo";
-  const cashShiftId = String(req.body.cashShiftId || "").trim() || null;
-  const cashShiftDate = String(req.body.cashShiftDate || "").trim() || null;
+  const paymentReference = String(req.body.paymentDetails?.reference || req.body.paymentReference || "").trim().slice(0, 80);
+  if ((paymentMethod === "tarjeta" || paymentMethod === "transferencia") && !paymentReference) {
+    return res.status(400).json({
+      message: "La referencia de pago es obligatoria para tarjeta o transferencia."
+    });
+  }
+
   const operator = getSessionUser(req);
 
   if (!operator) {
@@ -672,12 +1152,23 @@ app.post("/api/sales", (req, res) => {
     });
   }
 
+  const cashSessions = readCashSessions();
+  const activeCashSession = getOpenCashSession(cashSessions);
+
+  if (!activeCashSession) {
+    return res.status(409).json({
+      message: "La caja está cerrada. Abre caja antes de guardar la venta."
+    });
+  }
+
   const sale = {
     id: getNextSaleId(sales),
     createdAt: new Date().toISOString(),
     status: "completada",
-    cashShiftId,
-    cashShiftDate,
+    cashSessionId: activeCashSession.id,
+    cashShiftId: activeCashSession.id,
+    cashShiftDate: activeCashSession.businessDate,
+    businessDate: activeCashSession.businessDate,
     operator: {
       id: operator.id,
       name: operator.name,
@@ -685,6 +1176,9 @@ app.post("/api/sales", (req, res) => {
     },
     items,
     paymentMethod,
+    paymentDetails: {
+      reference: paymentMethod === "efectivo" ? "" : paymentReference
+    },
     subtotal,
     discount,
     total,

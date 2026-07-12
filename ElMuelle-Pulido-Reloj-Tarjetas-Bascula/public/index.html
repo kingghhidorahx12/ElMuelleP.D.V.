@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>El Muelle POS</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2310213d'/%3E%3Ccircle cx='32' cy='32' r='22' fill='%23fff' stroke='%23c99a3e' stroke-width='4'/%3E%3Ctext x='32' y='38' text-anchor='middle' font-family='Arial,sans-serif' font-size='18' font-weight='900' fill='%2310213d'%3EEM%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body class="auth-locked">
+  <section id="accessScreen" class="access-screen" aria-label="Acceso al punto de venta">
+    <div class="access-brand-panel">
+      <img src="./assets/brand/el-muelle-logo.png" alt="El Muelle Pescaderia" />
+      <div>
+        <h1>Punto de Venta</h1>
+        <p>Inicia sesion para abrir tu espacio de trabajo.</p>
+      </div>
+      <div class="access-status-grid">
+        <article>
+          <span>Servidor</span>
+          <strong id="accessServerStatus">Conectando...</strong>
+        </article>
+        <article>
+          <span>Bascula</span>
+          <strong id="accessScaleStatus">Revisando...</strong>
+        </article>
+      </div>
+    </div>
+    <div class="access-login-panel">
+      <div class="access-card-head">
+        <h2>Selecciona usuario</h2>
+        <p id="accessSelectedName">Encargado</p>
+      </div>
+      <div id="accessUserList" class="access-user-list"></div>
+      <label class="access-pin-label">
+        <span id="accessPinLabelText">PIN personal</span>
+        <input id="accessPinInput" type="password" inputmode="numeric" maxlength="12" autocomplete="current-password" placeholder="0000" />
+      </label>
+      <div class="access-actions">
+        <button id="accessLoginBtn" class="solid-btn" type="button">Entrar</button>
+      </div>
+    </div>
+  </section>
+
+  <aside class="sidebar">
+    <button id="sidebarToggleBtn" class="sidebar-toggle" type="button" title="Ocultar menú" aria-label="Ocultar menú">
+      <span id="sidebarToggleIcon">‹</span>
+    </button>
+    <div class="brand">
+      <div class="brand-mark"><img src="./assets/brand/el-muelle-logo.png" alt="El Muelle" /></div>
+      <div>
+        <h1>El Muelle</h1>
+        <p>Marisquería</p>
+      </div>
+      <span id="clockText" class="sidebar-clock">--:--</span>
+    </div>
+
+    <nav class="nav" aria-label="Módulos">
+      <span class="nav-group-label">Operación</span>
+      <button class="nav-item active" type="button" data-view="pos" data-short="PV" data-label="Punto de Venta"><span>Punto de Venta</span></button>
+      <button class="nav-item" type="button" data-view="billing" data-short="F" data-label="Facturación"><span>Facturación</span></button>
+      <button class="nav-item" type="button" data-view="sales" data-short="V" data-label="Ventas"><span>Ventas</span></button>
+      <span class="nav-group-label">Administración</span>
+      <button class="nav-item" type="button" data-view="dashboard" data-short="PA" data-label="Panel Administrativo"><span>Panel Administrativo</span></button>
+      <button class="nav-item" type="button" data-view="products" data-short="P" data-label="Productos"><span>Productos</span></button>
+      <button class="nav-item" type="button" data-view="inventory" data-short="I" data-label="Inventario"><span>Inventario</span></button>
+      <button class="nav-item" type="button" data-view="reports" data-short="$" data-label="Corte de Caja"><span>Corte de Caja</span></button>
+      <span class="nav-group-label">Sistema</span>
+      <button class="nav-item" type="button" data-view="settings" data-short="C" data-label="Configuración"><span>Configuración</span></button>
+    </nav>
+
+    <section class="scale-card" aria-live="polite">
+      <div class="scale-card-top">
+        <span>Peso en vivo</span>
+        <strong id="scaleStatusPill">Sin conexión</strong>
+      </div>
+      <div class="scale-readout" id="scaleWeightText">0.000 kg</div>
+      <p id="scaleStatusText">RHINO BAR-9 · 9600 8N1 · comando P.</p>
+      <small id="scaleRawText">Sin lectura</small>
+      <div class="scale-actions">
+        <button id="connectScaleBtn" class="solid-btn" type="button">Conectar</button>
+      </div>
+    </section>
+
+    <div class="session-box">
+      <button id="sessionSwitchBtn" class="session-button" type="button">
+        <span id="sessionRoleLabel">Encargado</span>
+        <strong id="sessionUserName">Encargado</strong>
+      </button>
+    </div>
+  </aside>
+
+  <main class="app-shell">
+            <header class="topbar">
+      <div class="topbar-left">
+        <button id="mobileSidebarToggleBtn" class="icon-action mobile-menu-toggle" type="button" title="Mostrar menu" aria-label="Mostrar menu">&rsaquo;</button>
+        <div>
+          <h2 id="pageTitle">Punto de Venta</h2>
+          <p id="pageSubtitle"></p>
+        </div>
+      </div>
+      <div class="topbar-meta">
+        <button id="cashStatusBtn" class="cash-status-btn" type="button">Caja cerrada</button>
+        <strong id="ticketId">T-000000</strong>
+        <button id="ticketToggleBtn" class="topbar-ticket-btn" type="button" aria-expanded="false">Venta - $0.00</button>
+      </div>
+    </header>
+
+    <aside class="ticket-panel">
+      <div class="ticket-drawer-head">
+        <div>
+          <span class="eyebrow">Venta actual</span>
+          <h3 id="saleBarCount">Sin productos</h3>
+        </div>
+        <div class="ticket-drawer-actions">
+          <strong id="drawerTicketId">T-000000</strong>
+          <button id="closeTicketPanelBtn" class="ticket-close-btn" type="button" aria-label="Cerrar venta actual" title="Cerrar venta actual">&times;</button>
+        </div>
+      </div>
+
+      <div id="ticketItems" class="ticket-items">
+        <p class="empty-state">Agrega productos para iniciar.</p>
+      </div>
+
+      <div id="cashGateNotice" class="cash-gate-notice" hidden>
+        <div>
+          <strong>Caja cerrada</strong>
+          <span>Abre la caja del día antes de cobrar ventas.</span>
+        </div>
+        <button id="openCashFromSaleBtn" class="quiet-btn" type="button">Abrir caja</button>
+      </div>
+
+      <div class="summary">
+        <div>
+          <span>Subtotal</span>
+          <strong id="subtotalText">$0.00</strong>
+        </div>
+        <div>
+          <span>Descuento</span>
+          <strong id="discountText">$0.00</strong>
+        </div>
+        <div class="summary-total">
+          <span>Total</span>
+          <strong id="totalText">$0.00</strong>
+        </div>
+      </div>
+
+      <div class="payment-methods">
+        <button class="pay-method active" type="button" data-method="efectivo">Efectivo</button>
+        <button class="pay-method" type="button" data-method="tarjeta">Tarjeta</button>
+        <button class="pay-method" type="button" data-method="transferencia">Transferencia</button>
+      </div>
+      <label id="paymentReferencePanel" class="payment-reference-panel" hidden>
+        <span id="paymentReferenceLabel">Referencia</span>
+        <input id="paymentReferenceInput" type="text" maxlength="80" autocomplete="off" placeholder="Autorizacion o referencia" />
+      </label>
+
+      <button id="chargeBtn" class="charge-btn" type="button" disabled>Cobrar $0.00</button>
+      <button id="clearTicketBtn" class="danger-soft-btn" type="button" disabled>Vaciar venta</button>
+    </aside>
+
+
+    <section class="workspace">
+      <section id="posView" class="app-view active">
+        <div class="pos-section-title"><h3>Selecciona el producto</h3></div>
+        <div class="pos-layout">
+          <section class="catalog-panel">
+            <div id="categoryGrid" class="category-grid"></div>
+
+            <div class="catalog-control-row">
+              <div class="filter-row" role="group" aria-label="Filtro de venta">
+                <button id="filterAll" class="chip active" type="button">Todos</button>
+                <button id="filterKg" class="chip" type="button">Por kg</button>
+                <button id="filterPiece" class="chip" type="button">Pieza</button>
+              </div>
+
+              <label class="search-box">
+                <span>Buscar</span>
+                <input id="searchInput" type="search" placeholder="Camarón, filete, pulpo..." />
+              </label>
+
+              <div class="pager">
+                <button id="prevPageBtn" class="quiet-btn" type="button">Anterior</button>
+                <span id="pageIndicator">Página 1</span>
+                <button id="nextPageBtn" class="quiet-btn" type="button">Siguiente</button>
+              </div>
+            </div>
+
+            <div id="productGrid" class="product-grid"></div>
+          </section>
+
+          <section class="weigh-panel">
+            <div>
+              <span class="eyebrow">Pesaje</span>
+              <h3 id="weighProductName">Selecciona un producto</h3>
+              <p id="weighDescription">El peso entra automático al conectar la báscula.</p>
+            </div>
+
+            <div class="weigh-metrics">
+              <article>
+                <span>Precio</span>
+                <strong id="weighPrice">$0.00</strong>
+              </article>
+              <article>
+                <span id="weighQuantityLabel">Peso</span>
+                <strong id="weighQuantity">0.000 kg</strong>
+              </article>
+              <article>
+                <span>Total</span>
+                <strong id="weighTotal">$0.00</strong>
+              </article>
+            </div>
+
+            <div class="weigh-actions">
+              <button id="confirmWeightBtn" class="solid-btn" type="button" disabled>Agregar al carrito</button>
+              <button id="manualWeightBtn" class="warning-btn" type="button">Manual con PIN</button>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="dashboardView" class="app-view">
+        <section class="work-panel full-panel dashboard-panel">
+          <div class="panel-head dashboard-controls">
+            <div class="toolbar">
+              <select id="dashboardPeriodFilter">
+                <option value="day">Día</option>
+                <option value="week">Semana</option>
+                <option value="month">Mes</option>
+                <option value="year">Año</option>
+                <option value="all">Total</option>
+              </select>
+              <input id="dashboardDateInput" type="date" />
+              <button id="refreshDashboardBtn" class="quiet-btn" type="button">Actualizar</button>
+            </div>
+          </div>
+
+          <div class="dashboard-hero">
+            <article>
+              <span>Ganancia</span>
+              <strong id="dashboardProfit">$0.00</strong>
+            </article>
+            <article>
+              <span>Para reinvertir</span>
+              <strong id="dashboardReinvest">$0.00</strong>
+            </article>
+            <article>
+              <span>Caja de hoy</span>
+              <strong id="dashboardCashStatus">Cerrada</strong>
+            </article>
+          </div>
+
+          <div class="kpi-grid dashboard-kpis">
+            <article>
+              <span>Total vendido</span>
+              <strong id="dashboardTotalSales">$0.00</strong>
+            </article>
+            <article>
+              <span>Ventas</span>
+              <strong id="dashboardSalesCount">0</strong>
+            </article>
+            <article>
+              <span>Ticket promedio</span>
+              <strong id="dashboardAverageTicket">$0.00</strong>
+            </article>
+            <article>
+              <span>Margen</span>
+              <strong id="dashboardMargin">0.00%</strong>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="inner-panel">
+              <h4>Más vendidos</h4>
+              <div id="dashboardTopProducts" class="top-products-list"></div>
+            </section>
+            <section class="inner-panel">
+              <h4>Menos vendidos</h4>
+              <div id="dashboardSlowProducts" class="top-products-list"></div>
+            </section>
+            <section class="inner-panel">
+              <h4>Inventario bajo</h4>
+              <div id="dashboardInventoryAlerts" class="top-products-list"></div>
+            </section>
+            <section class="inner-panel">
+              <h4>Pagos</h4>
+              <div class="payment-summary">
+                <div><span>Efectivo</span><strong id="dashboardCash">$0.00</strong></div>
+                <div><span>Tarjeta</span><strong id="dashboardCard">$0.00</strong></div>
+                <div><span>Transferencia</span><strong id="dashboardTransfer">$0.00</strong></div>
+                <div><span>Efectivo esperado</span><strong id="dashboardExpectedCash">$0.00</strong></div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </section>
+
+      <section id="salesView" class="app-view">
+        <div class="split-layout">
+          <section class="work-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Historial</h3>
+              </div>
+              <div class="toolbar">
+                <input id="salesSearchInput" type="search" placeholder="Folio..." />
+                <select id="salesPeriodFilter">
+                  <option value="day">Día</option>
+                  <option value="week">Semana</option>
+                  <option value="month">Mes</option>
+                  <option value="year">Año</option>
+                  <option value="all">Total</option>
+                </select>
+                <input id="salesDateInput" type="date" />
+                <select id="salesStatusFilter">
+                  <option value="all">Todas</option>
+                  <option value="completada">Completadas</option>
+                  <option value="cancelada">Canceladas</option>
+                  <option value="factura">Con factura</option>
+                </select>
+              </div>
+            </div>
+            <div id="salesList" class="sales-list"></div>
+          </section>
+          <aside id="salesDetail" class="detail-panel"></aside>
+        </div>
+      </section>
+
+      <section id="productsView" class="app-view">
+        <div class="split-layout products-layout">
+          <section class="work-panel">
+            <form id="productForm" class="product-form">
+              <div class="form-title">
+                <h3 id="productFormStatusTitle">Agregar producto</h3>
+                <p id="productFormStatusText"></p>
+              </div>
+
+              <label class="wide">
+                Producto
+                <input id="productNameInput" type="text" placeholder="Ej. Camarón coctelero" />
+              </label>
+
+              <label>
+                Categoría
+                <select id="productCategoryInput">
+                  <option value="Pescados y mariscos">Pescados y mariscos</option>
+                  <option value="Carnes selectas">Carnes selectas</option>
+                  <option value="Para el antojo">Para el antojo</option>
+                  <option value="Condimentos y salsas">Condimentos y salsas</option>
+                </select>
+              </label>
+
+              <label>
+                Venta
+                <select id="productUnitInput">
+                  <option value="kg">Por kg</option>
+                  <option value="pieza">Por pieza</option>
+                </select>
+              </label>
+
+              <label>
+                Precio
+                <input id="productPriceInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+
+              <label>
+                Costo
+                <input id="productCostInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+
+              <label>
+                Existencia
+                <input id="productStockInput" type="number" min="0" step="0.001" placeholder="0.000" />
+              </label>
+
+              <label>
+                Mínimo
+                <input id="productMinStockInput" type="number" min="0" step="0.001" placeholder="0.000" />
+              </label>
+
+              <section class="product-projection wide" aria-live="polite">
+                <div class="projection-title">
+                  <span>Proyección del inventario actual</span>
+                  <strong id="productProjectionStatus">Captura costo y existencia</strong>
+                </div>
+                <div class="projection-grid">
+                  <article><span>Inversión</span><strong id="productInvestmentTotal">$0.00</strong></article>
+                  <article><span>Venta proyectada</span><strong id="productProjectedRevenue">$0.00</strong></article>
+                  <article><span>Ganancia</span><strong id="productProjectedProfit">$0.00</strong></article>
+                  <article><span>Margen</span><strong id="productMarginPercent">0.00%</strong></article>
+                  <article><span>Ganancia por unidad</span><strong id="productUnitProfit">$0.00</strong></article>
+                </div>
+              </section>
+
+              <div class="form-actions wide">
+                <button id="saveProductBtn" class="solid-btn" type="submit">Guardar</button>
+                <button id="resetProductFormBtn" class="quiet-btn" type="button">Nuevo</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="work-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Catálogo</h3>
+              </div>
+              <div class="toolbar">
+                <input id="productAdminSearch" type="search" placeholder="Buscar..." />
+                <select id="productAdminCategoryFilter">
+                  <option value="all">Todas</option>
+                  <option value="Pescados y mariscos">Pescados y mariscos</option>
+                  <option value="Carnes selectas">Carnes selectas</option>
+                  <option value="Para el antojo">Para el antojo</option>
+                  <option value="Condimentos y salsas">Condimentos y salsas</option>
+                </select>
+              </div>
+            </div>
+            <div id="productAdminList" class="product-admin-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="inventoryView" class="app-view">
+        <div class="inventory-management-layout" data-inventory-mode="entry">
+          <div class="subview-tabs inventory-subview-tabs" role="tablist" aria-label="Secciones de inventario">
+            <button class="active" type="button" data-inventory-mode-btn="entry">Registrar compra</button>
+            <button type="button" data-inventory-mode-btn="stock">Existencias</button>
+            <button type="button" data-inventory-mode-btn="history">Historial</button>
+          </div>
+          <section class="work-panel inventory-entry-panel">
+            <form id="inventoryEntryForm" class="inventory-entry-form">
+              <div class="form-title wide">
+                <span class="eyebrow">Entrada de mercancía</span>
+                <h3>Registrar compra</h3>
+                <p>Actualiza existencia y costo promedio automáticamente.</p>
+              </div>
+
+              <label class="wide">
+                Producto
+                <select id="inventoryEntryProductInput">
+                  <option value="">Selecciona un producto</option>
+                </select>
+              </label>
+
+              <label>
+                Cantidad recibida
+                <input id="inventoryEntryQuantityInput" type="number" min="0" step="0.001" placeholder="0.000" />
+              </label>
+
+              <label>
+                Costo por unidad
+                <input id="inventoryEntryUnitCostInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+
+              <label>
+                Precio de venta
+                <input id="inventoryEntrySalePriceInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+
+              <label>
+                Fecha de compra
+                <input id="inventoryEntryDateInput" type="date" />
+              </label>
+
+              <label class="wide">
+                Proveedor
+                <input id="inventoryEntrySupplierInput" type="text" maxlength="100" placeholder="Ej. Mariscos del Pacífico" />
+              </label>
+
+              <label class="wide">
+                Nota
+                <input id="inventoryEntryNotesInput" type="text" maxlength="180" placeholder="Factura, lote o detalle opcional" />
+              </label>
+
+              <div class="form-actions wide">
+                <button id="saveInventoryEntryBtn" class="solid-btn" type="submit">Registrar entrada</button>
+                <button id="resetInventoryEntryBtn" class="quiet-btn" type="button">Limpiar</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="work-panel inventory-analysis-panel">
+            <div class="form-title">
+              <span class="eyebrow">Proyección</span>
+              <h3 id="inventoryEntryProductName">Selecciona un producto</h3>
+              <p id="inventoryEntryProductMeta">La inversión y ganancia aparecerán aquí.</p>
+            </div>
+
+            <div class="inventory-entry-metrics">
+              <article><span>Existencia actual</span><strong id="entryCurrentStock">0.000</strong></article>
+              <article><span>Costo promedio actual</span><strong id="entryCurrentCost">$0.00</strong></article>
+              <article><span>Gasto de compra</span><strong id="entryPurchaseTotal">$0.00</strong></article>
+              <article><span>Venta proyectada</span><strong id="entryProjectedRevenue">$0.00</strong></article>
+              <article class="profit"><span>Ganancia proyectada</span><strong id="entryProjectedProfit">$0.00</strong></article>
+              <article><span>Margen</span><strong id="entryMargin">0.00%</strong></article>
+              <article><span>Nueva existencia</span><strong id="entryNewStock">0.000</strong></article>
+              <article><span>Nuevo costo promedio</span><strong id="entryWeightedCost">$0.00</strong></article>
+            </div>
+          </section>
+
+          <section class="work-panel inventory-stock-panel">
+            <div class="panel-head">
+              <div>
+                <span class="eyebrow">Inventario</span>
+                <h3>Existencias actuales</h3>
+              </div>
+              <div class="toolbar">
+                <input id="inventorySearchInput" type="search" placeholder="Buscar producto..." />
+                <select id="inventoryCategoryFilter">
+                  <option value="all">Todas</option>
+                  <option value="Pescados y mariscos">Pescados y mariscos</option>
+                  <option value="Carnes selectas">Carnes selectas</option>
+                  <option value="Para el antojo">Para el antojo</option>
+                  <option value="Condimentos y salsas">Condimentos y salsas</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="inventory-kpis">
+              <article><span>Valor invertido</span><strong id="inventoryInvestmentValue">$0.00</strong></article>
+              <article><span>Venta proyectada</span><strong id="inventoryProjectedValue">$0.00</strong></article>
+              <article><span>Ganancia proyectada</span><strong id="inventoryProjectedProfit">$0.00</strong></article>
+              <article><span>Entradas registradas</span><strong id="inventoryEntriesCount">0</strong></article>
+            </div>
+
+            <div id="inventoryList" class="inventory-list"></div>
+          </section>
+
+          <section class="work-panel inventory-history-panel">
+            <div class="panel-head">
+              <div>
+                <span class="eyebrow">Historial</span>
+                <h3>Compras y entradas</h3>
+              </div>
+              <input id="inventoryEntrySearchInput" type="search" placeholder="Buscar producto, proveedor o folio..." />
+            </div>
+            <div id="inventoryEntriesList" class="inventory-entries-list">
+              <p class="empty-state">Aún no hay entradas registradas.</p>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="billingView" class="app-view">
+        <div class="split-layout">
+          <section class="work-panel">
+            <form id="invoiceForm" class="invoice-form">
+              <div class="form-title wide">
+                <span class="eyebrow">Facturación</span>
+                <h3>Datos fiscales</h3>
+              </div>
+              <label>
+                Folio
+                <input id="invoiceSaleId" type="text" placeholder="T-000001" />
+              </label>
+              <label>
+                RFC
+                <input id="invoiceRfc" type="text" placeholder="RFC" />
+              </label>
+              <label class="wide">
+                Razón social
+                <input id="invoiceName" type="text" placeholder="Nombre fiscal" />
+              </label>
+              <label>
+                Código postal
+                <input id="invoiceZip" type="text" placeholder="00000" />
+              </label>
+              <label>
+                Régimen fiscal
+                <input id="invoiceRegime" type="text" placeholder="601, 612, 626..." />
+              </label>
+              <label>
+                Uso CFDI
+                <select id="invoiceUse">
+                  <option value="">Selecciona</option>
+                  <option value="G01">G01 - Mercancías</option>
+                  <option value="G03">G03 - Gastos en general</option>
+                  <option value="S01">S01 - Sin efectos fiscales</option>
+                </select>
+              </label>
+              <label>
+                Correo
+                <input id="invoiceEmail" type="email" placeholder="correo@cliente.com" />
+              </label>
+              <button class="solid-btn wide" type="submit">Registrar solicitud</button>
+            </form>
+          </section>
+          <section class="work-panel">
+            <div class="panel-head compact">
+              <div>
+                <h3>Recientes</h3>
+              </div>
+              <div class="toolbar">
+                <select id="recentSalesPeriodFilter">
+                  <option value="day">Día</option>
+                  <option value="week">Semana</option>
+                  <option value="month">Mes</option>
+                  <option value="year">Año</option>
+                  <option value="all">Total</option>
+                </select>
+                <input id="recentSalesDateInput" type="date" />
+                <button id="refreshSalesBtn" class="quiet-btn" type="button">Actualizar</button>
+              </div>
+            </div>
+            <div id="recentSalesList" class="recent-sales-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="reportsView" class="app-view">
+        <section class="work-panel full-panel">
+          <section class="inner-panel cash-register-panel">
+            <div class="cash-register-head">
+              <div>
+                <h4>Apertura y cierre</h4>
+                <p id="cashShiftStatus">Sin caja abierta.</p>
+              </div>
+              <strong id="cashShiftDifference">$0.00</strong>
+            </div>
+            <div class="cash-register-grid">
+              <label>
+                Fondo inicial
+                <input id="openingCashInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+              <button id="openCashShiftBtn" class="solid-btn" type="button">Abrir caja</button>
+              <label>
+                Efectivo contado
+                <input id="countedCashInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+              <button id="toggleCashCounterBtn" class="quiet-btn" type="button">Contador de efectivo</button>
+              <button id="closeCashShiftBtn" class="warning-btn" type="button">Cerrar corte</button>
+            </div>
+            <div id="cashCounterPanel" class="cash-counter-panel hidden">
+              <div id="cashDenominations" class="cash-denominations"></div>
+              <div class="cash-counter-total">
+                <span>Total contado</span>
+                <strong id="cashCounterTotal">$0.00</strong>
+              </div>
+            </div>
+            <div id="cashShiftLog" class="cash-shift-log"></div>
+          </section>
+
+          <div class="cut-filter-bar">
+            <div>
+              <strong>Resumen e historial</strong>
+              <span>Consulta ventas y cortes guardados por periodo.</span>
+            </div>
+            <div class="toolbar">
+              <select id="cutPeriodFilter">
+                <option value="day">Día</option>
+                <option value="week">Semana</option>
+                <option value="month">Mes</option>
+                <option value="year">Año</option>
+                <option value="all">Total</option>
+              </select>
+              <input id="cutDateInput" type="date" />
+              <button id="refreshCutBtn" class="quiet-btn" type="button">Actualizar</button>
+              <button id="printCutBtn" class="solid-btn" type="button">Imprimir</button>
+            </div>
+          </div>
+
+          <div class="kpi-grid">
+            <article>
+              <span>Total vendido</span>
+              <strong id="cutTotalSales">$0.00</strong>
+            </article>
+            <article>
+              <span>Ganancia</span>
+              <strong id="cutGrossProfit">$0.00</strong>
+            </article>
+            <article>
+              <span>Margen</span>
+              <strong id="cutMargin">0.00%</strong>
+            </article>
+            <article>
+              <span>Ventas</span>
+              <strong id="cutSalesCount">0</strong>
+            </article>
+          </div>
+
+          <div class="report-grid">
+            <section class="inner-panel">
+              <h4>Pagos</h4>
+              <div class="payment-summary">
+                <div><span>Efectivo</span><strong id="cutCash">$0.00</strong></div>
+                <div><span>Tarjeta</span><strong id="cutCard">$0.00</strong></div>
+                <div><span>Transferencia</span><strong id="cutTransfer">$0.00</strong></div>
+                <div><span>Canceladas</span><strong id="cutCanceled">0</strong></div>
+              </div>
+            </section>
+            <section class="inner-panel">
+              <h4>Más vendidos</h4>
+              <div id="topProductsList" class="top-products-list"></div>
+            </section>
+          </div>
+
+          <section class="inner-panel cash-history-panel">
+            <h4>Historial de cortes</h4>
+            <div id="cashHistoryList" class="cash-history-list"></div>
+          </section>
+        </section>
+      </section>
+
+      <section id="settingsView" class="app-view">
+        <div class="split-layout settings-layout" data-settings-mode="scale">
+          <div class="subview-tabs settings-subview-tabs" role="tablist" aria-label="Secciones de configuracion">
+            <button class="active" type="button" data-settings-mode-btn="scale">Bascula</button>
+            <button type="button" data-settings-mode-btn="users">Usuarios y PIN</button>
+          </div>
+          <section class="work-panel">
+            <div class="form-title">
+              <span class="eyebrow">Báscula</span>
+              <h3>Puerto serial</h3>
+            </div>
+            <div class="settings-grid">
+              <label class="wide">
+                Modelo
+                <input id="scaleModelInput" type="text" value="RHINO BAR-9" readonly />
+              </label>
+              <label>
+                Baud rate
+                <select id="scaleBaudRateInput">
+                  <option value="9600">9600</option>
+                  <option value="4800">4800</option>
+                  <option value="19200">19200</option>
+                  <option value="38400">38400</option>
+                </select>
+              </label>
+              <label>
+                Comando de peso
+                <input id="scaleCommandInput" type="text" value="P" maxlength="4" />
+              </label>
+              <label>
+                Solicitar cada
+                <select id="scalePollMsInput">
+                  <option value="500">0.5 s</option>
+                  <option value="800">0.8 s</option>
+                  <option value="1000">1 s</option>
+                  <option value="1500">1.5 s</option>
+                </select>
+              </label>
+              <label>
+                Unidad esperada
+                <select id="scaleUnitInput">
+                  <option value="kg">kg</option>
+                  <option value="g">gramos</option>
+                  <option value="lb">libras</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-actions">
+              <button id="connectScaleBtnSettings" class="solid-btn" type="button">Conectar báscula</button>
+              <button id="requestScaleBtnSettings" class="quiet-btn" type="button" disabled>Pedir peso</button>
+              <button id="disconnectScaleBtnSettings" class="quiet-btn" type="button" disabled>Desconectar</button>
+            </div>
+            <div class="scale-protocol-card">
+              <strong>Protocolo RHINO BAR-9</strong>
+              <span>9600 BPS · 8 bits · sin paridad · 1 bit de parada · sin flujo · enviar &quot;P&quot;.</span>
+            </div>
+          </section>
+          <section class="work-panel">
+            <div class="form-title">
+              <span class="eyebrow">Lectura</span>
+              <h3 id="settingsScaleWeight">0.000 kg</h3>
+              <p id="settingsScaleStatus">Sin conexión.</p>
+            </div>
+            <pre id="settingsScaleRaw" class="raw-box">Sin datos</pre>
+          </section>
+
+          <section class="work-panel users-settings-panel">
+            <div class="form-title">
+              <span class="eyebrow">Usuarios</span>
+              <h3>Acceso y PIN</h3>
+              <p>Administra el nombre del encargado, el PIN protegido y las cuentas de acceso.</p>
+            </div>
+
+            <div class="users-settings-grid">
+              <section class="users-settings-card">
+                <div class="users-card-head">
+                  <div>
+                    <h4>Administrador</h4>
+                    <p>El PIN nunca se muestra ni se guarda en el navegador.</p>
+                  </div>
+                  <span class="user-role-badge admin">Admin</span>
+                </div>
+
+                <label class="wide">
+                  Nombre del administrador
+                  <input id="adminUserNameInput" type="text" maxlength="60" placeholder="Administrador" autocomplete="off" />
+                </label>
+
+                <div class="users-pin-grid">
+                  <label>
+                    PIN actual
+                    <input id="currentAdminPinInput" type="password" inputmode="numeric" maxlength="12" placeholder="PIN actual" autocomplete="current-password" />
+                  </label>
+                  <label>
+                    PIN nuevo
+                    <input id="newAdminPinInput" type="password" inputmode="numeric" maxlength="12" placeholder="Dejar vacío para conservar" autocomplete="new-password" />
+                  </label>
+                  <label>
+                    Confirmar PIN nuevo
+                    <input id="confirmAdminPinInput" type="password" inputmode="numeric" maxlength="12" placeholder="Repite el PIN nuevo" autocomplete="new-password" />
+                  </label>
+                </div>
+              </section>
+
+              <section class="users-settings-card">
+                <div class="users-card-head">
+                  <div>
+                    <h4>Empleados</h4>
+                    <p>Los nombres aparecen al trabajar en caja.</p>
+                  </div>
+                  <span class="user-role-badge">Encargado</span>
+                </div>
+
+                <div class="employee-add-row">
+                  <input id="newEmployeeNameInput" type="text" maxlength="60" placeholder="Nombre del empleado" autocomplete="off" />
+                  <input id="newEmployeePinInput" type="password" inputmode="numeric" maxlength="12" placeholder="PIN inicial" autocomplete="new-password" />
+                  <button id="addEmployeeBtn" class="quiet-btn" type="button">Agregar</button>
+                </div>
+                <p class="users-helper-text">Cada encargado entra con su propio PIN. El PIN inicial es 0000 hasta que lo cambies.</p>
+
+                <div id="employeesList" class="users-list">
+                  <p class="empty-list">No hay empleados cargados.</p>
+                </div>
+              </section>
+            </div>
+
+            <div class="form-actions users-settings-actions">
+              <button id="saveUserSettingsBtn" class="solid-btn" type="button">Guardar usuarios</button>
+              <button id="resetUserSettingsBtn" class="quiet-btn" type="button">Descartar cambios</button>
+            </div>
+          </section>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="manualModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <h3>Captura manual</h3>
+          </div>
+        <button id="closeManualModalBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
+      </div>
+      <label>
+        PIN administrador
+        <input id="adminPinInput" type="password" placeholder="PIN" />
+      </label>
+      <label>
+        <span id="manualQuantityLabelText">Peso manual (kg)</span>
+        <input id="manualQuantityInput" type="text" inputmode="numeric" autocomplete="off" placeholder="0.000" />
+        <small id="manualQuantityHint" class="field-hint">Escribe gramos: 1250 = 1.250 kg.</small>
+      </label>
+      <div class="modal-actions">
+        <button id="saveManualWeightBtn" class="solid-btn" type="button">Aplicar</button>
+        <button id="cancelManualWeightBtn" class="quiet-btn" type="button">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="invoiceDecisionModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <h3>Factura</h3>
+          <p>Confirma antes de cobrar.</p>
+        </div>
+        <button id="closeInvoiceDecisionBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
+      </div>
+      <div class="decision-grid">
+        <button id="invoiceYesBtn" class="solid-btn" type="button">Sí requiere</button>
+        <button id="invoiceNoBtn" class="quiet-btn" type="button">No requiere</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="productConfirmModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <h3 id="productConfirmTitle">Confirmar</h3>
+          <p id="productConfirmMessage">Revisa el movimiento.</p>
+        </div>
+        <button id="productConfirmCloseBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
+      </div>
+      <div id="productConfirmSummary" class="confirm-summary">Producto</div>
+      <div class="modal-actions">
+        <button id="productConfirmYesBtn" class="solid-btn" type="button">Confirmar</button>
+        <button id="productConfirmNoBtn" class="quiet-btn" type="button">Cancelar</button>
+      </div>
+    </div>
+  </div>
+  <div id="authModal" class="modal hidden">
+    <div class="modal-card auth-card">
+      <div class="modal-head">
+        <div>
+          <h3>Acceso administrativo</h3>
+          <p id="authMessage">Ingresa el PIN para entrar.</p>
+        </div>
+        <button id="authCloseBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
+      </div>
+      <label>
+        PIN
+        <input id="authPinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="1234" />
+      </label>
+      <div class="modal-actions">
+        <button id="authConfirmBtn" class="solid-btn" type="button">Entrar como admin</button>
+        <button id="authEmployeeBtn" class="quiet-btn" type="button">Modo empleado</button>
+      </div>
+    </div>
+  </div>
+  <section id="printArea" class="print-area"></section>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
