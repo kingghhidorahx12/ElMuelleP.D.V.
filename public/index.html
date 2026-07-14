@@ -7,7 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2310213d'/%3E%3Ccircle cx='32' cy='32' r='22' fill='%23fff' stroke='%23c99a3e' stroke-width='4'/%3E%3Ctext x='32' y='38' text-anchor='middle' font-family='Arial,sans-serif' font-size='18' font-weight='900' fill='%2310213d'%3EEM%3C/text%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body class="auth-locked">
@@ -34,7 +34,7 @@
         <h2>Selecciona usuario</h2>
         <p id="accessSelectedName">Encargado</p>
       </div>
-      <div id="accessUserList" class="access-user-list"></div>
+      <div id="accessUserList" class="access-user-list" role="group" aria-label="Tipo de acceso"></div>
       <label class="access-pin-label">
         <span id="accessPinLabelText">PIN personal</span>
         <input id="accessPinInput" type="password" inputmode="numeric" maxlength="12" autocomplete="current-password" placeholder="0000" />
@@ -172,18 +172,18 @@
             <div id="categoryGrid" class="category-grid"></div>
 
             <div class="catalog-control-row">
-              <div class="filter-row" role="group" aria-label="Filtro de venta">
+              <div class="filter-row segmented-control pos-filter-tabs" role="group" aria-label="Filtro de venta">
                 <button id="filterAll" class="chip active" type="button">Todos</button>
                 <button id="filterKg" class="chip" type="button">Por kg</button>
-                <button id="filterPiece" class="chip" type="button">Pieza</button>
+                <button id="filterPiece" class="chip" type="button">Por pieza</button>
               </div>
 
-              <label class="search-box">
+          <label class="search-box pos-search-box">
                 <span>Buscar</span>
                 <input id="searchInput" type="search" placeholder="Camarón, filete, pulpo..." />
               </label>
 
-              <div class="pager">
+              <div class="pager segmented-control pos-pager" role="group" aria-label="Navegación de productos">
                 <button id="prevPageBtn" class="quiet-btn" type="button">Anterior</button>
                 <span id="pageIndicator">Página 1</span>
                 <button id="nextPageBtn" class="quiet-btn" type="button">Siguiente</button>
@@ -230,15 +230,23 @@
               <span class="eyebrow">Panel administrativo</span>
               <h3>Resumen del negocio</h3>
             </div>
-            <div class="toolbar">
+            <div class="toolbar dashboard-toolbar">
               <select id="dashboardPeriodFilter">
                 <option value="day">Día</option>
                 <option value="week">Semana</option>
                 <option value="month">Mes</option>
                 <option value="year">Año</option>
+                <option value="range">Rango</option>
                 <option value="all">Total</option>
               </select>
-              <input id="dashboardDateInput" type="date" />
+              <label class="dashboard-date-field">
+                <span id="dashboardDateLabel">Fecha</span>
+                <input id="dashboardDateInput" type="date" aria-label="Fecha del periodo" />
+              </label>
+              <label id="dashboardEndDateField" class="dashboard-date-field" hidden>
+                <span>Hasta</span>
+                <input id="dashboardEndDateInput" type="date" aria-label="Fecha final del rango" />
+              </label>
               <button id="refreshDashboardBtn" class="quiet-btn" type="button">Actualizar</button>
             </div>
           </div>
@@ -277,10 +285,43 @@
             </article>
           </div>
 
+          <section class="dashboard-insights" aria-label="Indicadores visuales de ventas">
+            <section class="inner-panel dashboard-chart-card">
+              <div class="dashboard-chart-head">
+                <div>
+                  <span class="eyebrow">Comportamiento</span>
+                  <h4>Ventas del periodo</h4>
+                </div>
+                <span id="dashboardSalesChartCaption" class="dashboard-chart-caption">Ventas por hora</span>
+              </div>
+              <div id="dashboardSalesChart" class="dashboard-bar-chart" role="img" aria-live="polite"></div>
+            </section>
+
+            <section class="inner-panel dashboard-chart-card dashboard-payment-card">
+              <div class="dashboard-chart-head">
+                <div>
+                  <span class="eyebrow">Cobro</span>
+                  <h4>Distribución de pagos</h4>
+                </div>
+              </div>
+              <div class="dashboard-payment-mix">
+                <div id="dashboardPaymentDonut" class="dashboard-payment-donut" role="img">
+                  <span>Total</span>
+                  <strong id="dashboardPaymentTotal">$0.00</strong>
+                </div>
+                <div id="dashboardPaymentLegend" class="dashboard-payment-legend"></div>
+              </div>
+            </section>
+          </section>
+
           <div class="dashboard-grid">
             <section class="inner-panel">
               <h4>Más vendidos</h4>
               <div id="dashboardTopProducts" class="top-products-list"></div>
+            </section>
+            <section class="inner-panel dashboard-best-days-card">
+              <h4>Días con más ventas</h4>
+              <div id="dashboardBestSalesDays" class="top-products-list"></div>
             </section>
             <section class="inner-panel">
               <h4>Menos vendidos</h4>
@@ -970,7 +1011,7 @@
 
                 <div class="users-pin-grid">
                   <label>
-                    PIN actual
+                    PIN actual (para cambiarlo)
                     <input id="currentAdminPinInput" type="password" inputmode="numeric" maxlength="12" placeholder="PIN actual" autocomplete="current-password" />
                   </label>
                   <label>

@@ -6,12 +6,15 @@ const crypto = require("crypto");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
-const ADMIN_PIN = process.env.ADMIN_PIN || "1234";
+const ADMIN_PIN = String(process.env.ADMIN_PIN || "1234").trim();
+const ADMIN_PIN_NEEDS_UPDATE = !String(process.env.ADMIN_PIN || "").trim();
 const DEFAULT_EMPLOYEE_PIN = process.env.EMPLOYEE_PIN || "0000";
 const AUTH_SESSION_MS = 12 * 60 * 60 * 1000;
 const authSessions = new Map();
 
-const dataDir = path.join(__dirname, "..", "data");
+const dataDir = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(__dirname, "..", "data");
 const productsPath = path.join(dataDir, "products.json");
 const salesPath = path.join(dataDir, "sales.json");
 const cashShiftsPath = path.join(dataDir, "cash-shifts.json");
@@ -19,7 +22,21 @@ const cashSessionsPath = path.join(dataDir, "cash-sessions.json");
 const settingsPath = path.join(dataDir, "settings.json");
 const inventoryEntriesPath = path.join(dataDir, "inventory-entries.json");
 
-app.use(cors());
+const corsOrigins = String(process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+if (corsOrigins.length > 0) {
+  app.use(
+    cors({
+      origin(origin, callback) {
+        callback(null, !origin || corsOrigins.includes(origin));
+      }
+    })
+  );
+}
+
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "..", "public")));
 
@@ -32,22 +49,30 @@ function createPinSecret(pin) {
   return { pinSalt, pinHash };
 }
 
-function verifyUserPin(pin, user) {
+function verifyPinSecret(pin, secret) {
   const normalizedPin = String(pin || "").trim();
 
-  if (!normalizedPin || !user?.pinSalt || !user?.pinHash) {
+  if (!normalizedPin || !secret?.pinSalt || !secret?.pinHash) {
     return false;
   }
 
-  const candidate = crypto.scryptSync(normalizedPin, user.pinSalt, 64);
-  const expected = Buffer.from(user.pinHash, "hex");
+  const candidate = crypto.scryptSync(normalizedPin, secret.pinSalt, 64);
+  const expected = Buffer.from(secret.pinHash, "hex");
 
   return candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
 }
 
+function verifyUserPin(pin, user) {
+  return verifyPinSecret(pin, user);
+}
+
 function getDefaultSettings() {
+  const adminSecret = createPinSecret(ADMIN_PIN);
+
   return {
-    adminPin: ADMIN_PIN,
+    adminPinSalt: adminSecret.pinSalt,
+    adminPinHash: adminSecret.pinHash,
+    adminPinChangeRequired: ADMIN_PIN_NEEDS_UPDATE,
     users: [
       {
         id: "mostrador",
@@ -109,20 +134,47 @@ function normalizeSettings(settings = {}) {
     id: user.id || `usuario-${index + 1}`
   }));
 
+  const legacyAdminPin = String(settings.adminPin || "").trim();
+  const hasAdminSecret = Boolean(settings.adminPinSalt && settings.adminPinHash);
+  const adminSecret = hasAdminSecret
+    ? {
+        pinSalt: String(settings.adminPinSalt),
+        pinHash: String(settings.adminPinHash)
+      }
+    : createPinSecret(legacyAdminPin || ADMIN_PIN);
+
   return {
-    adminPin: String(settings.adminPin || ADMIN_PIN).trim() || ADMIN_PIN,
+    adminPinSalt: adminSecret.pinSalt,
+    adminPinHash: adminSecret.pinHash,
+    adminPinChangeRequired:
+      settings.adminPinChangeRequired === true ||
+      (!hasAdminSecret && legacyAdminPin === "1234") ||
+      (!hasAdminSecret && !legacyAdminPin && ADMIN_PIN_NEEDS_UPDATE),
     users,
     updatedAt: settings.updatedAt || new Date().toISOString()
   };
 }
 
 function readSettings() {
-  return normalizeSettings(readJson(settingsPath, getDefaultSettings()));
+  const rawSettings = readJson(settingsPath, null);
+  const settings = normalizeSettings(rawSettings || getDefaultSettings());
+  const needsMigration =
+    !rawSettings ||
+    Boolean(rawSettings.adminPin) ||
+    !rawSettings.adminPinSalt ||
+    !rawSettings.adminPinHash;
+
+  if (needsMigration) {
+    writeJson(settingsPath, settings);
+  }
+
+  return settings;
 }
 
 function writeSettings(settings) {
+  const { adminPin, ...settingsWithoutLegacyPin } = settings;
   const normalized = normalizeSettings({
-    ...settings,
+    ...settingsWithoutLegacyPin,
     updatedAt: new Date().toISOString()
   });
   writeJson(settingsPath, normalized);
@@ -132,12 +184,17 @@ function writeSettings(settings) {
 function getPublicSettings(settings = readSettings()) {
   return {
     users: settings.users.map(toPublicUser),
+    adminPinChangeRequired: settings.adminPinChangeRequired === true,
     updatedAt: settings.updatedAt
   };
 }
 
 function isAdminPin(pin) {
-  return String(pin || "").trim() === readSettings().adminPin;
+  const settings = readSettings();
+  return verifyPinSecret(pin, {
+    pinSalt: settings.adminPinSalt,
+    pinHash: settings.adminPinHash
+  });
 }
 
 function createAuthSession(user) {
@@ -229,7 +286,10 @@ function readJson(filePath, fallback) {
 
 function writeJson(filePath, data) {
   ensureDataDir();
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
+  const tempPath = `${filePath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+
+  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf8");
+  fs.renameSync(tempPath, filePath);
 }
 
 function toNumber(value, fallback = 0) {
@@ -651,14 +711,12 @@ app.get("/api/auth/session", (req, res) => {
 });
 
 app.put("/api/settings", (req, res) => {
-  if (!isAdminPin(req.body?.adminPin)) {
-    return res.status(401).json({
-      message: "PIN de administrador incorrecto."
-    });
-  }
+  const authenticatedAdmin = requireAdminUser(req, res);
+  if (!authenticatedAdmin) return;
 
   const current = readSettings();
   const newPin = String(req.body?.newAdminPin || "").trim();
+  const currentAdminPin = String(req.body?.currentAdminPin || "").trim();
   const requestedUsers = Array.isArray(req.body?.users) ? req.body.users : current.users;
   const employeePins = req.body?.employeePins && typeof req.body.employeePins === "object"
     ? req.body.employeePins
@@ -667,6 +725,12 @@ app.put("/api/settings", (req, res) => {
   if (newPin && !/^\d{4,12}$/.test(newPin)) {
     return res.status(400).json({
       message: "El PIN nuevo debe tener de 4 a 12 dígitos."
+    });
+  }
+
+  if (newPin && !isAdminPin(currentAdminPin)) {
+    return res.status(401).json({
+      message: "El PIN actual de administrador es incorrecto."
     });
   }
 
@@ -729,17 +793,24 @@ app.put("/api/settings", (req, res) => {
   const settings = writeSettings({
     ...current,
     users: normalizedUsers,
-    adminPin: newPin || current.adminPin
+    ...(newPin ? createPinSecret(newPin) : {}),
+    adminPinChangeRequired: newPin ? false : current.adminPinChangeRequired
   });
 
   res.json(getPublicSettings(settings));
 });
 
 app.get("/api/products", (req, res) => {
+  const user = requireSessionUser(req, res);
+  if (!user) return;
+
   res.json(readJson(productsPath, []));
 });
 
 app.post("/api/products", (req, res) => {
+  const user = requireAdminUser(req, res);
+  if (!user) return;
+
   const products = readJson(productsPath, []);
   const payload = normalizeProductPayload(req.body);
 
@@ -763,6 +834,9 @@ app.post("/api/products", (req, res) => {
 });
 
 app.put("/api/products/:id", (req, res) => {
+  const user = requireAdminUser(req, res);
+  if (!user) return;
+
   const products = readJson(productsPath, []);
   const productIndex = products.findIndex((product) => {
     return product.id === req.params.id;
@@ -792,6 +866,9 @@ app.put("/api/products/:id", (req, res) => {
 });
 
 app.patch("/api/products/:id/inventory", (req, res) => {
+  const user = requireAdminUser(req, res);
+  if (!user) return;
+
   const products = readJson(productsPath, []);
   const productIndex = products.findIndex((product) => {
     return product.id === req.params.id;
@@ -922,16 +999,33 @@ app.post("/api/inventory/entries", (req, res) => {
 });
 
 app.get("/api/sales", (req, res) => {
-  res.json(readJson(salesPath, []));
+  const user = requireSessionUser(req, res);
+  if (!user) return;
+
+  const sales = readJson(salesPath, []);
+  const visibleSales = user.role === "admin"
+    ? sales
+    : sales.filter((sale) => sale.operator?.id === user.id);
+
+  res.json(visibleSales);
 });
 
 app.get("/api/sales/:id", (req, res) => {
+  const user = requireSessionUser(req, res);
+  if (!user) return;
+
   const sales = readJson(salesPath, []);
   const sale = sales.find((item) => item.id === req.params.id);
 
   if (!sale) {
     return res.status(404).json({
       message: "Venta no encontrada."
+    });
+  }
+
+  if (user.role !== "admin" && sale.operator?.id !== user.id) {
+    return res.status(403).json({
+      message: "No tienes permiso para consultar esta venta."
     });
   }
 
@@ -1203,6 +1297,9 @@ app.post("/api/sales", (req, res) => {
 });
 
 app.patch("/api/sales/:id/invoice", (req, res) => {
+  const user = requireAdminUser(req, res);
+  if (!user) return;
+
   const sales = readJson(salesPath, []);
   const saleIndex = sales.findIndex((item) => item.id === req.params.id);
 
@@ -1241,6 +1338,9 @@ app.patch("/api/sales/:id/invoice", (req, res) => {
 });
 
 app.patch("/api/sales/:id/cancel", (req, res) => {
+  const cancelUser = requireAdminUser(req, res);
+  if (!cancelUser) return;
+
   const sales = readJson(salesPath, []);
   const saleIndex = sales.findIndex((item) => item.id === req.params.id);
 
@@ -1250,27 +1350,17 @@ app.patch("/api/sales/:id/cancel", (req, res) => {
     });
   }
 
-  if (!isAdminPin(req.body.adminPin)) {
-    return res.status(401).json({
-      message: "PIN de administrador incorrecto."
-    });
-  }
-
   if (sales[saleIndex].status === "cancelada") {
     return res.status(400).json({
       message: "La venta ya está cancelada."
     });
   }
 
-  const cancelUser = getSessionUser(req);
-
   sales[saleIndex] = {
     ...sales[saleIndex],
     status: "cancelada",
     canceledAt: new Date().toISOString(),
-    canceledBy: cancelUser
-      ? { id: cancelUser.id, name: cancelUser.name, role: cancelUser.role }
-      : { id: "admin", name: "Administrador", role: "admin" },
+    canceledBy: { id: cancelUser.id, name: cancelUser.name, role: cancelUser.role },
     cancelReason: String(
       req.body.reason || "Cancelación desde módulo de ventas"
     ).trim(),

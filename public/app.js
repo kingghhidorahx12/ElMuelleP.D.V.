@@ -449,17 +449,24 @@ async function confirmAccessLogin() {
         });
 
     applyPublicSettings(result.settings);
-    state.adminPin = selectedUser.role === "admin" ? pin : "";
     state.sessionToken = result.sessionToken || "";
     state.sessionAuthenticated = Boolean(state.sessionToken);
     saveSessionToken(state.sessionToken);
     setCurrentUser(result.user);
     state.employeeLoginRequired = false;
-    await loadCashSessions();
+    await Promise.all([loadProducts(), loadSales()]);
     clearAccessPin();
     setAccessLocked(false);
-    setView(selectedUser.role === "admin" ? "dashboard" : "pos");
-    showToast("Sesion iniciada: " + result.user.name + ".");
+    if (selectedUser.role === "admin" && result.settings?.adminPinChangeRequired) {
+      setSettingsMode("users");
+      setView("settings");
+      showToast("Por seguridad, cambia el PIN inicial antes de continuar.");
+    } else {
+      setView(selectedUser.role === "admin" ? "dashboard" : "pos");
+    }
+    if (!(selectedUser.role === "admin" && result.settings?.adminPinChangeRequired)) {
+      showToast("Sesión iniciada: " + result.user.name + ".");
+    }
   } catch (error) {
     console.error(error);
     showToast(error.message || "Usuario o PIN incorrecto.");
@@ -470,7 +477,6 @@ async function confirmAccessLogin() {
   }
 }
 function logoutToAccess() {
-  state.adminPin = "";
   state.sessionToken = "";
   state.sessionAuthenticated = false;
   state.employeeLoginRequired = true;
@@ -532,13 +538,12 @@ async function confirmEmployeeAccess() {
     });
 
     applyPublicSettings(result.settings);
-    state.adminPin = "";
     state.sessionToken = result.sessionToken || "";
     state.sessionAuthenticated = Boolean(state.sessionToken);
     saveSessionToken(state.sessionToken);
     setCurrentUser(result.user);
     state.employeeLoginRequired = false;
-    await loadCashSessions();
+    await Promise.all([loadProducts(), loadSales()]);
     $("employeeAuthModal")?.classList.add("hidden");
     setView("pos");
     showToast(`Sesión iniciada: ${result.user.name}.`);
@@ -588,18 +593,21 @@ async function confirmAdminAccess() {
     const result = await verifyAdminPin(pin);
     const nextView = state.pendingAdminView;
 
-    state.adminPin = pin;
     state.sessionToken = result.sessionToken || "";
     state.sessionAuthenticated = Boolean(state.sessionToken);
     saveSessionToken(state.sessionToken);
     applyPublicSettings(result.settings);
     setCurrentUser(result.user || USERS.admin);
-    await loadCashSessions();
+    await Promise.all([loadProducts(), loadSales()]);
     $("employeeAuthModal")?.classList.add("hidden");
     closeAuthModal();
     showToast("Modo administrador activo.");
 
-    if (nextView) {
+    if (result.settings?.adminPinChangeRequired) {
+      setSettingsMode("users");
+      setView("settings");
+      showToast("Por seguridad, cambia el PIN inicial antes de continuar.");
+    } else if (nextView) {
       setView(nextView);
     } else {
       updateShellState();
@@ -630,9 +638,9 @@ const state = {
   sessionToken: storedSessionToken,
   sessionAuthenticated: Boolean(storedSessionUser && storedSessionToken),
   employeeLoginRequired: false,
-  adminPin: "",
   settings: {
     users: [normalizeSessionUser(USERS.employee), normalizeSessionUser(USERS.admin)],
+    adminPinChangeRequired: false,
     updatedAt: null
   },
   settingsDraft: null,
@@ -824,7 +832,9 @@ function syncTopbarContext() {
       ? document.querySelector(".inventory-subview-tabs")
       : state.activeView === "products"
         ? document.querySelector(".product-subview-tabs")
-        : null;
+        : state.activeView === "settings"
+          ? document.querySelector(".settings-subview-tabs")
+          : null;
 
   if (syncTopbarContext.currentTabs && syncTopbarContext.currentTabs !== nextTabs) {
     restoreContextTabs(syncTopbarContext.currentTabs);
@@ -879,6 +889,7 @@ function setSettingsMode(mode = "scale") {
   $$('[data-settings-mode-btn]').forEach((button) => {
     button.classList.toggle("active", button.dataset.settingsModeBtn === validMode);
   });
+  syncTopbarContext();
 }
 function quantityText(quantity, unit) {
   return unit === "kg"
@@ -1212,6 +1223,7 @@ function setView(viewName) {
   $("pageTitle").textContent = title;
   $("pageSubtitle").textContent = subtitle;
   updateShellState();
+  syncTopbarContext();
 
   if (viewName === "sales") loadSalesAdmin();
   if (viewName === "dashboard") loadDashboard();
@@ -1268,6 +1280,7 @@ function normalizePublicSettings(settings = {}) {
 
   return {
     users,
+    adminPinChangeRequired: settings.adminPinChangeRequired === true,
     updatedAt: settings.updatedAt || null
   };
 }
@@ -1278,6 +1291,7 @@ function cloneSettingsUsers(users = []) {
 
 function applyPublicSettings(settings = {}) {
   state.settings = normalizePublicSettings(settings);
+  document.body.classList.toggle("admin-pin-change-required", state.settings.adminPinChangeRequired);
   state.settingsDraft = cloneSettingsUsers(state.settings.users);
 
   if (!isAdminUser()) {
@@ -1519,8 +1533,8 @@ async function saveUserSettings() {
     return;
   }
 
-  if (!currentPin) {
-    showToast("Ingresa el PIN actual para guardar.");
+  if (newPin && !currentPin) {
+    showToast("Ingresa el PIN actual para cambiarlo.");
     $("currentAdminPinInput")?.focus();
     return;
   }
@@ -1576,14 +1590,13 @@ async function saveUserSettings() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        adminPin: currentPin,
+        currentAdminPin: currentPin,
         newAdminPin: newPin,
         users,
         employeePins
       })
     });
 
-    state.adminPin = newPin || currentPin;
     applyPublicSettings(settings);
 
     state.employeePinDrafts = {};
@@ -1997,12 +2010,12 @@ function openManualModal() {
   }
 
   const quantityInput = $("manualQuantityInput");
-  $("adminPinInput").value = isAdminUser() ? state.adminPin : "";
+  $("adminPinInput").value = "";
   quantityInput.value = state.selectedProduct.unit === "pieza" ? "1" : "0.000";
   quantityInput.dataset.rawDigits = state.selectedProduct.unit === "kg" ? "" : "1";
   updateManualQuantityUi();
   $("manualModal").classList.remove("hidden");
-  const focusTarget = isAdminUser() ? quantityInput : $("adminPinInput");
+  const focusTarget = $("adminPinInput");
   focusTarget?.focus();
   focusTarget?.select?.();
 }
@@ -2015,15 +2028,13 @@ async function saveManualQuantity() {
   const pin = $("adminPinInput").value.trim();
   const quantity = getManualQuantityValue();
 
-  if (!isAdminUser()) {
-    try {
-      await verifyAdminPin(pin);
-    } catch (error) {
-      console.error(error);
-      showToast(error.message || "PIN incorrecto.");
-      $("adminPinInput")?.focus();
-      return;
-    }
+  try {
+    await verifyAdminPin(pin);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "PIN incorrecto.");
+    $("adminPinInput")?.focus();
+    return;
   }
 
   if (quantity <= 0) {
@@ -3230,12 +3241,8 @@ function renderSaleDetail(saleId) {
 }
 
 async function cancelSale(saleId) {
-  const adminPin = isAdminUser()
-    ? state.adminPin
-    : window.prompt("PIN de administrador:");
-
-  if (!adminPin) {
-    showToast("Se requiere el PIN de administrador.");
+  if (!isAdminUser()) {
+    showToast("Esta acción requiere permisos de administrador.");
     return;
   }
 
@@ -3248,7 +3255,6 @@ async function cancelSale(saleId) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        adminPin,
         reason
       })
     });
@@ -3451,9 +3457,59 @@ async function loadDashboard() {
   }
 }
 
-function getCompletedSalesForPeriod(period, dateString) {
+function getDashboardDateRange(startDateString, endDateString) {
+  const start = parseLocalDate(startDateString);
+  const endDate = parseLocalDate(endDateString || startDateString);
+
+  if (endDate < start) endDate.setTime(start.getTime());
+
+  const end = new Date(endDate);
+  end.setDate(end.getDate() + 1);
+  end.setHours(0, 0, 0, 0);
+
+  return { start, end };
+}
+
+function dashboardSaleMatchesPeriod(sale, period, dateString, endDateString) {
+  if (period !== "range") return saleMatchesPeriod(sale, period, dateString);
+
+  const range = getDashboardDateRange(dateString, endDateString);
+  const createdAt = new Date(sale.createdAt);
+  return createdAt >= range.start && createdAt < range.end;
+}
+
+function getDashboardFilter() {
+  const periodInput = $("dashboardPeriodFilter");
+  const dateInput = $("dashboardDateInput");
+  const dateLabel = $("dashboardDateLabel");
+  const endDateField = $("dashboardEndDateField");
+  const endDateInput = $("dashboardEndDateInput");
+  const period = periodInput?.value || "day";
+  const isRange = period === "range";
+  const isAll = period === "all";
+
+  if (dateInput && !dateInput.value) dateInput.value = getLocalDateString();
+  if (endDateInput && !endDateInput.value) endDateInput.value = dateInput?.value || getLocalDateString();
+
+  if (dateInput) dateInput.disabled = isAll;
+  if (dateLabel) dateLabel.textContent = isRange ? "Desde" : "Fecha";
+  if (endDateField) endDateField.hidden = !isRange;
+  if (endDateInput) endDateInput.disabled = !isRange;
+
+  if (isRange && dateInput && endDateInput && endDateInput.value < dateInput.value) {
+    endDateInput.value = dateInput.value;
+  }
+
+  return {
+    period,
+    dateString: dateInput?.value || getLocalDateString(),
+    endDateString: endDateInput?.value || dateInput?.value || getLocalDateString()
+  };
+}
+
+function getCompletedSalesForPeriod(period, dateString, endDateString) {
   return state.sales.filter((sale) => {
-    return getSaleStatus(sale) !== "cancelada" && saleMatchesPeriod(sale, period, dateString);
+    return getSaleStatus(sale) !== "cancelada" && dashboardSaleMatchesPeriod(sale, period, dateString, endDateString);
   });
 }
 
@@ -3556,14 +3612,219 @@ function getInventoryAlerts() {
     .slice(0, 6);
 }
 
+function toLocalDateKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDashboardSalesDay(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "Fecha no disponible";
+
+  const label = new Intl.DateTimeFormat("es-MX", {
+    weekday: "long",
+    day: "numeric",
+    month: "short"
+  }).format(date).replace(/\.$/, "");
+
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+}
+
+function getDashboardBestSalesDays(sales) {
+  const totalsByDay = new Map();
+
+  sales.forEach((sale) => {
+    const date = new Date(sale.createdAt);
+    const key = toLocalDateKey(date);
+    if (!key) return;
+
+    const entry = totalsByDay.get(key) || {
+      name: formatDashboardSalesDay(date),
+      total: 0,
+      tickets: 0,
+      timestamp: date.getTime()
+    };
+
+    entry.total += Number(sale.total || 0);
+    entry.tickets += 1;
+    totalsByDay.set(key, entry);
+  });
+
+  return [...totalsByDay.values()]
+    .sort((a, b) => b.total - a.total || b.timestamp - a.timestamp)
+    .slice(0, 5)
+    .map((entry) => ({
+      ...entry,
+      detail: `${entry.tickets} ${entry.tickets === 1 ? "venta" : "ventas"}`
+    }));
+}
+
+function getDashboardSalesSeries(sales, period, dateString, endDateString) {
+  const referenceDate = new Date(`${dateString}T12:00:00`);
+  const safeReference = Number.isNaN(referenceDate.getTime()) ? new Date() : referenceDate;
+  const monthLabels = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+  const weekdayLabels = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"];
+  let series;
+
+  if (period === "range") {
+    const range = getDashboardDateRange(dateString, endDateString);
+    const durationMs = range.end.getTime() - range.start.getTime();
+    const dayCount = Math.max(1, Math.round(durationMs / 86400000));
+    const bucketDays = dayCount <= 14 ? 1 : Math.ceil(dayCount / 8);
+
+    series = [];
+    for (let bucketStart = new Date(range.start); bucketStart < range.end; ) {
+      const bucketEnd = new Date(bucketStart);
+      bucketEnd.setDate(bucketEnd.getDate() + bucketDays);
+      if (bucketEnd > range.end) bucketEnd.setTime(range.end.getTime());
+
+      const bucketLastDay = new Date(bucketEnd);
+      bucketLastDay.setDate(bucketLastDay.getDate() - 1);
+      const label = bucketDays === 1
+        ? `${String(bucketStart.getDate()).padStart(2, "0")} ${monthLabels[bucketStart.getMonth()]}`
+        : `${bucketStart.getDate()}-${bucketLastDay.getDate()} ${monthLabels[bucketLastDay.getMonth()]}`;
+
+      series.push({
+        key: `range-${toLocalDateKey(bucketStart)}`,
+        label,
+        total: 0,
+        start: new Date(bucketStart),
+        end: new Date(bucketEnd)
+      });
+      bucketStart = bucketEnd;
+    }
+  } else if (period === "day") {
+    series = Array.from({ length: 8 }, (_, index) => {
+      const hour = index * 3;
+      return { key: `hour-${hour}`, label: `${String(hour).padStart(2, "0")} h`, total: 0 };
+    });
+  } else if (period === "week") {
+    const range = getPeriodRange("week", dateString);
+    series = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(range.start);
+      date.setDate(date.getDate() + index);
+      return { key: toLocalDateKey(date), label: weekdayLabels[date.getDay()], total: 0 };
+    });
+  } else if (period === "month") {
+    const daysInMonth = new Date(safeReference.getFullYear(), safeReference.getMonth() + 1, 0).getDate();
+    series = Array.from({ length: Math.ceil(daysInMonth / 7) }, (_, index) => {
+      const start = index * 7 + 1;
+      const end = Math.min(start + 6, daysInMonth);
+      return { key: `week-${index}`, label: `${start}-${end}`, total: 0 };
+    });
+  } else if (period === "year") {
+    series = monthLabels.map((label, index) => ({ key: `month-${index}`, label, total: 0 }));
+  } else {
+    series = Array.from({ length: 6 }, (_, index) => {
+      const date = new Date(safeReference.getFullYear(), safeReference.getMonth() - (5 - index), 1);
+      return {
+        key: `${date.getFullYear()}-${date.getMonth()}`,
+        label: monthLabels[date.getMonth()],
+        total: 0
+      };
+    });
+  }
+
+  if (period === "range") {
+    sales.forEach((sale) => {
+      const date = new Date(sale.createdAt);
+      const item = series.find((bucket) => date >= bucket.start && date < bucket.end);
+      if (item) item.total += Number(sale.total || 0);
+    });
+
+    return series;
+  }
+
+  const seriesByKey = new Map(series.map((item) => [item.key, item]));
+
+  sales.forEach((sale) => {
+    const date = new Date(sale.createdAt);
+    if (Number.isNaN(date.getTime())) return;
+
+    let key;
+    if (period === "day") key = `hour-${Math.floor(date.getHours() / 3) * 3}`;
+    else if (period === "week") key = toLocalDateKey(date);
+    else if (period === "month") key = `week-${Math.floor((date.getDate() - 1) / 7)}`;
+    else if (period === "year") key = `month-${date.getMonth()}`;
+    else key = `${date.getFullYear()}-${date.getMonth()}`;
+
+    const item = seriesByKey.get(key);
+    if (item) item.total += Number(sale.total || 0);
+  });
+
+  return series;
+}
+
+function renderDashboardSalesChart(sales, period, dateString, endDateString) {
+  const chart = $("dashboardSalesChart");
+  const caption = $("dashboardSalesChartCaption");
+  if (!chart || !caption) return;
+
+  const series = getDashboardSalesSeries(sales, period, dateString, endDateString);
+  const maxTotal = Math.max(...series.map((item) => item.total), 0);
+  const labels = {
+    day: "Ventas por hora",
+    week: "Ventas por dia",
+    month: "Ventas por semana",
+    year: "Ventas por mes",
+    range: "Ventas por rango",
+    all: "Ultimos 6 meses"
+  };
+
+  caption.textContent = labels[period] || labels.day;
+  chart.style.setProperty("--bar-count", String(series.length));
+  chart.setAttribute("aria-label", `${caption.textContent}. Total ${money(series.reduce((sum, item) => sum + item.total, 0))}`);
+  chart.innerHTML = series
+    .map((item) => {
+      const height = maxTotal > 0 ? Math.max(8, Math.round((item.total / maxTotal) * 100)) : 8;
+      return `
+        <div class="dashboard-bar" title="${escapeHtml(item.label)}: ${escapeHtml(money(item.total))}">
+          <span class="dashboard-bar-value">${escapeHtml(money(item.total))}</span>
+          <span class="dashboard-bar-column" style="--bar-height: ${height}%"></span>
+          <span class="dashboard-bar-label">${escapeHtml(item.label)}</span>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderDashboardPaymentMix(totals) {
+  const donut = $("dashboardPaymentDonut");
+  const totalElement = $("dashboardPaymentTotal");
+  const legend = $("dashboardPaymentLegend");
+  if (!donut || !totalElement || !legend) return;
+
+  const total = Number(totals.total || 0);
+  const cashShare = total > 0 ? (Number(totals.cash || 0) / total) * 100 : 0;
+  const cardShare = total > 0 ? (Number(totals.card || 0) / total) * 100 : 0;
+  const cashEnd = cashShare.toFixed(2);
+  const cardEnd = (cashShare + cardShare).toFixed(2);
+  const paymentItems = [
+    { label: "Efectivo", amount: totals.cash, className: "cash" },
+    { label: "Tarjeta", amount: totals.card, className: "card" },
+    { label: "Transferencia", amount: totals.transfer, className: "transfer" }
+  ];
+
+  donut.style.background = `conic-gradient(#15365f 0 ${cashEnd}%, #c99a3e ${cashEnd}% ${cardEnd}%, #1c6b5d ${cardEnd}% 100%)`;
+  donut.setAttribute("aria-label", `Distribucion de pagos. Total ${money(total)}`);
+  totalElement.textContent = money(total);
+  legend.innerHTML = paymentItems
+    .map((item) => {
+      return `<div class="dashboard-payment-legend-row ${item.className}"><span>${item.label}</span><strong>${money(item.amount)}</strong></div>`;
+    })
+    .join("");
+}
+
 function renderDashboard() {
   if (!$("dashboardView")) return;
 
-  syncPeriodInput("dashboardPeriodFilter", "dashboardDateInput");
-
-  const period = $("dashboardPeriodFilter")?.value || "day";
-  const dateString = $("dashboardDateInput")?.value || getLocalDateString();
-  const sales = getCompletedSalesForPeriod(period, dateString);
+  const { period, dateString, endDateString } = getDashboardFilter();
+  const sales = getCompletedSalesForPeriod(period, dateString, endDateString);
   const totals = getSalesTotals(sales);
   const margin = totals.total > 0 ? (totals.profit / totals.total) * 100 : 0;
   const averageTicket = totals.count > 0 ? totals.total / totals.count : 0;
@@ -3602,7 +3863,15 @@ function renderDashboard() {
   $("dashboardTransfer").textContent = money(totals.transfer);
   $("dashboardExpectedCash").textContent = money(expectedCash);
 
+  renderDashboardSalesChart(sales, period, dateString, endDateString);
+  renderDashboardPaymentMix(totals);
+
   renderDashboardList("dashboardTopProducts", topProducts, "Sin ventas en este periodo.");
+  renderDashboardList(
+    "dashboardBestSalesDays",
+    getDashboardBestSalesDays(sales),
+    "Sin ventas en este periodo."
+  );
   renderDashboardList("dashboardSlowProducts", slowProducts, "Sin productos activos.");
   renderDashboardList("dashboardInventoryAlerts", getInventoryAlerts(), "Sin productos en alerta.", {
     showRank: false
@@ -4618,6 +4887,7 @@ function bindEvents() {
   on($("salesDateInput"), "change", renderSalesAdmin);
   on($("dashboardPeriodFilter"), "change", renderDashboard);
   on($("dashboardDateInput"), "change", renderDashboard);
+  on($("dashboardEndDateInput"), "change", renderDashboard);
   on($("refreshDashboardBtn"), "click", loadDashboard);
   on($("recentSalesPeriodFilter"), "change", loadRecentSales);
   on($("recentSalesDateInput"), "change", loadRecentSales);
@@ -4687,7 +4957,7 @@ async function init() {
   if (!sessionRestored) {
     logoutToAccess();
   }
-  ["salesDateInput", "dashboardDateInput", "recentSalesDateInput", "cutDateInput", "inventoryEntryDateInput"].forEach((id) => {
+  ["salesDateInput", "dashboardDateInput", "dashboardEndDateInput", "recentSalesDateInput", "cutDateInput", "inventoryEntryDateInput"].forEach((id) => {
     const input = $(id);
     if (input && !input.value) input.value = getLocalDateString();
   });
@@ -4696,7 +4966,7 @@ async function init() {
   resetProductForm();
   resetInventoryEntryForm();
   if (state.sessionAuthenticated) {
-    await loadCashSessions();
+    await Promise.all([loadCashSessions(), loadProducts(), loadSales()]);
   }
   renderTicket();
   setPaymentMethod(state.paymentMethod);
@@ -4706,7 +4976,6 @@ async function init() {
   updateShellState();
   updateScaleUi();
   updateCashGateUi();
-  await Promise.all([loadProducts(), loadSales()]);
 }
 
 init();

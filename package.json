@@ -5,7 +5,9 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node src/server.js"
+    "dev": "node src/server.js",
+    "test": "node scripts/security-smoke-test.js",
+    "test:security": "node scripts/security-smoke-test.js"
   },
   "keywords": [
     "pos",

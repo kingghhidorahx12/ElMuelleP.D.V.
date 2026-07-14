@@ -1,6 +1,6 @@
 :root {
-  --font-ui: "Inter", "Segoe UI", Arial, sans-serif;
-  --font-display: "Manrope", "Inter", "Segoe UI", Arial, sans-serif;
+  --font-ui: "DM Sans", "Segoe UI", Arial, sans-serif;
+  --font-display: "Space Grotesk", "DM Sans", "Segoe UI", Arial, sans-serif;
   --bg: #edf2f6;
   --panel: #ffffff;
   --panel-soft: #f8fafc;
@@ -12170,4 +12170,673 @@ body.sidebar-collapsed.ticket-collapsed #posView .product-card span.product-pric
   justify-content: center !important;
   line-height: 1 !important;
   overflow: visible !important;
+}
+
+/* Shared segmented navigation: based on the inventory entry selector. */
+h1,
+h2,
+h3,
+h4,
+h5,
+.brand,
+.eyebrow {
+  font-family: var(--font-display);
+}
+
+#inventoryView .entry-mode-toggle,
+.subview-tabs,
+#posView .pos-filter-tabs,
+#posView .pos-pager {
+  display: grid;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(21, 62, 106, 0.16);
+  border-radius: 17px;
+  background: #eaf3fb;
+  box-shadow: 0 8px 18px rgba(13, 43, 78, 0.06);
+}
+
+.subview-tabs {
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}
+
+#posView .pos-filter-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+#posView .pos-pager {
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 0.8fr) minmax(0, 1fr) !important;
+}
+
+#inventoryView .entry-mode-toggle button,
+.subview-tabs button,
+#posView .pos-filter-tabs .chip,
+#posView .pos-pager .quiet-btn {
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0 !important;
+  border-radius: 12px;
+  background: transparent !important;
+  color: var(--teal-dark);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1.1;
+  text-align: center;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+#inventoryView .entry-mode-toggle button:hover,
+.subview-tabs button:hover,
+#posView .pos-filter-tabs .chip:hover,
+#posView .pos-pager .quiet-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.72) !important;
+}
+
+#inventoryView .entry-mode-toggle button.active,
+.subview-tabs button.active,
+#posView .pos-filter-tabs .chip.active {
+  background: linear-gradient(135deg, #153e6a 0%, #0e2d51 100%) !important;
+  color: #ffffff;
+  box-shadow: 0 10px 22px rgba(13, 43, 78, 0.18);
+}
+
+#inventoryView .entry-mode-toggle button:focus-visible,
+.subview-tabs button:focus-visible,
+#posView .pos-filter-tabs .chip:focus-visible,
+#posView .pos-pager .quiet-btn:focus-visible {
+  outline: 3px solid rgba(201, 154, 62, 0.42);
+  outline-offset: 2px;
+}
+
+#posView .pos-pager span {
+  min-width: 0;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0 8px;
+  color: var(--teal-dark);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.topbar-context-slot .subview-tabs,
+#inventoryView .inventory-subview-tabs {
+  width: min(650px, 100%);
+  min-height: 0;
+  margin: 0;
+  border-radius: 17px;
+  background: #eaf3fb;
+  box-shadow: 0 8px 18px rgba(13, 43, 78, 0.06);
+}
+
+.topbar-context-slot .subview-tabs button,
+.topbar-context-slot .product-subview-tabs button,
+.topbar-context-slot .inventory-subview-tabs button,
+.topbar-context-slot .settings-subview-tabs button {
+  min-width: 0;
+}
+
+/* Administrative dashboard indicators. */
+.dashboard-insights {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.85fr);
+  gap: 12px;
+}
+
+#dashboardView .dashboard-chart-card {
+  min-width: 0;
+  min-height: 248px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 16px;
+  border-top: 3px solid rgba(201, 154, 62, 0.52);
+  background: linear-gradient(180deg, #ffffff 0%, #f6fbff 100%);
+}
+
+.dashboard-chart-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dashboard-chart-head h4 {
+  margin: 2px 0 0;
+  color: var(--teal-dark);
+  font-size: 17px;
+}
+
+.dashboard-chart-caption {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.dashboard-bar-chart {
+  min-width: 0;
+  min-height: 172px;
+  display: grid;
+  grid-template-columns: repeat(var(--bar-count, 6), minmax(0, 1fr));
+  align-items: stretch;
+  gap: 8px;
+  padding: 2px 0 0;
+}
+
+.dashboard-bar {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 22px minmax(0, 1fr) 22px;
+  align-items: end;
+  gap: 5px;
+}
+
+.dashboard-bar-value {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-bar-column {
+  width: min(44px, 78%);
+  height: var(--bar-height, 8%);
+  min-height: 8px;
+  justify-self: center;
+  align-self: end;
+  border-radius: 8px 8px 3px 3px;
+  background: linear-gradient(180deg, #2f667d 0%, #15365f 100%);
+  box-shadow: 0 6px 12px rgba(13, 43, 78, 0.14);
+}
+
+.dashboard-bar-label {
+  overflow: hidden;
+  color: var(--teal-dark);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-payment-mix {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+}
+
+.dashboard-payment-donut {
+  width: 132px;
+  aspect-ratio: 1;
+  display: grid;
+  place-content: center;
+  justify-self: center;
+  padding: 20px;
+  border-radius: 50%;
+  background: conic-gradient(#15365f 0 100%, #c99a3e 0 100%, #1c6b5d 0 100%);
+  box-shadow: 0 10px 20px rgba(13, 43, 78, 0.12);
+  text-align: center;
+}
+
+.dashboard-payment-donut::before {
+  content: "";
+  grid-area: 1 / 1;
+  width: 88px;
+  aspect-ratio: 1;
+  justify-self: center;
+  align-self: center;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.dashboard-payment-donut span,
+.dashboard-payment-donut strong {
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-payment-donut span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.dashboard-payment-donut strong {
+  max-width: 90px;
+  overflow: hidden;
+  color: var(--teal-dark);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-payment-legend {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.dashboard-payment-legend-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid rgba(21, 62, 106, 0.1);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dashboard-payment-legend-row::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--teal);
+}
+
+.dashboard-payment-legend-row span {
+  min-width: 0;
+  margin-right: auto;
+}
+
+.dashboard-payment-legend-row strong {
+  color: var(--teal-dark);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-payment-legend-row.card::before {
+  background: var(--amber);
+}
+
+.dashboard-payment-legend-row.transfer::before {
+  background: var(--green);
+}
+
+@media (max-width: 1120px) {
+  .dashboard-insights {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 980px) {
+  .topbar-context-slot .subview-tabs {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  #posView .pos-pager {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  #posView .pos-pager span {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-height: 28px;
+  }
+
+  .dashboard-payment-mix {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .dashboard-payment-donut {
+    width: 120px;
+  }
+}
+
+/* The dashboard now contains a dedicated analytics row, so it scrolls as one page. */
+#dashboardView.active {
+  overflow: auto;
+  padding-right: 4px;
+}
+
+#dashboardView .dashboard-panel {
+  min-height: 100%;
+  height: auto;
+  grid-template-rows: auto auto auto auto auto;
+  overflow: visible;
+}
+
+#dashboardView .dashboard-insights,
+#dashboardView .dashboard-grid {
+  min-height: 0;
+}
+
+#dashboardView .dashboard-grid {
+  min-height: 384px;
+  grid-template-rows: minmax(150px, 0.78fr) minmax(150px, 0.78fr) minmax(150px, 1fr);
+  overflow: visible;
+}
+
+#dashboardView .dashboard-best-days-card {
+  grid-column: 1 / -1;
+}
+
+/* POS catalog categories use the same segmented language as the app tabs. */
+#posView .category-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(21, 62, 106, 0.16);
+  border-radius: 17px;
+  background: #eaf3fb;
+  box-shadow: 0 8px 18px rgba(13, 43, 78, 0.06);
+}
+
+#posView .category-card,
+body.pos-step-product #posView .category-card,
+body.pos-step-checkout #posView .category-card {
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: var(--teal-dark);
+  box-shadow: none !important;
+}
+
+#posView .category-card strong {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.14;
+}
+
+#posView .category-card:hover:not(.active) {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.72) !important;
+}
+
+#posView .category-card.active,
+body.pos-step-product #posView .category-card.active,
+body.pos-step-checkout #posView .category-card.active {
+  background: linear-gradient(135deg, #153e6a 0%, #0e2d51 100%) !important;
+  color: #ffffff;
+  box-shadow: 0 10px 22px rgba(13, 43, 78, 0.18) !important;
+}
+
+#posView .pos-search-box {
+  width: 100%;
+  max-width: none;
+  min-height: 56px !important;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(21, 62, 106, 0.16);
+  border-radius: 17px;
+  background: #eaf3fb;
+  box-shadow: 0 8px 18px rgba(13, 43, 78, 0.06);
+}
+
+#posView .pos-search-box span {
+  min-height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0 13px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #153e6a 0%, #0e2d51 100%);
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+#posView .pos-search-box input {
+  width: 100%;
+  min-height: 42px !important;
+  height: 42px !important;
+  padding: 0 12px;
+  border: 0 !important;
+  border-radius: 10px;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--teal-dark);
+}
+
+#posView .pos-search-box input:focus {
+  background: #ffffff !important;
+  outline: 3px solid rgba(201, 154, 62, 0.34);
+  outline-offset: 0;
+}
+
+/* A calmer numeric treatment keeps product prices easy to scan. */
+#posView .product-card span.product-price,
+body.pos-step-product #posView .product-card span.product-price,
+body.pos-step-checkout #posView .product-card span.product-price,
+body.ticket-collapsed #posView .product-card span.product-price,
+body.sidebar-collapsed.ticket-collapsed #posView .product-card span.product-price {
+  border-color: rgba(201, 154, 62, 0.58) !important;
+  background: #fff3d4 !important;
+  color: #12355d;
+  font-family: var(--font-display);
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  letter-spacing: 0 !important;
+  box-shadow: 0 5px 12px rgba(13, 43, 78, 0.08) !important;
+}
+
+#posView .product-card:hover span.product-price,
+#posView .product-card.selected span.product-price {
+  background: #ffe7ad !important;
+  color: #0e2d51;
+}
+
+/* Dashboard controls and donut retain their shape at every panel width. */
+#dashboardView .dashboard-toolbar {
+  display: grid;
+  grid-template-columns: minmax(104px, 0.75fr) minmax(156px, 1fr) minmax(156px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+#dashboardView .dashboard-date-field {
+  min-width: 0;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+#dashboardView .dashboard-date-field[hidden] {
+  display: none;
+}
+
+#dashboardView .dashboard-date-field span {
+  color: var(--teal-dark);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+#dashboardView .dashboard-date-field input {
+  min-width: 0;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--teal-dark);
+}
+
+#dashboardView .dashboard-payment-mix {
+  grid-template-columns: 148px minmax(0, 1fr);
+}
+
+#dashboardView .dashboard-payment-donut {
+  width: 142px;
+  min-width: 142px;
+  max-width: 142px;
+  height: 142px;
+  min-height: 142px;
+  max-height: 142px;
+  aspect-ratio: auto;
+  box-sizing: border-box;
+}
+
+#dashboardView .dashboard-payment-donut::before {
+  width: 92px;
+  height: 92px;
+  aspect-ratio: auto;
+}
+
+@media (max-width: 1080px) {
+  #dashboardView .dashboard-toolbar {
+    grid-template-columns: minmax(104px, 0.8fr) minmax(156px, 1fr) auto;
+  }
+
+  #dashboardView #dashboardEndDateField:not([hidden]) {
+    grid-column: 1 / 3;
+  }
+
+  #dashboardView .dashboard-toolbar .quiet-btn {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
+
+@media (max-width: 860px) {
+  #posView .category-grid {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(152px, 1fr);
+    grid-template-columns: none;
+    overflow-x: auto;
+  }
+
+  #dashboardView .dashboard-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  #dashboardView .dashboard-toolbar .quiet-btn {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  #dashboardView .dashboard-payment-mix {
+    grid-template-columns: 1fr;
+  }
+
+  #dashboardView .dashboard-payment-donut {
+    width: 128px;
+    min-width: 128px;
+    max-width: 128px;
+    height: 128px;
+    min-height: 128px;
+    max-height: 128px;
+  }
+}
+
+#posView .catalog-control-row .pos-pager {
+  padding: 6px !important;
+  border: 1px solid rgba(21, 62, 106, 0.16) !important;
+  border-radius: 17px !important;
+  background: #eaf3fb !important;
+  box-shadow: 0 8px 18px rgba(13, 43, 78, 0.06) !important;
+}
+
+/* Access roles reuse the same segmented-control language as the workspace tabs. */
+.access-user-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)) !important;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(21, 62, 106, 0.16);
+  border-radius: 17px;
+  background: #eaf3fb;
+  box-shadow: 0 8px 18px rgba(13, 43, 78, 0.06);
+}
+
+.access-user-card,
+.access-user-card.admin,
+.access-user-card.admin.active {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 0 !important;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--teal-dark);
+  box-shadow: none;
+  font: inherit;
+  text-align: center;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.access-user-card span {
+  display: none;
+}
+
+.access-user-card strong {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-user-card:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: none;
+}
+
+.access-user-card.active,
+.access-user-card.admin.active {
+  transform: none;
+  background: linear-gradient(135deg, #153e6a 0%, #0e2d51 100%);
+  color: #ffffff;
+  box-shadow: 0 10px 22px rgba(13, 43, 78, 0.18);
+}
+
+.access-user-card:focus-visible {
+  outline: 3px solid rgba(201, 154, 62, 0.42);
+  outline-offset: 2px;
+}
+
+@media (max-width: 420px) {
+  .access-user-list {
+    grid-template-columns: 1fr !important;
+  }
 }
