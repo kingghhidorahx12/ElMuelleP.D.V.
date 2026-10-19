@@ -3,24 +3,69 @@ const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { PosDatabase } = require("./database");
+
+const envPath = process.env.ENV_FILE
+  ? path.resolve(process.env.ENV_FILE)
+  : path.join(__dirname, "..", ".env");
+if (fs.existsSync(envPath)) {
+  process.loadEnvFile(envPath);
+}
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
-const ADMIN_PIN = String(process.env.ADMIN_PIN || "1234").trim();
-const ADMIN_PIN_NEEDS_UPDATE = !String(process.env.ADMIN_PIN || "").trim();
-const DEFAULT_EMPLOYEE_PIN = process.env.EMPLOYEE_PIN || "0000";
-const AUTH_SESSION_MS = 12 * 60 * 60 * 1000;
-const authSessions = new Map();
-
+const HOST = String(process.env.HOST || "127.0.0.1").trim();
+const REQUIRE_HTTPS = String(process.env.REQUIRE_HTTPS || "").toLowerCase() === "true";
+const PIN_PATTERN = /^\d{6,12}$/;
+const AUTH_SESSION_MS = 30 * 60 * 1000;
+const MAX_AUTH_SESSIONS = 1000;
 const dataDir = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(__dirname, "..", "data");
+
+const ADMIN_PIN = String(process.env.ADMIN_PIN || "").trim();
+const DEFAULT_EMPLOYEE_PIN = String(process.env.EMPLOYEE_PIN || "").trim();
+
+function resolveDataEncryptionKey() {
+  const configuredKey = String(process.env.DATA_ENCRYPTION_KEY || "").trim();
+  if (configuredKey.length >= 32) return configuredKey;
+
+  fs.mkdirSync(dataDir, { recursive: true });
+  const secretPath = path.join(dataDir, ".secrets.json");
+
+  if (fs.existsSync(secretPath)) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(secretPath, "utf8"));
+      const savedKey = String(saved?.dataEncryptionKey || "").trim();
+      if (savedKey.length >= 32) return savedKey;
+    } catch (error) {
+      throw new Error("No se pudo leer la clave local de cifrado. Restaura .secrets.json desde un respaldo seguro.");
+    }
+
+    throw new Error("La clave local de cifrado no es válida. Restaura .secrets.json desde un respaldo seguro.");
+  }
+
+  const generatedKey = crypto.randomBytes(48).toString("base64url");
+  const temporaryPath = `${secretPath}.${process.pid}.tmp`;
+  fs.writeFileSync(
+    temporaryPath,
+    JSON.stringify({ dataEncryptionKey: generatedKey, createdAt: new Date().toISOString() }, null, 2),
+    { encoding: "utf8", mode: 0o600 }
+  );
+  fs.renameSync(temporaryPath, secretPath);
+  return generatedKey;
+}
+
+const DATA_ENCRYPTION_KEY = resolveDataEncryptionKey();
+const encryptionKey = crypto.createHash("sha256").update(DATA_ENCRYPTION_KEY).digest();
+const authSessions = new Map();
 const productsPath = path.join(dataDir, "products.json");
 const salesPath = path.join(dataDir, "sales.json");
 const cashShiftsPath = path.join(dataDir, "cash-shifts.json");
 const cashSessionsPath = path.join(dataDir, "cash-sessions.json");
 const settingsPath = path.join(dataDir, "settings.json");
 const inventoryEntriesPath = path.join(dataDir, "inventory-entries.json");
+const database = new PosDatabase(dataDir);
 
 const corsOrigins = String(process.env.CORS_ORIGIN || "")
   .split(",")
@@ -37,8 +82,85 @@ if (corsOrigins.length > 0) {
   );
 }
 
+if (REQUIRE_HTTPS) app.set("trust proxy", 1);
+app.disable("x-powered-by");
+
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self' https://fonts.gstatic.com data:; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com"
+  );
+
+  if (REQUIRE_HTTPS && !req.secure) {
+    return res.status(426).json({ message: "Esta instalación requiere HTTPS." });
+  }
+
+  return next();
+});
+
+app.use((req, res, next) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
+
+  const origin = String(req.get("origin") || "").trim();
+  if (!origin) return next();
+
+  const protocol = REQUIRE_HTTPS ? "https" : req.protocol;
+  const sameOrigin = origin === `${protocol}://${req.get("host")}`;
+  if (sameOrigin || corsOrigins.includes(origin)) return next();
+
+  return res.status(403).json({ message: "Origen no autorizado." });
+});
+
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "..", "public")));
+
+const authAttemptBuckets = new Map();
+const AUTH_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const MAX_AUTH_ATTEMPTS = 5;
+
+function getAuthenticationBucketKey(req) {
+  return req.ip || req.socket.remoteAddress || "unknown";
+}
+
+function limitAuthenticationAttempts(req, res, next) {
+  const now = Date.now();
+  const key = getAuthenticationBucketKey(req);
+
+  authAttemptBuckets.forEach((bucket, bucketKey) => {
+    if (bucket.resetAt <= now) authAttemptBuckets.delete(bucketKey);
+  });
+
+  const bucket = authAttemptBuckets.get(key);
+
+  if (bucket && bucket.attempts >= MAX_AUTH_ATTEMPTS) {
+    const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfter));
+    return res.status(429).json({
+      message: "Demasiados intentos. Espera unos minutos antes de volver a intentarlo."
+    });
+  }
+
+  return next();
+}
+
+function recordAuthenticationFailure(req) {
+  const now = Date.now();
+  const key = getAuthenticationBucketKey(req);
+  const current = authAttemptBuckets.get(key);
+  const bucket = current && current.resetAt > now
+    ? current
+    : { attempts: 0, resetAt: now + AUTH_ATTEMPT_WINDOW_MS };
+  bucket.attempts += 1;
+  authAttemptBuckets.set(key, bucket);
+}
+
+function clearAuthenticationFailures(req) {
+  authAttemptBuckets.delete(getAuthenticationBucketKey(req));
+}
 
 
 function createPinSecret(pin) {
@@ -66,23 +188,39 @@ function verifyUserPin(pin, user) {
   return verifyPinSecret(pin, user);
 }
 
+function createUnconfiguredSettings(updatedAt = new Date().toISOString()) {
+  return {
+    securityVersion: 3,
+    setupCompleted: false,
+    users: [],
+    updatedAt
+  };
+}
+
 function getDefaultSettings() {
+  if (!PIN_PATTERN.test(ADMIN_PIN)) return createUnconfiguredSettings();
+
   const adminSecret = createPinSecret(ADMIN_PIN);
+  const users = [{ id: "admin", name: "Administrador", role: "admin", active: true }];
+
+  if (PIN_PATTERN.test(DEFAULT_EMPLOYEE_PIN)) {
+    users.unshift({
+      id: "mostrador",
+      name: "Encargado",
+      role: "employee",
+      active: true,
+      ...createPinSecret(DEFAULT_EMPLOYEE_PIN)
+    });
+  }
 
   return {
+    securityVersion: 3,
+    setupCompleted: true,
     adminPinSalt: adminSecret.pinSalt,
     adminPinHash: adminSecret.pinHash,
-    adminPinChangeRequired: ADMIN_PIN_NEEDS_UPDATE,
-    users: [
-      {
-        id: "mostrador",
-        name: "Encargado",
-        role: "employee",
-        active: true,
-        ...createPinSecret(DEFAULT_EMPLOYEE_PIN)
-      },
-      { id: "admin", name: "Administrador", role: "admin", active: true }
-    ],
+    adminPinChangeRequired: false,
+    employeePinChangeRequired: false,
+    users,
     updatedAt: new Date().toISOString()
   };
 }
@@ -90,8 +228,11 @@ function getDefaultSettings() {
 function normalizeUser(user, fallback = {}) {
   const role = user?.role === "admin" ? "admin" : "employee";
   const idBase = role === "admin" ? "admin" : "empleado";
-  const id = String(user?.id || fallback.id || `${idBase}-${Date.now()}`).trim();
-  const name = String(user?.name || fallback.name || (role === "admin" ? "Administrador" : "Empleado")).trim();
+  const id = sanitizeText(user?.id || fallback.id || `${idBase}-${Date.now()}`, 80);
+  const name = sanitizeText(
+    user?.name || fallback.name || (role === "admin" ? "Administrador" : "Empleado"),
+    60
+  );
   const normalized = {
     id,
     name,
@@ -106,8 +247,10 @@ function normalizeUser(user, fallback = {}) {
     } else if (fallback?.pinSalt && fallback?.pinHash) {
       normalized.pinSalt = String(fallback.pinSalt);
       normalized.pinHash = String(fallback.pinHash);
-    } else {
+    } else if (PIN_PATTERN.test(DEFAULT_EMPLOYEE_PIN)) {
       Object.assign(normalized, createPinSecret(DEFAULT_EMPLOYEE_PIN));
+    } else {
+      normalized.active = false;
     }
   }
 
@@ -115,18 +258,24 @@ function normalizeUser(user, fallback = {}) {
 }
 
 function normalizeSettings(settings = {}) {
-  const defaults = getDefaultSettings();
-  const rawUsers = Array.isArray(settings.users) && settings.users.length > 0
-    ? settings.users
-    : defaults.users;
+  if (settings?.setupCompleted === false) {
+    return createUnconfiguredSettings(settings.updatedAt || new Date().toISOString());
+  }
+
+  const isLegacySettings = Number(settings.securityVersion || 0) < 2;
+  const hasConfiguredUsers = Array.isArray(settings.users) && settings.users.length > 0;
+  const defaults = hasConfiguredUsers ? null : getDefaultSettings();
+  if (!hasConfiguredUsers && defaults.setupCompleted !== true) {
+    return createUnconfiguredSettings(settings.updatedAt || new Date().toISOString());
+  }
+
+  const rawUsers = hasConfiguredUsers ? settings.users : defaults.users;
   let users = rawUsers.map((user) => normalizeUser(user));
 
   if (!users.some((user) => user.role === "admin")) {
-    users.push(defaults.users.find((user) => user.role === "admin"));
-  }
-
-  if (!users.some((user) => user.role === "employee")) {
-    users.push(defaults.users.find((user) => user.role === "employee"));
+    const fallback = defaults || getDefaultSettings();
+    const fallbackAdmin = fallback.users.find((user) => user.role === "admin");
+    if (fallbackAdmin) users.push(fallbackAdmin);
   }
 
   users = users.map((user, index) => ({
@@ -141,15 +290,34 @@ function normalizeSettings(settings = {}) {
         pinSalt: String(settings.adminPinSalt),
         pinHash: String(settings.adminPinHash)
       }
-    : createPinSecret(legacyAdminPin || ADMIN_PIN);
+    : PIN_PATTERN.test(legacyAdminPin || ADMIN_PIN)
+      ? createPinSecret(legacyAdminPin || ADMIN_PIN)
+      : null;
+
+  if (!adminSecret) return createUnconfiguredSettings(settings.updatedAt || new Date().toISOString());
+
+  const adminUsesWeakPin = isLegacySettings && (
+    verifyPinSecret("0000", adminSecret) || verifyPinSecret("1234", adminSecret)
+  );
+  const employeeUsesWeakPin = isLegacySettings && users.some((user) => {
+    return user.role === "employee" && (
+      verifyPinSecret("0000", user) || verifyPinSecret("1234", user)
+    );
+  });
 
   return {
+    securityVersion: 3,
+    setupCompleted: true,
     adminPinSalt: adminSecret.pinSalt,
     adminPinHash: adminSecret.pinHash,
     adminPinChangeRequired:
       settings.adminPinChangeRequired === true ||
-      (!hasAdminSecret && legacyAdminPin === "1234") ||
-      (!hasAdminSecret && !legacyAdminPin && ADMIN_PIN_NEEDS_UPDATE),
+      isLegacySettings ||
+      adminUsesWeakPin,
+    employeePinChangeRequired:
+      settings.employeePinChangeRequired === true ||
+      isLegacySettings ||
+      employeeUsesWeakPin,
     users,
     updatedAt: settings.updatedAt || new Date().toISOString()
   };
@@ -160,12 +328,30 @@ function readSettings() {
   const settings = normalizeSettings(rawSettings || getDefaultSettings());
   const needsMigration =
     !rawSettings ||
-    Boolean(rawSettings.adminPin) ||
-    !rawSettings.adminPinSalt ||
-    !rawSettings.adminPinHash;
+    (settings.setupCompleted === true && (
+      Boolean(rawSettings.adminPin) ||
+      !rawSettings.adminPinSalt ||
+      !rawSettings.adminPinHash ||
+      Number(rawSettings.securityVersion || 0) < 3
+    ));
 
   if (needsMigration) {
     writeJson(settingsPath, settings);
+    try {
+      if (fs.existsSync(settingsPath)) {
+        fs.writeFileSync(
+          settingsPath,
+          JSON.stringify({
+            migratedTo: "el-muelle-pos.sqlite",
+            migratedAt: new Date().toISOString(),
+            note: "Las credenciales se migraron al almacenamiento seguro. No guardes PINs en este archivo."
+          }, null, 2),
+          "utf8"
+        );
+      }
+    } catch (error) {
+      console.error("No se pudo limpiar el archivo de configuración heredado:", error);
+    }
   }
 
   return settings;
@@ -183,21 +369,38 @@ function writeSettings(settings) {
 
 function getPublicSettings(settings = readSettings()) {
   return {
+    setupRequired: settings.setupCompleted !== true,
     users: settings.users.map(toPublicUser),
     adminPinChangeRequired: settings.adminPinChangeRequired === true,
+    employeePinChangeRequired: settings.employeePinChangeRequired === true,
     updatedAt: settings.updatedAt
   };
 }
 
 function isAdminPin(pin) {
   const settings = readSettings();
+  if (settings.setupCompleted !== true) return false;
   return verifyPinSecret(pin, {
     pinSalt: settings.adminPinSalt,
     pinHash: settings.adminPinHash
   });
 }
 
+function cleanupAuthSessions() {
+  const now = Date.now();
+  authSessions.forEach((session, token) => {
+    if (session.expiresAt <= now) authSessions.delete(token);
+  });
+
+  if (authSessions.size < MAX_AUTH_SESSIONS) return;
+
+  const oldestToken = [...authSessions.entries()]
+    .sort(([, left], [, right]) => left[1].expiresAt - right[1].expiresAt)[0]?.[0];
+  if (oldestToken) authSessions.delete(oldestToken);
+}
+
 function createAuthSession(user) {
+  cleanupAuthSessions();
   const token = crypto.randomBytes(32).toString("hex");
   authSessions.set(token, {
     userId: user.id,
@@ -207,8 +410,51 @@ function createAuthSession(user) {
   return token;
 }
 
+function getCookies(req) {
+  return String(req.get("cookie") || "")
+    .split(";")
+    .reduce((cookies, item) => {
+      const separator = item.indexOf("=");
+      if (separator === -1) return cookies;
+      const name = item.slice(0, separator).trim();
+      const value = item.slice(separator + 1).trim();
+      if (name) {
+        try {
+          cookies[name] = decodeURIComponent(value);
+        } catch {
+          cookies[name] = "";
+        }
+      }
+      return cookies;
+    }, {});
+}
+
+function writeSessionCookie(res, token) {
+  const attributes = [
+    `el_muelle_session=${encodeURIComponent(token)}`,
+    "HttpOnly",
+    "SameSite=Strict",
+    "Path=/",
+    `Max-Age=${Math.floor(AUTH_SESSION_MS / 1000)}`
+  ];
+  if (REQUIRE_HTTPS) attributes.push("Secure");
+  res.setHeader("Set-Cookie", attributes.join("; "));
+}
+
+function clearSessionCookie(res) {
+  const attributes = [
+    "el_muelle_session=",
+    "HttpOnly",
+    "SameSite=Strict",
+    "Path=/",
+    "Max-Age=0"
+  ];
+  if (REQUIRE_HTTPS) attributes.push("Secure");
+  res.setHeader("Set-Cookie", attributes.join("; "));
+}
+
 function getSessionUser(req) {
-  const token = String(req.get("x-session-token") || "").trim();
+  const token = String(getCookies(req).el_muelle_session || "").trim();
   if (!token) return null;
 
   const session = authSessions.get(token);
@@ -229,6 +475,17 @@ function getSessionUser(req) {
   session.expiresAt = Date.now() + AUTH_SESSION_MS;
   authSessions.set(token, session);
   return user;
+}
+
+function endSession(req, res) {
+  const token = String(getCookies(req).el_muelle_session || "").trim();
+  if (token) authSessions.delete(token);
+  clearSessionCookie(res);
+}
+
+function isLoopbackRequest(req) {
+  const address = String(req.socket?.remoteAddress || req.ip || "").replace(/^::ffff:/, "");
+  return address === "127.0.0.1" || address === "::1";
 }
 
 function requireAdminUser(req, res) {
@@ -269,27 +526,29 @@ function ensureDataDir() {
 
 function readJson(filePath, fallback) {
   try {
-    ensureDataDir();
-
-    if (!fs.existsSync(filePath)) return fallback;
-
-    const content = fs.readFileSync(filePath, "utf8");
-
-    if (!content.trim()) return fallback;
-
-    return JSON.parse(content);
+    return database.read(filePath, fallback);
   } catch (error) {
-    console.error("Error leyendo JSON:", filePath, error);
+    console.error("Error leyendo datos:", filePath, error);
     return fallback;
   }
 }
 
 function writeJson(filePath, data) {
-  ensureDataDir();
-  const tempPath = `${filePath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+  database.write(filePath, data);
+}
 
-  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf8");
-  fs.renameSync(tempPath, filePath);
+function withDataTransaction(work) {
+  return database.transaction(work);
+}
+
+function recordAuditEvent(eventType, entityType, entityId, actor, details = {}) {
+  database.addAuditEvent({
+    eventType,
+    entityType,
+    entityId,
+    actor,
+    details
+  });
 }
 
 function toNumber(value, fallback = 0) {
@@ -303,6 +562,65 @@ function roundMoney(value) {
 
 function roundQuantity(value) {
   return Math.round(toNumber(value) * 1000) / 1000;
+}
+
+function sanitizeText(value, maxLength = 120) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function encryptSensitivePayload(value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey, iv);
+  const encrypted = Buffer.concat([
+    cipher.update(JSON.stringify(value), "utf8"),
+    cipher.final()
+  ]);
+  const tag = cipher.getAuthTag();
+  return `enc:v1:${iv.toString("base64url")}:${tag.toString("base64url")}:${encrypted.toString("base64url")}`;
+}
+
+function decryptSensitivePayload(payload) {
+  if (!payload || typeof payload !== "string" || !payload.startsWith("enc:v1:")) {
+    return null;
+  }
+
+  try {
+    const [, , ivValue, tagValue, encryptedValue] = payload.split(":");
+    const decipher = crypto.createDecipheriv(
+      "aes-256-gcm",
+      encryptionKey,
+      Buffer.from(ivValue, "base64url")
+    );
+    decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+    const decrypted = Buffer.concat([
+      decipher.update(Buffer.from(encryptedValue, "base64url")),
+      decipher.final()
+    ]);
+    return JSON.parse(decrypted.toString("utf8"));
+  } catch (error) {
+    console.error("No se pudieron descifrar datos fiscales:", error.message);
+    return null;
+  }
+}
+
+function serializeSaleForUser(sale, user) {
+  const response = JSON.parse(JSON.stringify(sale));
+  const invoice = response.invoice || {};
+
+  if (user?.role === "admin") {
+    if (invoice.customerEncrypted) {
+      invoice.customer = decryptSensitivePayload(invoice.customerEncrypted);
+    }
+  } else {
+    invoice.customer = null;
+  }
+
+  delete invoice.customerEncrypted;
+  response.invoice = invoice;
+  return response;
 }
 
 function slugify(value) {
@@ -342,13 +660,13 @@ function normalizeProductPayload(body, existingProduct = {}) {
       : roundQuantity(body.minStock ?? existingProduct.minStock ?? 0);
 
   return {
-    name: String(body.name ?? existingProduct.name ?? "").trim(),
-    category: String(body.category ?? existingProduct.category ?? "").trim(),
+    name: sanitizeText(body.name ?? existingProduct.name ?? "", 120),
+    category: sanitizeText(body.category ?? existingProduct.category ?? "", 80),
     unit: ["kg", "pieza"].includes(body.unit)
       ? body.unit
       : existingProduct.unit || "kg",
-    price: roundMoney(body.price ?? existingProduct.price ?? 0),
-    costPrice: roundMoney(body.costPrice ?? existingProduct.costPrice ?? 0),
+    price: Math.max(0, roundMoney(body.price ?? existingProduct.price ?? 0)),
+    costPrice: Math.max(0, roundMoney(body.costPrice ?? existingProduct.costPrice ?? 0)),
     stockQuantity: stockValue,
     minStock: minStockValue,
     active:
@@ -359,26 +677,76 @@ function normalizeProductPayload(body, existingProduct = {}) {
   };
 }
 
-function normalizeSaleItems(items) {
+function buildSaleItems(items, products) {
+  if (!Array.isArray(items) || items.length === 0 || items.length > 100) {
+    const error = new Error("La venta debe incluir entre 1 y 100 productos.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const quantitiesByProduct = new Map();
+
   return items.map((item) => {
-    const quantity = roundQuantity(item.quantity);
-    const price = roundMoney(item.price);
-    const costPrice = roundMoney(item.costPrice || 0);
+    const productId = sanitizeText(item?.productId, 80);
+    const product = products.find((candidate) => candidate.id === productId);
+    const rawQuantity = Number(item?.quantity);
+    const quantity = roundQuantity(rawQuantity);
+
+    if (!product || product.active === false) {
+      const error = new Error("Uno de los productos ya no existe o está inactivo.");
+      error.statusCode = 409;
+      throw error;
+    }
+    if (!Number.isFinite(rawQuantity) || quantity <= 0) {
+      const error = new Error("La venta contiene una cantidad inválida.");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (product.unit === "kg" && quantity > 40) {
+      const error = new Error(`La cantidad máxima por producto es 40 kg (${product.name}).`);
+      error.statusCode = 400;
+      throw error;
+    }
+    if (product.unit === "pieza" && (!Number.isInteger(rawQuantity) || quantity > 100)) {
+      const error = new Error(`La cantidad de ${product.name} debe ser un número entero de hasta 100 piezas.`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const requestedQuantity = roundQuantity((quantitiesByProduct.get(product.id) || 0) + quantity);
+    quantitiesByProduct.set(product.id, requestedQuantity);
+
+    if (
+      typeof product.stockQuantity === "number" &&
+      requestedQuantity > roundQuantity(product.stockQuantity)
+    ) {
+      const error = new Error(`No hay existencia suficiente de ${product.name}.`);
+      error.statusCode = 409;
+      throw error;
+    }
+
+    const price = roundMoney(product.price);
+    const costPrice = Math.max(0, roundMoney(product.costPrice || 0));
+    if (price <= 0) {
+      const error = new Error(`El producto ${product.name} no tiene un precio de venta válido.`);
+      error.statusCode = 409;
+      throw error;
+    }
+
     const total = roundMoney(quantity * price);
     const lineCost = roundMoney(quantity * costPrice);
-
     return {
-      productId: String(item.productId || "").trim(),
-      name: String(item.name || "").trim(),
-      category: String(item.category || "").trim(),
-      unit: item.unit === "pieza" ? "pieza" : "kg",
+      productId: product.id,
+      name: sanitizeText(product.name, 120),
+      category: sanitizeText(product.category, 80),
+      unit: product.unit === "pieza" ? "pieza" : "kg",
       price,
       costPrice,
       quantity,
       total,
       lineCost,
       grossProfit: roundMoney(total - lineCost),
-      source: item.source === "scale" ? "scale" : "manual"
+      source: item?.source === "scale" ? "scale" : "manual"
     };
   });
 }
@@ -606,8 +974,7 @@ function calculatePurchaseProjection(quantity, unitCost, salePrice) {
   };
 }
 
-function updateInventoryAfterSale(items) {
-  const products = readJson(productsPath, []);
+function updateInventoryAfterSale(items, products = readJson(productsPath, [])) {
   let changed = false;
 
   items.forEach((item) => {
@@ -615,18 +982,55 @@ function updateInventoryAfterSale(items) {
 
     if (!product || typeof product.stockQuantity !== "number") return;
 
-    product.stockQuantity = Math.max(
-      0,
-      roundQuantity(product.stockQuantity - item.quantity)
-    );
+    product.stockQuantity = roundQuantity(product.stockQuantity - item.quantity);
     product.updatedAt = new Date().toISOString();
     changed = true;
   });
 
-  if (changed) {
-    writeJson(productsPath, products);
+  return changed;
+}
+
+function migrateSensitiveSalesData() {
+  const sales = readJson(salesPath, []);
+  let changed = false;
+
+  sales.forEach((sale) => {
+    if (!sale?.invoice?.customer || sale.invoice.customerEncrypted) return;
+    sale.invoice = {
+      ...sale.invoice,
+      customerEncrypted: encryptSensitivePayload(sale.invoice.customer)
+    };
+    delete sale.invoice.customer;
+    changed = true;
+  });
+
+  if (!changed) return;
+
+  withDataTransaction(() => {
+    writeJson(salesPath, sales);
+    recordAuditEvent("sensitive_data_migrated", "sales", null, null, {
+      records: sales.length
+    });
+  });
+
+  try {
+    if (fs.existsSync(salesPath)) {
+      fs.writeFileSync(
+        salesPath,
+        JSON.stringify({
+          migratedTo: "el-muelle-pos.sqlite",
+          migratedAt: new Date().toISOString(),
+          note: "Los datos fiscales históricos se migraron cifrados a SQLite."
+        }, null, 2),
+        "utf8"
+      );
+    }
+  } catch (error) {
+    console.error("No se pudo limpiar el archivo de ventas heredado:", error);
   }
 }
+
+migrateSensitiveSalesData();
 
 app.get("/api/health", (req, res) => {
   res.json({
@@ -645,13 +1049,64 @@ app.get("/api/settings", (req, res) => {
   res.json(getPublicSettings());
 });
 
-app.post("/api/auth/admin", (req, res) => {
-  if (!isAdminPin(req.body?.pin)) {
+app.post("/api/setup/owner", limitAuthenticationAttempts, (req, res) => {
+  if (!isLoopbackRequest(req)) {
+    return res.status(403).json({ message: "La configuración inicial sólo se permite desde la computadora local." });
+  }
+
+  const current = readSettings();
+  if (current.setupCompleted === true) {
+    return res.status(409).json({ message: "La configuración inicial ya fue completada." });
+  }
+
+  const name = sanitizeText(req.body?.name, 60);
+  const pin = String(req.body?.pin || "").trim();
+  if (name.length < 2) {
+    return res.status(400).json({ message: "Escribe el nombre del dueño o administrador." });
+  }
+  if (!PIN_PATTERN.test(pin)) {
+    return res.status(400).json({ message: "El PIN debe tener de 6 a 12 dígitos." });
+  }
+
+  const owner = { id: "admin", name, role: "admin", active: true };
+  const ownerSecret = createPinSecret(pin);
+  const settings = withDataTransaction(() => {
+    const savedSettings = writeSettings({
+      securityVersion: 3,
+      setupCompleted: true,
+      users: [owner],
+      adminPinSalt: ownerSecret.pinSalt,
+      adminPinHash: ownerSecret.pinHash,
+      adminPinChangeRequired: false,
+      employeePinChangeRequired: false
+    });
+    recordAuditEvent("owner_configured", "settings", "current", owner, { ownerName: name });
+    return savedSettings;
+  });
+
+  clearAuthenticationFailures(req);
+  writeSessionCookie(res, createAuthSession(owner));
+  return res.status(201).json({
+    ok: true,
+    user: toPublicUser(owner),
+    settings: getPublicSettings(settings)
+  });
+});
+
+app.post("/api/auth/admin", limitAuthenticationAttempts, (req, res) => {
+  if (readSettings().setupCompleted !== true) {
+    return res.status(409).json({ message: "Completa la configuración inicial para crear el acceso del dueño." });
+  }
+
+  const pin = String(req.body?.pin || "").trim();
+  if (!PIN_PATTERN.test(pin) || !isAdminPin(pin)) {
+    recordAuthenticationFailure(req);
     return res.status(401).json({
       message: "PIN de administrador incorrecto."
     });
   }
 
+  clearAuthenticationFailures(req);
   const settings = readSettings();
   const adminUser = settings.users.find((user) => user.role === "admin") || {
     id: "admin",
@@ -660,15 +1115,33 @@ app.post("/api/auth/admin", (req, res) => {
     active: true
   };
 
+  writeSessionCookie(res, createAuthSession(adminUser));
   res.json({
     ok: true,
     user: toPublicUser(adminUser),
-    sessionToken: createAuthSession(adminUser),
     settings: getPublicSettings(settings)
   });
 });
 
-app.post("/api/auth/employee", (req, res) => {
+app.post("/api/auth/admin/verify", limitAuthenticationAttempts, (req, res) => {
+  if (readSettings().setupCompleted !== true) {
+    return res.status(409).json({ message: "Completa primero la configuración inicial." });
+  }
+
+  const pin = String(req.body?.pin || "").trim();
+  if (!PIN_PATTERN.test(pin) || !isAdminPin(pin)) {
+    recordAuthenticationFailure(req);
+    return res.status(401).json({ message: "PIN de administrador incorrecto." });
+  }
+  clearAuthenticationFailures(req);
+  return res.json({ ok: true });
+});
+
+app.post("/api/auth/employee", limitAuthenticationAttempts, (req, res) => {
+  if (readSettings().setupCompleted !== true) {
+    return res.status(409).json({ message: "Completa primero la configuración inicial." });
+  }
+
   const userId = String(req.body?.userId || "").trim();
   const pin = String(req.body?.pin || "").trim();
   const settings = readSettings();
@@ -676,18 +1149,25 @@ app.post("/api/auth/employee", (req, res) => {
     return user.id === userId && user.role === "employee" && user.active !== false;
   });
 
-  if (!employee || !verifyUserPin(pin, employee)) {
+  if (!PIN_PATTERN.test(pin) || !employee || !verifyUserPin(pin, employee)) {
+    recordAuthenticationFailure(req);
     return res.status(401).json({
       message: "Usuario o PIN incorrecto."
     });
   }
 
+  clearAuthenticationFailures(req);
+  writeSessionCookie(res, createAuthSession(employee));
   res.json({
     ok: true,
     user: toPublicUser(employee),
-    sessionToken: createAuthSession(employee),
     settings: getPublicSettings(settings)
   });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  endSession(req, res);
+  res.json({ ok: true });
 });
 
 app.get("/api/auth/session", (req, res) => {
@@ -722,9 +1202,15 @@ app.put("/api/settings", (req, res) => {
     ? req.body.employeePins
     : {};
 
-  if (newPin && !/^\d{4,12}$/.test(newPin)) {
+  if (newPin && !PIN_PATTERN.test(newPin)) {
     return res.status(400).json({
-      message: "El PIN nuevo debe tener de 4 a 12 dígitos."
+      message: "El PIN nuevo debe tener de 6 a 12 dígitos."
+    });
+  }
+
+  if (current.adminPinChangeRequired && !newPin) {
+    return res.status(400).json({
+      message: "Por seguridad debes cambiar el PIN de administrador antes de continuar."
     });
   }
 
@@ -743,12 +1229,6 @@ app.put("/api/settings", (req, res) => {
     });
   }
 
-  if (employeeUsers.length === 0) {
-    return res.status(400).json({
-      message: "Debe existir al menos un empleado de mostrador."
-    });
-  }
-
   let normalizedUsers;
 
   try {
@@ -760,14 +1240,18 @@ app.put("/api/settings", (req, res) => {
       });
       const employeePin = String(employeePins[requestedUser?.id] || "").trim();
 
-      if (employeePin && !/^\d{4,12}$/.test(employeePin)) {
-        const error = new Error(`El PIN de ${requestedUser?.name || "empleado"} debe tener de 4 a 12 dígitos.`);
+      if (employeePin && !PIN_PATTERN.test(employeePin)) {
+        const error = new Error(`El PIN de ${requestedUser?.name || "empleado"} debe tener de 6 a 12 dígitos.`);
         error.statusCode = 400;
         throw error;
       }
 
-      if (!existing && !employeePin) {
-        const error = new Error(`Asigna un PIN inicial a ${requestedUser?.name || "el empleado nuevo"}.`);
+      if ((!existing || current.employeePinChangeRequired) && !employeePin) {
+        const error = new Error(
+          current.employeePinChangeRequired
+            ? `Actualiza el PIN de ${requestedUser?.name || "cada empleado"} antes de continuar.`
+            : `Asigna un PIN inicial a ${requestedUser?.name || "el empleado nuevo"}.`
+        );
         error.statusCode = 400;
         throw error;
       }
@@ -790,11 +1274,29 @@ app.put("/api/settings", (req, res) => {
     });
   }
 
-  const settings = writeSettings({
-    ...current,
-    users: normalizedUsers,
-    ...(newPin ? createPinSecret(newPin) : {}),
-    adminPinChangeRequired: newPin ? false : current.adminPinChangeRequired
+  const settings = withDataTransaction(() => {
+    const newAdminSecret = newPin ? createPinSecret(newPin) : null;
+    const savedSettings = writeSettings({
+      ...current,
+      securityVersion: 3,
+      setupCompleted: true,
+      users: normalizedUsers,
+      ...(newAdminSecret
+        ? {
+            adminPinSalt: newAdminSecret.pinSalt,
+            adminPinHash: newAdminSecret.pinHash
+          }
+        : {}),
+      adminPinChangeRequired: newPin ? false : current.adminPinChangeRequired,
+      employeePinChangeRequired: false
+    });
+
+    recordAuditEvent("users_updated", "settings", "current", authenticatedAdmin, {
+      userCount: normalizedUsers.length,
+      adminPinChanged: Boolean(newPin),
+      employeePinsChanged: Object.keys(employeePins).length
+    });
+    return savedSettings;
   });
 
   res.json(getPublicSettings(settings));
@@ -827,8 +1329,16 @@ app.post("/api/products", (req, res) => {
     createdAt: new Date().toISOString()
   };
 
-  products.push(newProduct);
-  writeJson(productsPath, products);
+  withDataTransaction(() => {
+    products.push(newProduct);
+    writeJson(productsPath, products);
+    recordAuditEvent("product_created", "product", newProduct.id, user, {
+      name: newProduct.name,
+      category: newProduct.category,
+      price: newProduct.price,
+      stockQuantity: newProduct.stockQuantity
+    });
+  });
 
   res.status(201).json(newProduct);
 });
@@ -859,8 +1369,29 @@ app.put("/api/products/:id", (req, res) => {
     });
   }
 
-  products[productIndex] = updatedProduct;
-  writeJson(productsPath, products);
+  const previousProduct = products[productIndex];
+  withDataTransaction(() => {
+    products[productIndex] = updatedProduct;
+    writeJson(productsPath, products);
+    recordAuditEvent("product_updated", "product", updatedProduct.id, user, {
+      before: {
+        name: previousProduct.name,
+        category: previousProduct.category,
+        price: previousProduct.price,
+        costPrice: previousProduct.costPrice,
+        stockQuantity: previousProduct.stockQuantity,
+        minStock: previousProduct.minStock
+      },
+      after: {
+        name: updatedProduct.name,
+        category: updatedProduct.category,
+        price: updatedProduct.price,
+        costPrice: updatedProduct.costPrice,
+        stockQuantity: updatedProduct.stockQuantity,
+        minStock: updatedProduct.minStock
+      }
+    });
+  });
 
   res.json(updatedProduct);
 });
@@ -880,20 +1411,42 @@ app.patch("/api/products/:id/inventory", (req, res) => {
     });
   }
 
+  const stockQuantity = req.body.stockQuantity === "" || req.body.stockQuantity === null
+    ? null
+    : Number(req.body.stockQuantity);
+  const minStock = req.body.minStock === "" || req.body.minStock === null
+    ? null
+    : Number(req.body.minStock);
+  const reason = sanitizeText(req.body.reason, 180);
+
+  if (
+    (stockQuantity !== null && (!Number.isFinite(stockQuantity) || stockQuantity < 0)) ||
+    (minStock !== null && (!Number.isFinite(minStock) || minStock < 0))
+  ) {
+    return res.status(400).json({ message: "La existencia y el mínimo deben ser valores no negativos." });
+  }
+  if (reason.length < 3) {
+    return res.status(400).json({ message: "Indica el motivo del ajuste de inventario." });
+  }
+
+  const previousProduct = products[productIndex];
   products[productIndex] = {
     ...products[productIndex],
-    stockQuantity:
-      req.body.stockQuantity === "" || req.body.stockQuantity === null
-        ? null
-        : roundQuantity(req.body.stockQuantity),
-    minStock:
-      req.body.minStock === "" || req.body.minStock === null
-        ? null
-        : roundQuantity(req.body.minStock),
+    stockQuantity: stockQuantity === null ? null : roundQuantity(stockQuantity),
+    minStock: minStock === null ? null : roundQuantity(minStock),
     updatedAt: new Date().toISOString()
   };
 
-  writeJson(productsPath, products);
+  withDataTransaction(() => {
+    writeJson(productsPath, products);
+    recordAuditEvent("inventory_adjusted", "product", products[productIndex].id, user, {
+      reason,
+      previousStock: previousProduct.stockQuantity,
+      newStock: products[productIndex].stockQuantity,
+      previousMinStock: previousProduct.minStock,
+      newMinStock: products[productIndex].minStock
+    });
+  });
   res.json(products[productIndex]);
 });
 
@@ -913,18 +1466,27 @@ app.post("/api/inventory/entries", (req, res) => {
   const adminUser = requireAdminUser(req, res);
   if (!adminUser) return;
 
-  const productId = String(req.body?.productId || "").trim();
-  const quantity = roundQuantity(req.body?.quantity);
-  const unitCost = roundMoney(req.body?.unitCost);
-  const requestedSalePrice = roundMoney(req.body?.salePrice);
-  const supplier = String(req.body?.supplier || "").trim();
-  const notes = String(req.body?.notes || "").trim();
-  const receivedAt = String(req.body?.receivedAt || "").trim() || new Date().toISOString().slice(0, 10);
+  const productId = sanitizeText(req.body?.productId, 80);
+  const rawQuantity = Number(req.body?.quantity);
+  const rawUnitCost = Number(req.body?.unitCost);
+  const rawSalePrice = Number(req.body?.salePrice || 0);
+  const quantity = roundQuantity(rawQuantity);
+  const unitCost = roundMoney(rawUnitCost);
+  const requestedSalePrice = roundMoney(rawSalePrice);
+  const supplier = sanitizeText(req.body?.supplier, 120);
+  const notes = sanitizeText(req.body?.notes, 180);
+  const receivedAt = sanitizeText(req.body?.receivedAt, 10) || new Date().toISOString().slice(0, 10);
 
-  if (!productId || quantity <= 0 || unitCost <= 0) {
+  if (!productId || !Number.isFinite(rawQuantity) || !Number.isFinite(rawUnitCost) || quantity <= 0 || unitCost <= 0) {
     return res.status(400).json({
       message: "Selecciona un producto y captura cantidad y costo mayores a cero."
     });
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(receivedAt)) {
+    return res.status(400).json({ message: "La fecha de recepción no es válida." });
+  }
+  if (!Number.isFinite(rawSalePrice) || requestedSalePrice < 0) {
+    return res.status(400).json({ message: "El precio de venta no es válido." });
   }
 
   const products = readJson(productsPath, []);
@@ -988,9 +1550,20 @@ app.post("/api/inventory/entries", (req, res) => {
     updatedAt: now
   };
 
-  entries.push(entry);
-  writeJson(productsPath, products);
-  writeJson(inventoryEntriesPath, entries);
+  withDataTransaction(() => {
+    entries.push(entry);
+    writeJson(productsPath, products);
+    writeJson(inventoryEntriesPath, entries);
+    recordAuditEvent("inventory_received", "inventory_entry", entry.id, adminUser, {
+      productId: product.id,
+      quantity,
+      unit: product.unit,
+      unitCost,
+      previousStock: currentStock,
+      newStock,
+      supplier
+    });
+  });
 
   res.status(201).json({
     entry,
@@ -1007,7 +1580,7 @@ app.get("/api/sales", (req, res) => {
     ? sales
     : sales.filter((sale) => sale.operator?.id === user.id);
 
-  res.json(visibleSales);
+  res.json(visibleSales.map((sale) => serializeSaleForUser(sale, user)));
 });
 
 app.get("/api/sales/:id", (req, res) => {
@@ -1029,7 +1602,7 @@ app.get("/api/sales/:id", (req, res) => {
     });
   }
 
-  res.json(sale);
+  res.json(serializeSaleForUser(sale, user));
 });
 
 app.get("/api/cash-sessions", (req, res) => {
@@ -1102,8 +1675,14 @@ app.post("/api/cash-sessions/open", (req, res) => {
     movements: []
   });
 
-  sessions.push(session);
-  writeCashSessions(sessions);
+  withDataTransaction(() => {
+    sessions.push(session);
+    writeCashSessions(sessions);
+    recordAuditEvent("cash_session_opened", "cash_session", session.id, user, {
+      openingAmount: session.openingAmount,
+      businessDate: session.businessDate
+    });
+  });
 
   res.status(201).json(serializeCashSession(session));
 });
@@ -1142,8 +1721,16 @@ app.post("/api/cash-sessions/:id/movements", (req, res) => {
     createdBy: toPublicUser(user)
   });
 
-  sessions[sessionIndex].movements.push(movement);
-  writeCashSessions(sessions);
+  withDataTransaction(() => {
+    sessions[sessionIndex].movements.push(movement);
+    writeCashSessions(sessions);
+    recordAuditEvent("cash_movement_added", "cash_session", sessions[sessionIndex].id, user, {
+      movementId: movement.id,
+      type,
+      amount,
+      reason
+    });
+  });
 
   res.status(201).json({
     movement,
@@ -1188,7 +1775,14 @@ app.post("/api/cash-sessions/:id/close", (req, res) => {
     summary
   });
 
-  writeCashSessions(sessions);
+  withDataTransaction(() => {
+    writeCashSessions(sessions);
+    recordAuditEvent("cash_session_closed", "cash_session", sessions[sessionIndex].id, user, {
+      countedCash,
+      expectedCash: summary.expectedCash,
+      difference
+    });
+  });
   res.json(serializeCashSession(sessions[sessionIndex]));
 });
 
@@ -1206,38 +1800,6 @@ app.put("/api/cash-shifts", (req, res) => {
 });
 
 app.post("/api/sales", (req, res) => {
-  const sales = readJson(salesPath, []);
-  const items = Array.isArray(req.body.items)
-    ? normalizeSaleItems(req.body.items)
-    : [];
-
-  if (
-    items.length === 0 ||
-    items.some((item) => !item.productId || !item.name || item.quantity <= 0)
-  ) {
-    return res.status(400).json({
-      message: "La venta no tiene productos válidos."
-    });
-  }
-
-  const subtotal = roundMoney(
-    items.reduce((sum, item) => sum + toNumber(item.total), 0)
-  );
-  const discount = Math.max(0, roundMoney(req.body.discount || 0));
-  const total = roundMoney(Math.max(subtotal - discount, 0));
-  const profitSummary = calculateSaleProfit(items, total);
-  const paymentMethod = ["efectivo", "tarjeta", "transferencia"].includes(
-    req.body.paymentMethod
-  )
-    ? req.body.paymentMethod
-    : "efectivo";
-  const paymentReference = String(req.body.paymentDetails?.reference || req.body.paymentReference || "").trim().slice(0, 80);
-  if ((paymentMethod === "tarjeta" || paymentMethod === "transferencia") && !paymentReference) {
-    return res.status(400).json({
-      message: "La referencia de pago es obligatoria para tarjeta o transferencia."
-    });
-  }
-
   const operator = getSessionUser(req);
 
   if (!operator) {
@@ -1246,54 +1808,116 @@ app.post("/api/sales", (req, res) => {
     });
   }
 
-  const cashSessions = readCashSessions();
-  const activeCashSession = getOpenCashSession(cashSessions);
+  try {
+    const sale = withDataTransaction(() => {
+      const products = readJson(productsPath, []);
+      const items = buildSaleItems(req.body?.items, products);
+      const cashSessions = readCashSessions();
+      const activeCashSession = getOpenCashSession(cashSessions);
 
-  if (!activeCashSession) {
-    return res.status(409).json({
-      message: "La caja está cerrada. Abre caja antes de guardar la venta."
+      if (!activeCashSession) {
+        const error = new Error("La caja está cerrada. Abre caja antes de guardar la venta.");
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const subtotal = roundMoney(items.reduce((sum, item) => sum + item.total, 0));
+      const requestedDiscount = Number(req.body?.discount || 0);
+      const discount = roundMoney(requestedDiscount);
+      const discountReason = sanitizeText(req.body?.discountReason, 180);
+
+      if (!Number.isFinite(requestedDiscount) || discount < 0 || discount > subtotal) {
+        const error = new Error("El descuento no es válido.");
+        error.statusCode = 400;
+        throw error;
+      }
+      if (discount > 0 && operator.role !== "admin") {
+        const error = new Error("Solo el administrador puede aplicar descuentos.");
+        error.statusCode = 403;
+        throw error;
+      }
+      if (discount > 0 && discountReason.length < 4) {
+        const error = new Error("Indica el motivo del descuento.");
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const paymentMethod = ["efectivo", "tarjeta", "transferencia"].includes(
+        req.body?.paymentMethod
+      )
+        ? req.body.paymentMethod
+        : "efectivo";
+      const paymentReference = sanitizeText(
+        req.body?.paymentDetails?.reference || req.body?.paymentReference,
+        80
+      );
+      if ((paymentMethod === "tarjeta" || paymentMethod === "transferencia") && !paymentReference) {
+        const error = new Error("La referencia de pago es obligatoria para tarjeta o transferencia.");
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const total = roundMoney(subtotal - discount);
+      const profitSummary = calculateSaleProfit(items, total);
+      const sales = readJson(salesPath, []);
+      const now = new Date().toISOString();
+      const sale = {
+        id: getNextSaleId(sales),
+        createdAt: now,
+        status: "completada",
+        cashSessionId: activeCashSession.id,
+        cashShiftId: activeCashSession.id,
+        cashShiftDate: activeCashSession.businessDate,
+        businessDate: activeCashSession.businessDate,
+        operator: {
+          id: operator.id,
+          name: operator.name,
+          role: operator.role
+        },
+        items,
+        paymentMethod,
+        paymentDetails: {
+          reference: paymentMethod === "efectivo" ? "" : paymentReference
+        },
+        subtotal,
+        discount,
+        discountReason: discount > 0 ? discountReason : "",
+        total,
+        totalCost: profitSummary.totalCost,
+        grossProfit: profitSummary.grossProfit,
+        profitMarginPercent: profitSummary.profitMarginPercent,
+        invoice: {
+          status: req.body?.invoiceRequested ? "pendiente_datos" : "no_solicitada",
+          requestedAt: req.body?.invoiceRequested ? now : null,
+          customer: null,
+          notes: req.body?.invoiceRequested
+            ? "El cliente pidió factura en caja. Faltan datos fiscales."
+            : "El cliente no solicitó factura en caja."
+        }
+      };
+
+      sales.push(sale);
+      const inventoryChanged = updateInventoryAfterSale(items, products);
+      writeJson(salesPath, sales);
+      if (inventoryChanged) writeJson(productsPath, products);
+      recordAuditEvent("sale_completed", "sale", sale.id, operator, {
+        itemCount: items.length,
+        subtotal,
+        discount,
+        discountReason: sale.discountReason,
+        total,
+        paymentMethod,
+        cashSessionId: activeCashSession.id
+      });
+      return sale;
+    });
+
+    res.status(201).json(serializeSaleForUser(sale, operator));
+  } catch (error) {
+    return res.status(error.statusCode || 400).json({
+      message: error.message || "No se pudo guardar la venta."
     });
   }
-
-  const sale = {
-    id: getNextSaleId(sales),
-    createdAt: new Date().toISOString(),
-    status: "completada",
-    cashSessionId: activeCashSession.id,
-    cashShiftId: activeCashSession.id,
-    cashShiftDate: activeCashSession.businessDate,
-    businessDate: activeCashSession.businessDate,
-    operator: {
-      id: operator.id,
-      name: operator.name,
-      role: operator.role
-    },
-    items,
-    paymentMethod,
-    paymentDetails: {
-      reference: paymentMethod === "efectivo" ? "" : paymentReference
-    },
-    subtotal,
-    discount,
-    total,
-    totalCost: profitSummary.totalCost,
-    grossProfit: profitSummary.grossProfit,
-    profitMarginPercent: profitSummary.profitMarginPercent,
-    invoice: {
-      status: req.body.invoiceRequested ? "pendiente_datos" : "no_solicitada",
-      requestedAt: req.body.invoiceRequested ? new Date().toISOString() : null,
-      customer: null,
-      notes: req.body.invoiceRequested
-        ? "El cliente pidió factura en caja. Faltan datos fiscales."
-        : "El cliente no solicitó factura en caja."
-    }
-  };
-
-  sales.push(sale);
-  writeJson(salesPath, sales);
-  updateInventoryAfterSale(items);
-
-  res.status(201).json(sale);
 });
 
 app.patch("/api/sales/:id/invoice", (req, res) => {
@@ -1309,8 +1933,12 @@ app.patch("/api/sales/:id/invoice", (req, res) => {
     });
   }
 
-  const { rfc, businessName, fiscalZip, fiscalRegime, cfdiUse, email } =
-    req.body;
+  const rfc = sanitizeText(req.body?.rfc, 13).toUpperCase();
+  const businessName = sanitizeText(req.body?.businessName, 160);
+  const fiscalZip = sanitizeText(req.body?.fiscalZip, 5);
+  const fiscalRegime = sanitizeText(req.body?.fiscalRegime, 10);
+  const cfdiUse = sanitizeText(req.body?.cfdiUse, 10);
+  const email = sanitizeText(req.body?.email, 120);
 
   if (!rfc || !businessName || !fiscalZip || !fiscalRegime || !cfdiUse) {
     return res.status(400).json({
@@ -1318,23 +1946,32 @@ app.patch("/api/sales/:id/invoice", (req, res) => {
     });
   }
 
-  sales[saleIndex].invoice = {
-    status: "solicitada",
-    requestedAt: new Date().toISOString(),
-    customer: {
-      rfc: String(rfc).trim().toUpperCase(),
-      businessName: String(businessName).trim(),
-      fiscalZip: String(fiscalZip).trim(),
-      fiscalRegime: String(fiscalRegime).trim(),
-      cfdiUse: String(cfdiUse).trim(),
-      email: String(email || "").trim()
-    },
-    notes: "Solicitud registrada. Pendiente de timbrado CFDI real."
-  };
+  if (!/^[A-Z&Ñ]{3,4}\d{6}[A-Z\d]{3}$/i.test(rfc) || !/^\d{5}$/.test(fiscalZip)) {
+    return res.status(400).json({ message: "El RFC o código postal fiscal no son válidos." });
+  }
 
-  writeJson(salesPath, sales);
+  withDataTransaction(() => {
+    sales[saleIndex].invoice = {
+      status: "solicitada",
+      requestedAt: new Date().toISOString(),
+      customerEncrypted: encryptSensitivePayload({
+        rfc,
+        businessName,
+        fiscalZip,
+        fiscalRegime,
+        cfdiUse,
+        email
+      }),
+      notes: "Solicitud registrada. Pendiente de timbrado CFDI real."
+    };
 
-  res.json(sales[saleIndex]);
+    writeJson(salesPath, sales);
+    recordAuditEvent("invoice_request_saved", "sale", sales[saleIndex].id, user, {
+      invoiceStatus: "solicitada"
+    });
+  });
+
+  res.json(serializeSaleForUser(sales[saleIndex], user));
 });
 
 app.patch("/api/sales/:id/cancel", (req, res) => {
@@ -1356,20 +1993,56 @@ app.patch("/api/sales/:id/cancel", (req, res) => {
     });
   }
 
-  sales[saleIndex] = {
-    ...sales[saleIndex],
-    status: "cancelada",
-    canceledAt: new Date().toISOString(),
-    canceledBy: { id: cancelUser.id, name: cancelUser.name, role: cancelUser.role },
-    cancelReason: String(
-      req.body.reason || "Cancelación desde módulo de ventas"
-    ).trim(),
-    updatedAt: new Date().toISOString()
-  };
+  const cancelReason = sanitizeText(req.body?.reason || "", 180);
+  if (cancelReason.length < 4) {
+    return res.status(400).json({ message: "Indica un motivo de cancelación de al menos 4 caracteres." });
+  }
 
-  writeJson(salesPath, sales);
+  withDataTransaction(() => {
+    const canceledSale = sales[saleIndex];
+    const products = readJson(productsPath, []);
+    let inventoryChanged = false;
 
-  res.json(sales[saleIndex]);
+    canceledSale.items.forEach((item) => {
+      const product = products.find((candidate) => candidate.id === item.productId);
+      if (!product || typeof product.stockQuantity !== "number") return;
+      product.stockQuantity = roundQuantity(product.stockQuantity + item.quantity);
+      product.updatedAt = new Date().toISOString();
+      inventoryChanged = true;
+    });
+
+    sales[saleIndex] = {
+      ...canceledSale,
+      status: "cancelada",
+      canceledAt: new Date().toISOString(),
+      canceledBy: { id: cancelUser.id, name: cancelUser.name, role: cancelUser.role },
+      cancelReason,
+      updatedAt: new Date().toISOString()
+    };
+
+    writeJson(salesPath, sales);
+    if (inventoryChanged) writeJson(productsPath, products);
+    recordAuditEvent("sale_canceled", "sale", sales[saleIndex].id, cancelUser, {
+      reason: cancelReason,
+      inventoryRestored: inventoryChanged,
+      total: sales[saleIndex].total
+    });
+  });
+
+  res.json(serializeSaleForUser(sales[saleIndex], cancelUser));
+});
+
+app.get("/api/audit-events", (req, res) => {
+  const user = requireAdminUser(req, res);
+  if (!user) return;
+
+  res.json(
+    database.readAuditEvents({
+      limit: req.query?.limit,
+      entityType: sanitizeText(req.query?.entityType, 60) || null,
+      entityId: sanitizeText(req.query?.entityId, 120) || null
+    })
+  );
 });
 
 app.get("/api/scale/status", (req, res) => {
@@ -1382,11 +2055,11 @@ app.get("/api/scale/status", (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
   console.log("");
   console.log("=======================================");
   console.log(" El Muelle POS iniciado correctamente");
-  console.log(` Abre: http://localhost:${PORT}`);
+  console.log(` Abre: ${REQUIRE_HTTPS ? "https" : "http"}://${HOST}:${PORT}`);
   console.log("=======================================");
   console.log("");
 });

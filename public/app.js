@@ -1,8 +1,37 @@
+function readLocalPreference(key, fallback = null) {
+  try { return localStorage.getItem(key) ?? fallback; } catch (_) { return fallback; }
+}
+
+function saveLocalPreference(key, value) {
+  try { localStorage.setItem(key, value); return true; } catch (_) { return false; }
+}
+
+function removeLocalPreference(key) {
+  try { localStorage.removeItem(key); } catch (_) { /* El navegador puede bloquear el almacenamiento local. */ }
+}
+
 const $ = (id) => document.getElementById(id);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
+const POS_MOTION_KEY = "elMuellePosReducedMotion:v1";
+let posReducedMotion = readLocalPreference(POS_MOTION_KEY) === "true";
+
+function applyPosMotionPreference() {
+  document.body.classList.toggle("pos-motion-reduced", posReducedMotion);
+  document.body.classList.toggle("pos-motion-paused", document.hidden);
+  const button = $("posMotionToggle");
+  if (button) {
+    button.setAttribute("aria-pressed", String(posReducedMotion));
+    button.textContent = posReducedMotion ? "Activar movimiento" : "Reducir movimiento";
+  }
+  window.clearTimeout(ticketLabelTimeout);
+  ticketLabelTimeout = 0;
+  $("ticketToggleBtn")?.classList.remove("ticket-label-out");
+  updateTicketLabelText();
+  syncTicketLabelRotation();
+}
+
 const SESSION_KEY = "elMuelleSession";
-const SESSION_TOKEN_KEY = "elMuelleSessionToken";
 const SESSION_EXPIRES_KEY = "elMuelleSessionExpiresAt";
 const SESSION_PERSIST_MS = 10 * 60 * 1000;
 const LAST_USER_KEY = "elMuelleLastUser";
@@ -13,7 +42,11 @@ const USERS = {
 };
 const MIN_SCALE_WEIGHT_KG = 0.1;
 const MAX_SCALE_WEIGHT_KG = 40;
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 12;
+const FAVORITES_PREFIX = "elMuelleFavorites:v1:";
+const favoriteMemory = new Map();
+const favoriteStorageWarnings = new Set();
+const FAVORITE_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3L12 17.3l-5.6 3 1.1-6.3L3 9.6l6.2-.9Z"/></svg>';
 const DEFAULT_CATEGORIES = [
   "Pescados y mariscos",
   "Carnes selectas",
@@ -41,8 +74,8 @@ const viewLabels = {
   sales: ["Ventas", ""],
   products: ["Productos", ""],
   inventory: ["Inventario", ""],
-  billing: ["Facturación", ""],
-  reports: ["Caja", ""],
+  billing: ["Solicitud de factura", "Registra datos fiscales; el timbrado CFDI se gestiona fuera de esta aplicación."],
+  reports: ["Reportes", ""],
   settings: ["Configuración", ""]
 };
 
@@ -99,8 +132,8 @@ const productIconSvgs = {
   `
 };
 
-const storedSidebarCollapsed = localStorage.getItem("sidebarCollapsed");
-const storedTicketCollapsed = localStorage.getItem("ticketCollapsed");
+const storedSidebarCollapsed = readLocalPreference("sidebarCollapsed");
+const storedTicketCollapsed = readLocalPreference("ticketCollapsed");
 
 function normalizeSessionUser(user) {
   const role = user?.role === "admin" ? "admin" : "employee";
@@ -121,17 +154,17 @@ function normalizeSessionUser(user) {
 }
 
 function clearStoredAuthSession() {
-  localStorage.removeItem(SESSION_KEY);
-  localStorage.removeItem(SESSION_TOKEN_KEY);
-  localStorage.removeItem(SESSION_EXPIRES_KEY);
+  // Remove tokens created by earlier versions before using session-only state.
+  removeLocalPreference(SESSION_KEY);
+  removeLocalPreference("elMuelleSessionToken");
+  removeLocalPreference(SESSION_EXPIRES_KEY);
 
-  // Clean keys from older builds too.
   sessionStorage.removeItem(SESSION_KEY);
-  sessionStorage.removeItem(SESSION_TOKEN_KEY);
+  sessionStorage.removeItem(SESSION_EXPIRES_KEY);
 }
 
 function getStoredSessionExpiry() {
-  return Number(localStorage.getItem(SESSION_EXPIRES_KEY) || 0);
+  return Number(sessionStorage.getItem(SESSION_EXPIRES_KEY) || 0);
 }
 
 function hasValidStoredSession() {
@@ -146,7 +179,7 @@ function hasValidStoredSession() {
 }
 
 function refreshStoredSessionExpiry() {
-  localStorage.setItem(
+  sessionStorage.setItem(
     SESSION_EXPIRES_KEY,
     String(Date.now() + SESSION_PERSIST_MS)
   );
@@ -207,7 +240,7 @@ function loadStoredSession() {
   try {
     if (!hasValidStoredSession()) return null;
 
-    const rawSession = localStorage.getItem(SESSION_KEY);
+    const rawSession = sessionStorage.getItem(SESSION_KEY);
     if (!rawSession) return null;
 
     return normalizeSessionUser(JSON.parse(rawSession));
@@ -218,19 +251,14 @@ function loadStoredSession() {
 }
 
 function loadStoredSessionToken() {
-  if (!hasValidStoredSession()) return "";
-  return String(localStorage.getItem(SESSION_TOKEN_KEY) || "");
+  return hasValidStoredSession() ? "cookie-session" : "";
 }
 
-function saveSessionToken(token) {
-  const normalizedToken = String(token || "");
-
-  if (!normalizedToken) {
+function saveSessionToken(isAuthenticated) {
+  if (!isAuthenticated) {
     clearStoredAuthSession();
     return;
   }
-
-  localStorage.setItem(SESSION_TOKEN_KEY, normalizedToken);
   refreshStoredSessionExpiry();
 }
 
@@ -243,7 +271,7 @@ function getEmployeeSessionUser() {
 }
 
 function saveSessionUser(user) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
   refreshStoredSessionExpiry();
 }
 
@@ -265,6 +293,7 @@ function getRoleLabel(role) {
 
 function setCurrentUser(user) {
   state.currentUser = normalizeSessionUser(user);
+  syncFavoritesForUser();
   saveSessionUser(state.currentUser);
   renderSessionUi();
 }
@@ -322,26 +351,37 @@ function getActiveEmployees() {
 }
 
 function getAccessUsers() {
-  const admin = normalizeSessionUser(
-    (state.settings?.users || []).find((user) => user.role === "admin" && user.active !== false) || USERS.admin
-  );
-  return [...getActiveEmployees(), admin];
+  const admin = (state.settings?.users || []).find((user) => {
+    return user.role === "admin" && user.active !== false;
+  });
+  return [...getActiveEmployees(), ...(admin ? [normalizeSessionUser(admin)] : [])];
 }
 
 function getLastAccessUserId() {
-  return localStorage.getItem(LAST_USER_KEY) || USERS.employee.id;
+  return readLocalPreference(LAST_USER_KEY) || USERS.employee.id;
 }
 
 function setAccessLocked(isLocked) {
   document.body.classList.toggle("auth-locked", isLocked);
-  $("accessScreen")?.classList.toggle("hidden", !isLocked);
+  $("accessScreen")?.classList.toggle("hidden", !isLocked || state.setupRequired);
+}
+
+function setSetupRequired(requiresSetup) {
+  state.setupRequired = requiresSetup === true;
+  document.body.classList.toggle("setup-required", state.setupRequired);
+  $("setupScreen")?.classList.toggle("hidden", !state.setupRequired);
+  if (state.setupRequired) {
+    document.body.classList.add("auth-locked");
+    $("accessScreen")?.classList.add("hidden");
+    window.setTimeout(() => $("setupOwnerNameInput")?.focus(), 0);
+  }
 }
 
 function selectAccessUser(userId) {
   const users = getAccessUsers();
   const selected = users.find((user) => user.id === userId) || users[0] || getEmployeeSessionUser();
   state.accessSelectedUserId = selected.id;
-  localStorage.setItem(LAST_USER_KEY, selected.id);
+  saveLocalPreference(LAST_USER_KEY, selected.id);
 
   $$('[data-access-user]').forEach((button) => {
     const active = button.dataset.accessUser === selected.id;
@@ -364,9 +404,10 @@ function selectAccessUser(userId) {
 
 function renderAccessScreen() {
   const list = $("accessUserList");
-  if (!list) return;
+  if (!list || state.setupRequired) return;
 
   const users = getAccessUsers();
+  if (users.length === 0) return;
   list.innerHTML = users
     .map((user) => {
       const isAdmin = user.role === "admin";
@@ -441,7 +482,7 @@ async function confirmAccessLogin() {
 
   try {
     const result = selectedUser.role === "admin"
-      ? await verifyAdminPin(pin)
+      ? await loginAdmin(pin)
       : await fetchJson("/api/auth/employee", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -449,22 +490,22 @@ async function confirmAccessLogin() {
         });
 
     applyPublicSettings(result.settings);
-    state.sessionToken = result.sessionToken || "";
-    state.sessionAuthenticated = Boolean(state.sessionToken);
-    saveSessionToken(state.sessionToken);
+    state.sessionToken = "cookie-session";
+    state.sessionAuthenticated = true;
+    saveSessionToken(true);
     setCurrentUser(result.user);
     state.employeeLoginRequired = false;
     await Promise.all([loadProducts(), loadSales()]);
     clearAccessPin();
     setAccessLocked(false);
-    if (selectedUser.role === "admin" && result.settings?.adminPinChangeRequired) {
+    if (selectedUser.role === "admin" && (result.settings?.adminPinChangeRequired || result.settings?.employeePinChangeRequired)) {
       setSettingsMode("users");
       setView("settings");
-      showToast("Por seguridad, cambia el PIN inicial antes de continuar.");
+      showToast("Por seguridad, actualiza las credenciales antes de continuar.");
     } else {
       setView(selectedUser.role === "admin" ? "dashboard" : "pos");
     }
-    if (!(selectedUser.role === "admin" && result.settings?.adminPinChangeRequired)) {
+    if (!(selectedUser.role === "admin" && (result.settings?.adminPinChangeRequired || result.settings?.employeePinChangeRequired))) {
       showToast("Sesión iniciada: " + result.user.name + ".");
     }
   } catch (error) {
@@ -476,12 +517,104 @@ async function confirmAccessLogin() {
     if (button) button.disabled = false;
   }
 }
+
+async function completeInitialOwnerSetup() {
+  const name = String($("setupOwnerNameInput")?.value || "").trim();
+  const pin = String($("setupOwnerPinInput")?.value || "").trim();
+  const confirmation = String($("setupOwnerPinConfirmInput")?.value || "").trim();
+
+  if (name.length < 2) {
+    showToast("Escribe el nombre del dueño o administrador.");
+    $("setupOwnerNameInput")?.focus();
+    return;
+  }
+  if (!/^\d{6,12}$/.test(pin)) {
+    showToast("El PIN debe tener de 6 a 12 dígitos.");
+    $("setupOwnerPinInput")?.focus();
+    return;
+  }
+  if (pin !== confirmation) {
+    showToast("La confirmación no coincide con el PIN.");
+    $("setupOwnerPinConfirmInput")?.focus();
+    return;
+  }
+
+  const button = $("setupOwnerSubmitBtn");
+  if (button) button.disabled = true;
+
+  try {
+    const result = await fetchJson("/api/setup/owner", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, pin })
+    });
+
+    applyPublicSettings(result.settings);
+    state.sessionToken = "cookie-session";
+    state.sessionAuthenticated = true;
+    saveSessionToken(true);
+    setCurrentUser(result.user);
+    state.employeeLoginRequired = false;
+    $("setupOwnerPinInput").value = "";
+    $("setupOwnerPinConfirmInput").value = "";
+    setSetupRequired(false);
+    setAccessLocked(false);
+    await Promise.all([loadCashSessions(), loadProducts(), loadSales()]);
+    setView("dashboard");
+    window.setTimeout(maximizeApplicationWindow, 180);
+    showToast(`Cuenta de ${result.user.name} creada correctamente.`);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "No se pudo crear el acceso del dueño.");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function maximizeApplicationWindow() {
+  if (state.setupRequired) return;
+
+  document.body.classList.add("application-maximized");
+  try {
+    window.moveTo(0, 0);
+    window.resizeTo(window.screen.availWidth, window.screen.availHeight);
+  } catch (_) {
+    // Algunos entornos de escritorio bloquean estas llamadas; la vista sigue siendo adaptable.
+  }
+}
+
 function logoutToAccess() {
+  if (state?.sessionAuthenticated) {
+    fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
+  }
   state.sessionToken = "";
   state.sessionAuthenticated = false;
   state.employeeLoginRequired = true;
   state.cashSessions = [];
   state.currentCashSession = null;
+  // A different operator must start with a clean, non-persisted workspace.
+  Object.assign(state, {
+    products: [], sales: [], inventoryEntries: [], ticket: [],
+    discount: 0, paymentReference: "", generatedReport: null,
+    selectedSaleId: null, editingProductId: null, inventoryEditingId: null,
+    settingsDraft: null, employeePinDrafts: {}, pendingAdminView: null,
+    currentCutTotals: { total: 0, profit: 0, count: 0, cash: 0, card: 0, transfer: 0, canceled: 0 }
+  });
+  ["salesList", "salesDetail", "recentSalesList", "reportTableBody", "printArea", "auditEventsList",
+    "cashMovementsList", "cashHistoryList"]
+    .forEach((id) => { if ($(id)) $(id).textContent = ""; });
+  ["reportKpiPrimary", "reportKpiSecondary", "reportKpiThird", "reportKpiFourth"]
+    .forEach((id) => { if ($(id)) $(id).textContent = "—"; });
+  ["openingCashInput", "countedCashInput", "cashMovementAmount"]
+    .forEach((id) => { if ($(id)) $(id).value = ""; });
+  $$('[data-cash-count-denomination]').forEach((input) => { input.value = ""; });
+  $$('.app-view form').forEach((form) => form.reset());
+  $$('input[type="password"]').forEach((input) => { input.value = ""; });
+  closeProductConfirm(false);
+  $$(".modal").forEach((modal) => modal.classList.add("hidden"));
+  clearSelectedProduct();
+  setPaymentMethod("efectivo");
+  renderTicket();
   clearStoredAuthSession();
   renderAccessScreen();
   setAccessLocked(true);
@@ -538,9 +671,9 @@ async function confirmEmployeeAccess() {
     });
 
     applyPublicSettings(result.settings);
-    state.sessionToken = result.sessionToken || "";
-    state.sessionAuthenticated = Boolean(state.sessionToken);
-    saveSessionToken(state.sessionToken);
+    state.sessionToken = "cookie-session";
+    state.sessionAuthenticated = true;
+    saveSessionToken(true);
     setCurrentUser(result.user);
     state.employeeLoginRequired = false;
     await Promise.all([loadProducts(), loadSales()]);
@@ -590,12 +723,12 @@ async function confirmAdminAccess() {
   if (confirmButton) confirmButton.disabled = true;
 
   try {
-    const result = await verifyAdminPin(pin);
+    const result = await loginAdmin(pin);
     const nextView = state.pendingAdminView;
 
-    state.sessionToken = result.sessionToken || "";
-    state.sessionAuthenticated = Boolean(state.sessionToken);
-    saveSessionToken(state.sessionToken);
+    state.sessionToken = "cookie-session";
+    state.sessionAuthenticated = true;
+    saveSessionToken(true);
     applyPublicSettings(result.settings);
     setCurrentUser(result.user || USERS.admin);
     await Promise.all([loadProducts(), loadSales()]);
@@ -603,10 +736,10 @@ async function confirmAdminAccess() {
     closeAuthModal();
     showToast("Modo administrador activo.");
 
-    if (result.settings?.adminPinChangeRequired) {
+    if (result.settings?.adminPinChangeRequired || result.settings?.employeePinChangeRequired) {
       setSettingsMode("users");
       setView("settings");
-      showToast("Por seguridad, cambia el PIN inicial antes de continuar.");
+      showToast("Por seguridad, actualiza las credenciales antes de continuar.");
     } else if (nextView) {
       setView(nextView);
     } else {
@@ -638,7 +771,9 @@ const state = {
   sessionToken: storedSessionToken,
   sessionAuthenticated: Boolean(storedSessionUser && storedSessionToken),
   employeeLoginRequired: false,
+  setupRequired: false,
   settings: {
+    setupRequired: false,
     users: [normalizeSessionUser(USERS.employee), normalizeSessionUser(USERS.admin)],
     adminPinChangeRequired: false,
     updatedAt: null
@@ -648,6 +783,8 @@ const state = {
   pendingAdminView: null,
   activeView: "pos",
   activeCategory: "all",
+  favoriteOwnerId: null,
+  favoriteProductIds: new Set(),
   activeUnitFilter: "all",
   currentPage: 1,
   selectedProduct: null,
@@ -672,15 +809,18 @@ const state = {
     transfer: 0,
     canceled: 0
   },
+  reportsMode: "reports",
+  generatedReport: null,
   sidebarCollapsed:
     storedSidebarCollapsed === null
       ? window.innerWidth < 760
       : storedSidebarCollapsed === "true",
-  ticketCollapsed: true
+  ticketCollapsed: storedTicketCollapsed === null ? window.innerWidth < 1100 : storedTicketCollapsed === "true"
 };
 
 const scaleState = {
   supported: "serial" in navigator,
+  error: false,
   connected: false,
   port: null,
   reader: null,
@@ -689,10 +829,10 @@ const scaleState = {
   buffer: "",
   weightKg: 0,
   stable: false,
-  baudRate: Number(localStorage.getItem("scaleBaudRate") || 9600),
-  unit: localStorage.getItem("scaleUnit") || "kg",
-  command: localStorage.getItem("scaleCommand") || "P",
-  pollMs: Number(localStorage.getItem("scalePollMs") || 800),
+  baudRate: Number(readLocalPreference("scaleBaudRate") || 9600),
+  unit: readLocalPreference("scaleUnit") || "kg",
+  command: readLocalPreference("scaleCommand") || "P",
+  pollMs: Number(readLocalPreference("scalePollMs") || 800),
   lastRequestAt: null
 };
 
@@ -706,6 +846,38 @@ function on(element, eventName, handler) {
   if (element) {
     element.addEventListener(eventName, handler);
   }
+}
+
+function bindModalAccessibility() {
+  ["manualModal", "invoiceDecisionModal", "productConfirmModal", "authModal", "employeeAuthModal"]
+    .map((id) => $(id))
+    .filter(Boolean)
+    .forEach((modal) => {
+      on(modal, "keydown", (event) => {
+        if (event.key === "Escape") {
+          modal.querySelector('[aria-label="Cerrar"]')?.click();
+          return;
+        }
+
+        if (event.key !== "Tab") return;
+        const focusable = Array.from(
+          modal.querySelectorAll(
+            'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((element) => !element.hidden);
+        if (focusable.length === 0) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+    });
 }
 
 function money(value) {
@@ -722,12 +894,13 @@ function roundCurrency(value) {
 
 function closeTicketDrawer() {
   if (state.activeView === "pos" && !state.ticketCollapsed) {
+    state.ticketCollapsed = true;
     setPosStep("product");
   }
 }
 
 function handleTicketOutsideClick(event) {
-  if (state.activeView !== "pos" || state.ticketCollapsed) return;
+  if (state.activeView !== "pos" || state.ticketCollapsed || window.innerWidth >= 1100) return;
   const target = event.target;
   if (
     target.closest(".ticket-panel") ||
@@ -883,18 +1056,81 @@ function setInventoryMode(mode = "stock") {
 }
 
 function setSettingsMode(mode = "scale") {
-  const validMode = ["scale", "users"].includes(mode) ? mode : "scale";
+  const validMode = ["scale", "users", "audit"].includes(mode) ? mode : "scale";
   const root = document.querySelector(".settings-layout");
   if (root) root.dataset.settingsMode = validMode;
   $$('[data-settings-mode-btn]').forEach((button) => {
-    button.classList.toggle("active", button.dataset.settingsModeBtn === validMode);
+    const isActive = button.dataset.settingsModeBtn === validMode;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", String(isActive));
   });
+  if (validMode === "audit") loadAuditEvents();
   syncTopbarContext();
 }
-function quantityText(quantity, unit) {
-  return unit === "kg"
-    ? `${Number(quantity || 0).toFixed(3)} kg`
-    : `${Number(quantity || 0).toFixed(0)} pza`;
+
+const auditEventLabels = {
+  product_created: "Producto creado",
+  product_updated: "Producto actualizado",
+  inventory_adjusted: "Inventario ajustado",
+  inventory_received: "Entrada de mercancía",
+  sale_completed: "Venta registrada",
+  sale_canceled: "Venta cancelada",
+  invoice_request_saved: "Solicitud de factura guardada",
+  users_updated: "Usuarios actualizados",
+  cash_session_opened: "Caja abierta",
+  cash_movement_added: "Movimiento de caja",
+  cash_session_closed: "Caja cerrada",
+  sensitive_data_migrated: "Datos protegidos"
+};
+
+function getAuditDetailText(event) {
+  const details = event?.details || {};
+  if (event.event_type === "inventory_adjusted") {
+    return `${details.reason || "Ajuste"} · ${details.previousStock ?? "-"} → ${details.newStock ?? "-"}`;
+  }
+  if (event.event_type === "sale_completed") {
+    return `${details.itemCount || 0} productos · ${money(details.total || 0)}`;
+  }
+  if (event.event_type === "sale_canceled") return details.reason || "Cancelación registrada";
+  if (event.event_type === "inventory_received") {
+    return `${quantityText(details.quantity, details.unit || "kg")} · ${money(details.unitCost || 0)}`;
+  }
+  if (event.event_type === "cash_movement_added") return `${details.type === "out" ? "Retiro" : "Entrada"} · ${money(details.amount || 0)}`;
+  if (event.event_type === "cash_session_opened") return `Fondo inicial ${money(details.openingAmount || 0)}`;
+  if (event.event_type === "cash_session_closed") return `Diferencia ${money(details.difference || 0)}`;
+  return "Acción registrada en el servidor.";
+}
+
+async function loadAuditEvents() {
+  const list = $("auditEventsList");
+  if (!list || !isAdminUser()) return;
+
+  try {
+    const events = await fetchJson("/api/audit-events?limit=200");
+    if (events.length === 0) {
+      list.innerHTML = '<p class="empty-state">Aún no hay acciones registradas.</p>';
+      return;
+    }
+
+    list.innerHTML = events.map((event) => `
+      <article class="audit-event-row">
+        <div>
+          <strong>${escapeHtml(auditEventLabels[event.event_type] || event.event_type)}</strong>
+          <span>${escapeHtml(getAuditDetailText(event))}</span>
+        </div>
+        <div>
+          <small>${escapeHtml(event.actor_name || "Sistema")}</small>
+          <time datetime="${escapeHtml(event.created_at)}">${new Date(event.created_at).toLocaleString("es-MX")}</time>
+        </div>
+      </article>
+    `).join("");
+  } catch (error) {
+    console.error(error);
+    list.innerHTML = '<p class="empty-state">No se pudo cargar la bitácora.</p>';
+  }
+}
+function quantityText(quantity, unit, decimals = unit === "kg" ? 3 : 0) {
+  return `${Number(quantity || 0).toFixed(decimals)} ${unit === "kg" ? "kg" : "pza"}`;
 }
 
 function getEffectiveQuantity(product) {
@@ -932,6 +1168,7 @@ function getCategories() {
 
   return [
     "all",
+    "favorites",
     ...DEFAULT_CATEGORIES,
     ...categoriesFromProducts.filter((category) => {
       return !DEFAULT_CATEGORIES.includes(category);
@@ -1018,6 +1255,7 @@ function updateClock() {
     <span class="sidebar-clock-period">${period}</span>
   `;
   clockText.setAttribute("aria-label", `${hour}:${minute} ${period}`.trim());
+  if ($("posClockText")) $("posClockText").textContent = `${hour}:${minute} ${period}`;
 }
 
 function estimateNextTicketId() {
@@ -1029,6 +1267,48 @@ function estimateNextTicketId() {
   return `T-${String(maxNumber + 1).padStart(6, "0")}`;
 }
 
+let ticketLabelInterval = 0;
+let ticketLabelTimeout = 0;
+let ticketLabelShowsSale = false;
+
+function updateTicketLabelText() {
+  const text = $("ticketToggleText");
+  if (text) text.textContent = ticketLabelShowsSale ? "Venta actual" : ($("ticketToggleFolio")?.textContent || "");
+}
+
+function syncTicketLabelRotation() {
+  const button = $("ticketToggleBtn");
+  const isPos = state.activeView === "pos" && state.sessionAuthenticated && !state.employeeLoginRequired && !document.hidden;
+  if (!button || !isPos) {
+    window.clearInterval(ticketLabelInterval);
+    window.clearTimeout(ticketLabelTimeout);
+    ticketLabelInterval = 0;
+    ticketLabelTimeout = 0;
+    ticketLabelShowsSale = false;
+    button?.classList.remove("ticket-label-out");
+    updateTicketLabelText();
+    return;
+  }
+  if (ticketLabelInterval) return;
+  ticketLabelShowsSale = false;
+  updateTicketLabelText();
+  ticketLabelInterval = window.setInterval(() => {
+    if (document.hidden) return;
+    if (posReducedMotion) {
+      ticketLabelShowsSale = !ticketLabelShowsSale;
+      updateTicketLabelText();
+      return;
+    }
+    button.classList.add("ticket-label-out");
+    ticketLabelTimeout = window.setTimeout(() => {
+      ticketLabelShowsSale = !ticketLabelShowsSale;
+      updateTicketLabelText();
+      button.classList.remove("ticket-label-out");
+      ticketLabelTimeout = 0;
+    }, 160);
+  }, 3500);
+}
+
 function updateTicketId() {
   const nextTicketId = estimateNextTicketId();
   const ticketId = $("ticketId");
@@ -1036,6 +1316,8 @@ function updateTicketId() {
 
   if (ticketId) ticketId.textContent = nextTicketId;
   if (drawerTicketId) drawerTicketId.textContent = nextTicketId;
+  if ($("ticketToggleFolio")) $("ticketToggleFolio").textContent = nextTicketId;
+  if (!ticketLabelShowsSale && !$("ticketToggleBtn")?.classList.contains("ticket-label-out")) updateTicketLabelText();
 }
 
 function getTicketTotal() {
@@ -1044,17 +1326,18 @@ function getTicketTotal() {
 }
 
 function setPosStep(step) {
-  const openTicket = step === "checkout";
-
-  // El catálogo permanece siempre en el mismo estado visual. Abrir la venta
-  // únicamente muestra el drawer, sin activar un layout alterno de checkout.
+  // Seleccionar o agregar productos conserva la preferencia de visibilidad.
   state.posStep = "product";
-  state.ticketCollapsed = !openTicket;
-  localStorage.setItem("ticketCollapsed", String(state.ticketCollapsed));
+  if (step === "checkout") state.ticketCollapsed = false;
+  saveLocalPreference("ticketCollapsed", String(state.ticketCollapsed));
   updateShellState();
 }
 
 function updateShellState() {
+  const sessionBox = document.querySelector(".session-box");
+  const sessionSlot = $(state.activeView === "pos" && state.sessionAuthenticated && !state.employeeLoginRequired ? "topbarSessionSlot" : "sidebarSessionSlot");
+  if (sessionBox && sessionSlot && sessionBox.parentElement !== sessionSlot) sessionSlot.appendChild(sessionBox);
+  document.body.classList.toggle("pos-approved", state.activeView === "pos" && state.sessionAuthenticated && !state.employeeLoginRequired);
   document.body.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
   document.body.classList.toggle("ticket-collapsed", state.ticketCollapsed);
   document.body.classList.toggle("not-pos", state.activeView !== "pos");
@@ -1090,7 +1373,9 @@ function updateShellState() {
   }
 
   if (mobileSidebarButton) {
-    mobileSidebarButton.textContent = state.sidebarCollapsed ? "›" : "‹";
+    mobileSidebarButton.textContent = state.activeView === "pos"
+      ? (state.sidebarCollapsed ? ">" : "<")
+      : (state.sidebarCollapsed ? "›" : "‹");
     mobileSidebarButton.setAttribute(
       "aria-label",
       state.sidebarCollapsed ? "Mostrar menú" : "Ocultar menú"
@@ -1099,25 +1384,28 @@ function updateShellState() {
   }
 
   if (sidebarToggleIcon) {
-    sidebarToggleIcon.textContent = state.sidebarCollapsed ? "›" : "‹";
+    sidebarToggleIcon.textContent = state.activeView === "pos"
+      ? (state.sidebarCollapsed ? ">" : "<")
+      : (state.sidebarCollapsed ? "›" : "‹");
   }
 
+  const isTicketOpen = state.activeView === "pos" && state.sessionAuthenticated &&
+    !state.employeeLoginRequired && !state.ticketCollapsed;
+  const ticketPanel = $("currentSalePanel");
   if (ticketButton) {
-    const count = state.ticket.length;
-    const countText = count === 0 ? "0" : String(count);
-    const isCompactTopbar = window.innerWidth < 760;
-    ticketButton.textContent =
-      isCompactTopbar
-        ? `${count} - ${money(getTicketTotal())}`
-        : `Venta - ${countText} - ${money(getTicketTotal())}`;
-    const isTicketOpen = state.activeView === "pos" && !state.ticketCollapsed;
-    const ticketLabel = isTicketOpen
-      ? "Cerrar venta actual"
-      : "Abrir venta actual";
-    ticketButton.setAttribute("aria-label", ticketLabel);
+    const ticketLabel = isTicketOpen ? "Cerrar venta actual" : "Abrir venta actual";
+    const folio = $("ticketToggleFolio")?.textContent || $("ticketId")?.textContent || "";
+    ticketButton.setAttribute("aria-label", ticketLabel + ", " + folio + ", " + state.ticket.length + " productos, " + money(getTicketTotal()));
     ticketButton.setAttribute("title", ticketLabel);
     ticketButton.setAttribute("aria-expanded", String(isTicketOpen));
     ticketButton.classList.toggle("active", isTicketOpen);
+    if (!isTicketOpen && ticketPanel?.contains(document.activeElement)) {
+      ticketButton.focus({ preventScroll: true });
+    }
+  }
+  if (ticketPanel) {
+    ticketPanel.inert = !isTicketOpen;
+    ticketPanel.setAttribute("aria-hidden", String(!isTicketOpen));
   }
 
   if (ticketSideButton) {
@@ -1140,16 +1428,27 @@ function updateShellState() {
     button.classList.toggle("active", isActive);
     button.setAttribute("aria-current", isActive ? "step" : "false");
   });
+  syncSidebarToggleUi();
   syncTopbarContext();
+  syncTicketLabelRotation();
 }
 
 let sidebarAnimationTimer = 0;
+
 
 function syncSidebarToggleUi() {
   const sidebarButton = $("sidebarToggleBtn");
   const mobileSidebarButton = $("mobileSidebarToggleBtn");
   const sidebarToggleIcon = $("sidebarToggleIcon");
   const actionLabel = state.sidebarCollapsed ? "Mostrar menú" : "Ocultar menú";
+  const asset = $("sidebarToggleAsset");
+  if (asset) {
+    const source = "./assets/pos/" + (state.sidebarCollapsed ? "abrir.svg" : "cerrar.svg");
+    if (asset.getAttribute("src") !== source) asset.setAttribute("src", source);
+  }
+  sidebarButton?.setAttribute("aria-expanded", String(!state.sidebarCollapsed));
+  mobileSidebarButton?.setAttribute("aria-expanded", String(!state.sidebarCollapsed));
+
 
   if (sidebarButton) {
     sidebarButton.setAttribute("aria-label", actionLabel);
@@ -1157,13 +1456,17 @@ function syncSidebarToggleUi() {
   }
 
   if (mobileSidebarButton) {
-    mobileSidebarButton.textContent = state.sidebarCollapsed ? "›" : "‹";
+    mobileSidebarButton.textContent = state.activeView === "pos"
+      ? (state.sidebarCollapsed ? ">" : "<")
+      : (state.sidebarCollapsed ? "›" : "‹");
     mobileSidebarButton.setAttribute("aria-label", actionLabel);
     mobileSidebarButton.setAttribute("title", actionLabel);
   }
 
   if (sidebarToggleIcon) {
-    sidebarToggleIcon.textContent = state.sidebarCollapsed ? "›" : "‹";
+    sidebarToggleIcon.textContent = state.activeView === "pos"
+      ? (state.sidebarCollapsed ? ">" : "<")
+      : (state.sidebarCollapsed ? "›" : "‹");
   }
 }
 
@@ -1171,19 +1474,29 @@ function toggleSidebar() {
   const nextCollapsed = !state.sidebarCollapsed;
 
   state.sidebarCollapsed = nextCollapsed;
-  localStorage.setItem("sidebarCollapsed", String(nextCollapsed));
+  saveLocalPreference("sidebarCollapsed", String(nextCollapsed));
 
   clearTimeout(sidebarAnimationTimer);
-  document.body.classList.remove("sidebar-expanding", "sidebar-collapsing");
+  document.body.classList.remove("sidebar-transitioning", "sidebar-expanding", "sidebar-collapsing");
+  if (state.activeView === "pos") {
+    document.body.classList.toggle("sidebar-collapsed", nextCollapsed);
+    syncSidebarToggleUi();
+    return;
+  }
   document.body.classList.add(
     "sidebar-transitioning",
     nextCollapsed ? "sidebar-collapsing" : "sidebar-expanding"
   );
 
-  requestAnimationFrame(() => {
-    document.body.classList.toggle("sidebar-collapsed", nextCollapsed);
-    syncSidebarToggleUi();
-  });
+  if (nextCollapsed) {
+    window.setTimeout(() => {
+      document.body.classList.add("sidebar-collapsed");
+      syncSidebarToggleUi();
+    }, 130);
+  } else {
+    document.body.classList.remove("sidebar-collapsed");
+    requestAnimationFrame(syncSidebarToggleUi);
+  }
 
   sidebarAnimationTimer = window.setTimeout(() => {
     document.body.classList.remove(
@@ -1191,17 +1504,36 @@ function toggleSidebar() {
       "sidebar-expanding",
       "sidebar-collapsing"
     );
-  }, 280);
+  }, 390);
 }
 
 function toggleTicketPanel(forceOpen = false) {
   if (forceOpen || state.ticketCollapsed) {
     setPosStep("checkout");
-    return;
+  } else {
+    closeTicketDrawer();
   }
-
-  setPosStep("product");
 }
+
+function setReportsMode(mode = "reports") {
+  const nextMode = mode === "cash" ? "cash" : "reports";
+  state.reportsMode = nextMode;
+  const reportsView = $("reportsView");
+  if (reportsView) reportsView.dataset.reportsMode = nextMode;
+
+  $$('[data-reports-mode-btn]').forEach((button) => {
+    const active = button.dataset.reportsModeBtn === nextMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+
+  if (state.activeView === "reports") {
+    if (nextMode === "cash") loadCashCut();
+    else loadReports();
+  }
+}
+
+let viewAnimationTimer = 0;
 
 function setView(viewName) {
   if (!canAccessView(viewName)) {
@@ -1215,9 +1547,16 @@ function setView(viewName) {
     button.classList.toggle("active", button.dataset.view === viewName);
   });
 
+  const nextView = $(`${viewName}View`);
+  clearTimeout(viewAnimationTimer);
   $$(".app-view").forEach((view) => {
-    view.classList.toggle("active", view.id === `${viewName}View`);
+    view.classList.toggle("active", view === nextView);
+    view.classList.remove("view-entering");
   });
+  if (nextView) {
+    nextView.classList.add("view-entering");
+    viewAnimationTimer = window.setTimeout(() => nextView.classList.remove("view-entering"), 320);
+  }
 
   const [title, subtitle] = viewLabels[viewName] || viewLabels.pos;
   $("pageTitle").textContent = title;
@@ -1228,7 +1567,10 @@ function setView(viewName) {
   if (viewName === "sales") loadSalesAdmin();
   if (viewName === "dashboard") loadDashboard();
   if (viewName === "billing") loadRecentSales();
-  if (viewName === "reports") loadCashCut();
+  if (viewName === "reports") {
+    if (state.reportsMode === "cash") loadCashCut();
+    else loadReports();
+  }
   if (viewName === "inventory") loadInventoryEntries();
   if (viewName === "products") renderAdminProducts();
   if (viewName === "settings") {
@@ -1239,13 +1581,11 @@ function setView(viewName) {
 
 async function fetchJson(url, options = {}) {
   const headers = new Headers(options.headers || {});
-  if (state.sessionToken) {
-    headers.set("X-Session-Token", state.sessionToken);
-  }
 
   const response = await fetch(url, {
     ...options,
-    headers
+    headers,
+    credentials: "same-origin"
   });
 
   if (!response.ok) {
@@ -1265,22 +1605,17 @@ async function fetchJson(url, options = {}) {
 }
 
 function normalizePublicSettings(settings = {}) {
+  const setupRequired = settings.setupRequired === true;
   const incomingUsers = Array.isArray(settings.users) ? settings.users : [];
   const users = incomingUsers
     .map((user) => normalizeSessionUser(user))
     .filter((user) => user.active !== false);
 
-  if (!users.some((user) => user.role === "admin")) {
-    users.push(normalizeSessionUser(USERS.admin));
-  }
-
-  if (!users.some((user) => user.role === "employee")) {
-    users.push(normalizeSessionUser(USERS.employee));
-  }
-
   return {
+    setupRequired,
     users,
     adminPinChangeRequired: settings.adminPinChangeRequired === true,
+    employeePinChangeRequired: settings.employeePinChangeRequired === true,
     updatedAt: settings.updatedAt || null
   };
 }
@@ -1291,8 +1626,12 @@ function cloneSettingsUsers(users = []) {
 
 function applyPublicSettings(settings = {}) {
   state.settings = normalizePublicSettings(settings);
+  setSetupRequired(state.settings.setupRequired);
   document.body.classList.toggle("admin-pin-change-required", state.settings.adminPinChangeRequired);
+  document.body.classList.toggle("employee-pin-change-required", state.settings.employeePinChangeRequired);
   state.settingsDraft = cloneSettingsUsers(state.settings.users);
+
+  if (state.settings.setupRequired) return;
 
   if (!isAdminUser()) {
     const matchingEmployee = state.settings.users.find((user) => {
@@ -1319,14 +1658,32 @@ async function loadSettings() {
   try {
     const settings = await fetchJson("/api/settings");
     applyPublicSettings(settings);
+    return settings;
   } catch (error) {
     console.error(error);
     applyPublicSettings(state.settings);
     showToast("No se pudo cargar la configuración de usuarios.");
+    return state.settings;
   }
 }
 
 async function verifyAdminPin(pin) {
+  const normalizedPin = String(pin || "").trim();
+
+  if (!normalizedPin) {
+    throw new Error("Ingresa el PIN de administrador.");
+  }
+
+  return fetchJson("/api/auth/admin/verify", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ pin: normalizedPin })
+  });
+}
+
+async function loginAdmin(pin) {
   const normalizedPin = String(pin || "").trim();
 
   if (!normalizedPin) {
@@ -1343,8 +1700,6 @@ async function verifyAdminPin(pin) {
 }
 
 async function restoreAuthSession() {
-  if (!state.sessionToken) return false;
-
   try {
     const result = await fetchJson("/api/auth/session");
 
@@ -1357,7 +1712,8 @@ async function restoreAuthSession() {
 
     applyPublicSettings(result.settings);
     state.sessionAuthenticated = true;
-    saveSessionToken(state.sessionToken);
+    state.sessionToken = "cookie-session";
+    saveSessionToken(true);
     setCurrentUser(result.user);
     return true;
   } catch (error) {
@@ -1393,11 +1749,15 @@ function renderUserSettings() {
   adminNameInput.value = adminUser.name;
 
   if (employees.length === 0) {
-    employeesList.innerHTML = '<p class="empty-list">Agrega al menos un empleado de mostrador.</p>';
+    employeesList.innerHTML = '<p class="empty-list">Aún no hay empleados. Podrás agregarlos cuando se incorporen al negocio.</p>';
     return;
   }
 
-  employeesList.innerHTML = employees
+  const rotationNotice = state.settings.employeePinChangeRequired
+    ? '<p class="users-helper-text">Por seguridad, asigna un PIN nuevo de 6 a 12 dígitos a cada empleado.</p>'
+    : '';
+
+  employeesList.innerHTML = rotationNotice + employees
     .map((employee) => {
       return `
         <article class="user-row">
@@ -1411,7 +1771,7 @@ function renderUserSettings() {
               type="password"
               inputmode="numeric"
               maxlength="12"
-              placeholder="Conservar"
+              placeholder="${state.settings.employeePinChangeRequired ? "Obligatorio" : "Conservar"}"
               data-employee-pin="${escapeHtml(employee.id)}"
               value="${escapeHtml(employee.pendingPin || state.employeePinDrafts[employee.id] || "")}"
             />
@@ -1460,8 +1820,8 @@ function addEmployeeDraft() {
     return;
   }
 
-  if (!/^\d{4,12}$/.test(pin)) {
-    showToast("El PIN inicial debe tener de 4 a 12 dígitos.");
+  if (!/^\d{6,12}$/.test(pin)) {
+    showToast("El PIN inicial debe tener de 6 a 12 dígitos.");
     pinInput?.focus();
     return;
   }
@@ -1496,12 +1856,6 @@ function addEmployeeDraft() {
 
 function removeEmployeeDraft(employeeId) {
   const draftUsers = getSettingsDraftUsers();
-  const employees = draftUsers.filter((user) => user.role === "employee");
-
-  if (employees.length <= 1) {
-    showToast("Debe quedar al menos un empleado de mostrador.");
-    return;
-  }
 
   state.settingsDraft = draftUsers.filter((user) => user.id !== employeeId);
   delete state.employeePinDrafts[employeeId];
@@ -1539,8 +1893,14 @@ async function saveUserSettings() {
     return;
   }
 
-  if (newPin && !/^\d{4,12}$/.test(newPin)) {
-    showToast("El PIN nuevo debe tener de 4 a 12 dígitos.");
+  if (state.settings.adminPinChangeRequired && !newPin) {
+    showToast("Por seguridad, captura un PIN nuevo para el administrador.");
+    $("newAdminPinInput")?.focus();
+    return;
+  }
+
+  if (newPin && !/^\d{6,12}$/.test(newPin)) {
+    showToast("El PIN nuevo debe tener de 6 a 12 dígitos.");
     $("newAdminPinInput")?.focus();
     return;
   }
@@ -1553,11 +1913,6 @@ async function saveUserSettings() {
 
   const draftUsers = getSettingsDraftUsers();
   const employees = draftUsers.filter((user) => user.role === "employee");
-
-  if (employees.length === 0) {
-    showToast("Agrega al menos un empleado de mostrador.");
-    return;
-  }
 
   const users = [
     {
@@ -1579,6 +1934,12 @@ async function saveUserSettings() {
       .map((employee) => [employee.id, String(employee.pendingPin || state.employeePinDrafts[employee.id] || "").trim()])
       .filter(([, pin]) => Boolean(pin))
   );
+
+  if (state.settings.employeePinChangeRequired && Object.keys(employeePins).length !== employees.length) {
+    showToast("Asigna un PIN nuevo de 6 a 12 dígitos a cada empleado.");
+    $("employeesList")?.querySelector("[data-employee-pin]")?.focus();
+    return;
+  }
 
   const saveButton = $("saveUserSettingsBtn");
   if (saveButton) saveButton.disabled = true;
@@ -1645,6 +2006,7 @@ async function loadCashSessions() {
 async function loadProducts() {
   try {
     state.products = await fetchJson("/api/products");
+    pruneMissingFavorites();
 
     renderCategories();
     renderProducts();
@@ -1675,13 +2037,62 @@ async function loadSales() {
   }
 }
 
+function syncFavoritesForUser() {
+  const userId = state.sessionAuthenticated && state.currentUser?.id ? String(state.currentUser.id) : null;
+  if (state.favoriteOwnerId === userId) return;
+  state.favoriteOwnerId = userId;
+  state.favoriteProductIds = new Set();
+  state.activeCategory = "all";
+  state.currentPage = 1;
+  if (!userId) return;
+  if (!favoriteMemory.has(userId)) {
+    let ids = [];
+    try {
+      const stored = JSON.parse(readLocalPreference(FAVORITES_PREFIX + encodeURIComponent(userId), "[]"));
+      if (Array.isArray(stored)) ids = stored.filter((id) => typeof id === "string");
+    } catch (_) { /* Una preferencia dañada no impide usar el catálogo. */ }
+    favoriteMemory.set(userId, new Set(ids));
+  }
+  state.favoriteProductIds = favoriteMemory.get(userId);
+}
+
+function persistFavorites() {
+  const userId = state.favoriteOwnerId;
+  if (!userId) return;
+  if (!saveLocalPreference(FAVORITES_PREFIX + encodeURIComponent(userId), JSON.stringify([...state.favoriteProductIds])) && !favoriteStorageWarnings.has(userId)) {
+    favoriteStorageWarnings.add(userId);
+    showToast("Favoritos disponibles durante esta sesión; el navegador no permite guardarlos.");
+  }
+}
+
+function pruneMissingFavorites() {
+  syncFavoritesForUser();
+  const existingIds = new Set(state.products.map((product) => String(product.id)));
+  let changed = false;
+  for (const id of state.favoriteProductIds) {
+    if (!existingIds.has(id)) { state.favoriteProductIds.delete(id); changed = true; }
+  }
+  if (changed) persistFavorites();
+}
+
+function toggleProductFavorite(productId) {
+  syncFavoritesForUser();
+  const id = String(productId);
+  if (!state.favoriteOwnerId || !state.products.some((product) => String(product.id) === id)) return;
+  if (state.favoriteProductIds.has(id)) state.favoriteProductIds.delete(id);
+  else state.favoriteProductIds.add(id);
+  persistFavorites();
+}
+
 function getFilteredProducts() {
+  syncFavoritesForUser();
   const query = $("searchInput").value.trim().toLowerCase();
 
   return state.products.filter((product) => {
     const isActive = product.active !== false;
     const matchesCategory =
-      state.activeCategory === "all" || product.category === state.activeCategory;
+      state.activeCategory === "all" ||
+      (state.activeCategory === "favorites" ? state.favoriteProductIds.has(String(product.id)) : product.category === state.activeCategory);
     const matchesUnit =
       state.activeUnitFilter === "all" || product.unit === state.activeUnitFilter;
     const matchesSearch = product.name.toLowerCase().includes(query);
@@ -1691,16 +2102,17 @@ function getFilteredProducts() {
 }
 
 function renderCategories() {
+  syncFavoritesForUser();
   const categoryGrid = $("categoryGrid");
   if (!categoryGrid) return;
 
   categoryGrid.innerHTML = getCategories()
     .map((category) => {
-      const label = category === "all" ? "Todos" : category;
+      const label = category === "favorites" ? "Favoritos" : category === "all" ? "Todos" : category;
 
       return `
         <button class="category-card ${state.activeCategory === category ? "active" : ""}" type="button" data-category="${escapeHtml(category)}">
-          <strong>${escapeHtml(label)}</strong>
+          <span class="pos-category-icon" aria-hidden="true">${category === "favorites" ? FAVORITE_STAR : category === "all" ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>' : getProductIcon({category})}</span><strong>${escapeHtml(label)}</strong>
         </button>
       `;
     })
@@ -1730,23 +2142,29 @@ function renderProducts() {
   const start = (state.currentPage - 1) * PAGE_SIZE;
   const visibleProducts = filteredProducts.slice(start, start + PAGE_SIZE);
 
-  $("pageIndicator").textContent = `Página ${state.currentPage} de ${totalPages}`;
+  $("pageIndicator").textContent = `${filteredProducts.length ? start + 1 : 0}–${Math.min(start + PAGE_SIZE, filteredProducts.length)} / ${filteredProducts.length}`;
+  $("pageIndicator").setAttribute("aria-label", `Página ${state.currentPage} de ${totalPages}`);
+  $("posPageButtons").innerHTML = Array.from({ length: totalPages }, (_, index) => `<button type="button" class="pos-page-button ${index + 1 === state.currentPage ? "active" : ""}" data-product-page="${index + 1}" aria-label="Página ${index + 1}" ${index + 1 === state.currentPage ? 'aria-current="page"' : ""}>${index + 1}</button>`).join("");
+  $$("[data-product-page]").forEach((button) => button.addEventListener("click", () => { state.currentPage = Number(button.dataset.productPage); renderProducts(); }));
   $("prevPageBtn").disabled = state.currentPage <= 1;
   $("nextPageBtn").disabled = state.currentPage >= totalPages;
 
   if (visibleProducts.length === 0) {
-    productGrid.innerHTML = `<p class="empty-state">No hay productos con ese filtro.</p>`;
+    const emptyMessage = state.activeCategory === "favorites"
+      ? (state.favoriteProductIds.size ? "No hay favoritos con esta búsqueda o filtro." : "Aún no tienes favoritos. Marca la estrella de un producto en Todos para encontrarlo aquí.")
+      : "No hay productos con ese filtro.";
+    productGrid.innerHTML = `<p class="empty-state">${emptyMessage}</p>`;
     return;
   }
 
   const productSalesMap = getProductSalesMap();
 
   productGrid.innerHTML = visibleProducts
-    .map((product) => {
+    .map((product, index) => {
       const badge = categoryBadges[product.category] || "PRO";
       const stock =
         typeof product.stockQuantity === "number"
-          ? quantityText(product.stockQuantity, product.unit)
+          ? quantityText(product.stockQuantity, product.unit, 2)
           : "Sin conteo";
       const stockLabel = stock === "Sin conteo" ? stock : `Disp. ${stock}`;
       const iconKey = getProductIconKey(product);
@@ -1755,24 +2173,58 @@ function renderProducts() {
       const imageFallbackPath = getProductImagePath(product, "png");
 
       return `
-        <button class="product-card ${escapeHtml(heatClass)} ${state.selectedProduct?.id === product.id ? "selected" : ""}" type="button" data-id="${escapeHtml(product.id)}">
+        <article class="product-tile">
+        <button class="product-card ${escapeHtml(heatClass)} ${state.selectedProduct?.id === product.id ? "selected" : ""}" type="button" data-id="${escapeHtml(product.id)}" style="--product-index: ${index}">
           <span class="product-media">
-            <img src="${escapeHtml(imagePath)}" data-fallback="${escapeHtml(imageFallbackPath)}" alt="" loading="lazy" onerror="if (!this.dataset.fallbackTried) { this.dataset.fallbackTried = '1'; this.src = this.dataset.fallback; } else { this.parentElement.classList.add('missing'); this.remove(); }" />
+            <span class="product-add" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+            <img data-product-image src="${escapeHtml(imagePath)}" data-fallback="${escapeHtml(imageFallbackPath)}" alt="" loading="eager" decoding="async" />
             <span class="product-icon icon-${escapeHtml(iconKey)}">${getProductIcon(product)}</span>
-            <span class="product-badge">${escapeHtml(badge)}</span>
+            <span class="product-badge badge-${escapeHtml(badge.toLowerCase())}">${escapeHtml(badge)}</span>
           </span>
-          <strong>${escapeHtml(product.name)}</strong>
-          <span class="product-price">${money(product.price)} / ${escapeHtml(getUnitLabel(product.unit))}</span>
-          <small class="product-stock">${escapeHtml(stockLabel)}</small>
+          <span class="product-info">
+            <strong>${escapeHtml(product.name)}</strong>
+            <span class="product-price"><b>${money(product.price)}</b><span> / ${escapeHtml(getUnitLabel(product.unit))}</span></span>
+            <small class="product-stock">${escapeHtml(stockLabel)}</small>
+          </span>
         </button>
+        <button class="product-favorite" type="button" data-favorite-id="${escapeHtml(product.id)}" aria-pressed="${state.favoriteProductIds.has(String(product.id))}" aria-label="${state.favoriteProductIds.has(String(product.id)) ? "Quitar de favoritos: " : "Añadir a favoritos: "}${escapeHtml(product.name)}">${FAVORITE_STAR}</button>
+        </article>
       `;
     })
     .join("");
+
+  $$(".product-favorite").forEach((button, index) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const id = button.dataset.favoriteId;
+      toggleProductFavorite(id);
+      renderProducts();
+      const buttons = $$(".product-favorite");
+      const next = buttons.find((item) => item.dataset.favoriteId === id) || buttons[Math.min(index, buttons.length - 1)] || $("categoryGrid")?.querySelector('[data-category="favorites"]');
+      next?.focus({ preventScroll: true });
+    });
+  });
 
   $$(".product-card").forEach((button) => {
     button.addEventListener("click", () => {
       const product = state.products.find((item) => item.id === button.dataset.id);
       selectProduct(product);
+    });
+  });
+
+  $$('[data-product-image]').forEach((image) => {
+    const markLoaded = () => image.classList.add("is-loaded");
+    if (image.complete && image.naturalWidth > 0) markLoaded();
+    image.addEventListener("load", markLoaded, { once: true });
+    image.addEventListener("error", () => {
+      if (!image.dataset.fallbackTried && image.dataset.fallback) {
+        image.dataset.fallbackTried = "1";
+        image.classList.remove("is-loaded");
+        image.src = image.dataset.fallback;
+        return;
+      }
+      image.parentElement?.classList.add("missing");
+      image.remove();
     });
   });
 }
@@ -1940,13 +2392,15 @@ function renderTicket() {
       .map((item, index) => {
         return `
           <article class="ticket-item">
-            <div>
+            <img class="pos-ticket-photo" src="${escapeHtml(getProductImagePath({id:item.productId}, "jpg"))}" alt="" />
+            <div class="pos-ticket-copy">
               <strong>${escapeHtml(item.name)}</strong>
-              <span>${escapeHtml(quantityText(item.quantity, item.unit))} × ${money(item.price)}</span>
+              <span class="pos-ticket-unit">${money(item.price)} / ${escapeHtml(getUnitLabel(item.unit))}</span>
+              <span class="pos-ticket-quantity">${escapeHtml(quantityText(item.quantity, item.unit))}</span>
               <small>${item.source === "scale" ? "Báscula" : "Manual"}</small>
             </div>
             <b>${money(item.total)}</b>
-            <button class="icon-btn" type="button" data-remove-item="${index}" aria-label="Quitar producto">×</button>
+            <button class="icon-btn" type="button" data-remove-item="${index}" aria-label="Quitar producto"><svg class="pos-remove-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg></button>
           </article>
         `;
       })
@@ -1975,9 +2429,6 @@ function updateTotals() {
   if ($("discountText")) $("discountText").textContent = money(state.discount);
   if ($("totalText")) $("totalText").textContent = money(total);
   if ($("saleBarCount")) $("saleBarCount").textContent = saleLabel;
-  if ($("ticketToggleBtn")) {
-    $("ticketToggleBtn").textContent = `Venta - ${count} - ${money(total)}`;
-  }
   if ($("chargeBtn")) {
     $("chargeBtn").textContent = cashOpen
       ? `Cobrar ${money(total)}`
@@ -2067,6 +2518,7 @@ function openInvoiceDecisionModal() {
   }
 
   $("invoiceDecisionModal").classList.remove("hidden");
+  window.setTimeout(() => $("invoiceYesBtn")?.focus(), 0);
 }
 
 function closeInvoiceDecisionModal() {
@@ -2190,7 +2642,7 @@ function buildReceipt(sale, invoiceRequested = false) {
       ${referenceHtml}
       <div class="receipt-row"><span>Atendio</span><strong>${escapeHtml(sale.operator?.name || state.currentUser?.name || "Encargado")}</strong></div>
       <div class="line"></div>
-      <p>${invoiceRequested ? "Factura pendiente de datos fiscales." : "Gracias por su compra."}</p>
+      <p>${invoiceRequested ? "Solicitud de factura pendiente de datos fiscales." : "Gracias por su compra."}</p>
     </div>
   `;
 }
@@ -2201,6 +2653,7 @@ function openProductConfirm({ title, message, summary, confirmLabel = "Confirmar
   $("productConfirmSummary").textContent = summary;
   $("productConfirmYesBtn").textContent = confirmLabel;
   $("productConfirmModal").classList.remove("hidden");
+  window.setTimeout(() => $("productConfirmYesBtn")?.focus(), 0);
 
   return new Promise((resolve) => {
     state.productConfirmResolver = resolve;
@@ -2888,18 +3341,42 @@ function renderInventorySalesList(elementId, items, emptyText) {
     .join("");
 }
 
+function renderInventoryChampion(elementId, item, kind, emptyText) {
+  const container = $(elementId);
+  if (!container) return;
+
+  if (!item) {
+    container.innerHTML = `<p class="empty-state">${escapeHtml(emptyText)}</p>`;
+    return;
+  }
+
+  const salesText = item.ticketCount === 1 ? "1 venta" : `${item.ticketCount} ventas`;
+  const descriptor = kind === "top" ? "Líder de tus ventas" : "Menos movimiento registrado";
+  container.innerHTML = `
+    <article class="inventory-champion inventory-champion--${escapeHtml(kind)}">
+      <span class="inventory-champion-badge">${kind === "top" ? "★" : "↘"}</span>
+      <div>
+        <span>${escapeHtml(descriptor)}</span>
+        <strong>${escapeHtml(item.name)}</strong>
+        <small>${escapeHtml(salesText)} · ${escapeHtml(quantityText(item.quantity, item.unit))}</small>
+      </div>
+      <b>${money(item.revenue)}</b>
+    </article>
+  `;
+}
+
 function renderInventorySalesInsights() {
   const ranked = getInventorySalesRanking(30);
-  const topProducts = ranked
+  const topProduct = ranked
     .filter((item) => item.ticketCount > 0)
     .sort((a, b) => b.ticketCount - a.ticketCount || b.revenue - a.revenue || a.name.localeCompare(b.name))
-    .slice(0, 4);
-  const slowProducts = ranked
+    .at(0);
+  const slowProduct = ranked
     .sort((a, b) => a.ticketCount - b.ticketCount || a.revenue - b.revenue || a.name.localeCompare(b.name))
-    .slice(0, 4);
+    .at(0);
 
-  renderInventorySalesList("inventoryTopProducts", topProducts, "Sin ventas en los ultimos 30 dias.");
-  renderInventorySalesList("inventorySlowProducts", slowProducts, "Sin productos activos.");
+  renderInventoryChampion("inventoryTopProducts", topProduct, "top", "Sin ventas en los últimos 30 días.");
+  renderInventoryChampion("inventorySlowProducts", slowProduct, "slow", "Sin productos activos.");
 }
 function renderInventory() {
   const list = $("inventoryList");
@@ -2995,6 +3472,10 @@ const lastPurchaseText = lastPurchase
               Mínimo
               <input type="number" min="0" step="0.001" value="${typeof product.minStock === "number" ? product.minStock : ""}" data-min-product="${escapeHtml(product.id)}" />
             </label>
+            <label class="wide">
+              Motivo del ajuste
+              <input type="text" maxlength="180" placeholder="Ej. Conteo físico o merma" data-inventory-reason="${escapeHtml(product.id)}" />
+            </label>
             <span class="status-badge ${statusKind}">${statusLabel}</span>
             <div class="inventory-actions">
               <button class="solid-btn" type="button" data-save-inventory="${escapeHtml(product.id)}">Guardar</button>
@@ -3067,6 +3548,14 @@ async function saveInventory(productId) {
     : String(productId).replace(/"/g, '\"');
   const stockInput = document.querySelector(`[data-stock-product="${escapedId}"]`);
   const minInput = document.querySelector(`[data-min-product="${escapedId}"]`);
+  const reasonInput = document.querySelector(`[data-inventory-reason="${escapedId}"]`);
+  const reason = String(reasonInput?.value || "").trim();
+
+  if (reason.length < 3) {
+    showToast("Indica el motivo del ajuste de inventario.");
+    reasonInput?.focus();
+    return;
+  }
 
   try {
     await fetchJson(`/api/products/${productId}/inventory`, {
@@ -3074,7 +3563,8 @@ async function saveInventory(productId) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         stockQuantity: stockInput.value === "" ? null : Number(stockInput.value),
-        minStock: minInput.value === "" ? null : Number(minInput.value)
+        minStock: minInput.value === "" ? null : Number(minInput.value),
+        reason
       })
     });
 
@@ -3221,7 +3711,7 @@ function renderSaleDetail(saleId) {
     <div class="detail-items">${itemsHtml}</div>
     <div class="detail-actions">
       <button class="solid-btn" type="button" data-reprint-sale="${escapeHtml(sale.id)}">Reimprimir</button>
-      <button class="quiet-btn" type="button" data-invoice-sale="${escapeHtml(sale.id)}">Facturar</button>
+      <button class="quiet-btn" type="button" data-invoice-sale="${escapeHtml(sale.id)}">Registrar solicitud</button>
       <button class="danger-soft-btn" type="button" data-cancel-sale="${escapeHtml(sale.id)}" ${getSaleStatus(sale) === "cancelada" ? "disabled" : ""}>Cancelar</button>
     </div>
   `;
@@ -3504,6 +3994,21 @@ function getDashboardFilter() {
     period,
     dateString: dateInput?.value || getLocalDateString(),
     endDateString: endDateInput?.value || dateInput?.value || getLocalDateString()
+  };
+}
+
+function getDashboardVisualFilter(periodId, dateId) {
+  const periodInput = $(periodId);
+  const dateInput = $(dateId);
+  const period = periodInput?.value || "day";
+
+  if (dateInput && !dateInput.value) dateInput.value = getLocalDateString();
+  if (dateInput) dateInput.disabled = period === "all";
+
+  return {
+    period,
+    dateString: dateInput?.value || getLocalDateString(),
+    endDateString: dateInput?.value || getLocalDateString()
   };
 }
 
@@ -3825,7 +4330,12 @@ function renderDashboard() {
 
   const { period, dateString, endDateString } = getDashboardFilter();
   const sales = getCompletedSalesForPeriod(period, dateString, endDateString);
+  const chartFilter = getDashboardVisualFilter("dashboardChartPeriodFilter", "dashboardChartDateInput");
+  const paymentFilter = getDashboardVisualFilter("dashboardPaymentPeriodFilter", "dashboardPaymentDateInput");
+  const chartSales = getCompletedSalesForPeriod(chartFilter.period, chartFilter.dateString, chartFilter.endDateString);
+  const paymentSales = getCompletedSalesForPeriod(paymentFilter.period, paymentFilter.dateString, paymentFilter.endDateString);
   const totals = getSalesTotals(sales);
+  const paymentTotals = getSalesTotals(paymentSales);
   const margin = totals.total > 0 ? (totals.profit / totals.total) * 100 : 0;
   const averageTicket = totals.count > 0 ? totals.total / totals.count : 0;
   const productSales = getProductSalesFromSales(sales);
@@ -3863,8 +4373,8 @@ function renderDashboard() {
   $("dashboardTransfer").textContent = money(totals.transfer);
   $("dashboardExpectedCash").textContent = money(expectedCash);
 
-  renderDashboardSalesChart(sales, period, dateString, endDateString);
-  renderDashboardPaymentMix(totals);
+  renderDashboardSalesChart(chartSales, chartFilter.period, chartFilter.dateString, chartFilter.endDateString);
+  renderDashboardPaymentMix(paymentTotals);
 
   renderDashboardList("dashboardTopProducts", topProducts, "Sin ventas en este periodo.");
   renderDashboardList(
@@ -3998,8 +4508,8 @@ function goToCashRegister() {
   if (periodInput) periodInput.value = 'day';
   if (dateInput) dateInput.value = getLocalDateString();
 
+  setReportsMode('cash');
   setView('reports');
-  loadCashCut();
   window.setTimeout(() => {
     const target = state.currentCashSession
       ? (isAdminUser() ? $('cashMovementAmount') : $('countedCashInput'))
@@ -4471,16 +4981,220 @@ function printCashCut() {
   window.print();
 }
 
+function getReportFilter() {
+  const periodInput = $("reportPeriodFilter");
+  const dateInput = $("reportDateInput");
+  const endDateInput = $("reportEndDateInput");
+  const period = periodInput?.value || "day";
+  const isRange = period === "range";
+  const isAll = period === "all";
+
+  if (dateInput && !dateInput.value) dateInput.value = getLocalDateString();
+  if (endDateInput && !endDateInput.value) endDateInput.value = dateInput?.value || getLocalDateString();
+  if (dateInput) dateInput.disabled = isAll;
+  if (endDateInput) {
+    endDateInput.classList.toggle("hidden", !isRange);
+    endDateInput.disabled = !isRange;
+    if (isRange && endDateInput.value < dateInput.value) endDateInput.value = dateInput.value;
+  }
+
+  return {
+    period,
+    dateString: dateInput?.value || getLocalDateString(),
+    endDateString: endDateInput?.value || dateInput?.value || getLocalDateString()
+  };
+}
+
+function getReportPeriodCaption(period, dateString, endDateString) {
+  if (period === "all") return "Histórico completo";
+  if (period === "range") return `${dateString} al ${endDateString}`;
+  const labels = { day: "Día", week: "Semana", month: "Mes", year: "Año" };
+  return `${labels[period] || "Periodo"} de ${dateString}`;
+}
+
+function getGeneratedReport() {
+  const type = $("reportTypeFilter")?.value || "sales";
+  const { period, dateString, endDateString } = getReportFilter();
+  const sales = getCompletedSalesForPeriod(period, dateString, endDateString);
+  const totals = getSalesTotals(sales);
+  const margin = totals.total > 0 ? (totals.profit / totals.total) * 100 : 0;
+  const base = {
+    type,
+    period,
+    dateString,
+    endDateString,
+    caption: getReportPeriodCaption(period, dateString, endDateString),
+    totals,
+    headers: [],
+    rows: [],
+    kpis: []
+  };
+
+  if (type === "products") {
+    const products = [...getProductSalesFromSales(sales).values()]
+      .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    return {
+      ...base,
+      eyebrow: "Reporte de productos",
+      title: "Productos vendidos",
+      headers: ["Producto", "Unidad", "Cantidad", "Ingreso"],
+      rows: products.map((item) => [
+        item.name,
+        getUnitLabel(item.unit),
+        quantityText(item.quantity, item.unit),
+        money(item.total)
+      ]),
+      kpis: [
+        ["Ingreso acumulado", money(totals.total)],
+        ["Productos con venta", String(products.length)],
+        ["Ventas", String(totals.count)],
+        ["Margen", `${margin.toFixed(2)}%`]
+      ]
+    };
+  }
+
+  if (type === "inventory") {
+    const activeProducts = state.products.filter((product) => product.active !== false);
+    const inventoryValue = activeProducts.reduce(
+      (sum, product) => sum + Math.max(0, Number(product.stockQuantity || 0)) * Number(product.costPrice || 0),
+      0
+    );
+    const projectedValue = activeProducts.reduce(
+      (sum, product) => sum + Math.max(0, Number(product.stockQuantity || 0)) * Number(product.price || 0),
+      0
+    );
+    const lowStock = activeProducts.filter((product) => {
+      return Number(product.stockQuantity || 0) <= Number(product.minStock || 0);
+    });
+    return {
+      ...base,
+      eyebrow: "Reporte de inventario",
+      title: "Existencias actuales",
+      headers: ["Producto", "Categoría", "Existencia", "Mínimo", "Estado", "Valor"],
+      rows: activeProducts
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((product) => {
+          const [statusLabel] = getStockStatus(product);
+          const stock = Number(product.stockQuantity || 0);
+          return [
+            product.name,
+            product.category,
+            quantityText(stock, product.unit),
+            quantityText(Number(product.minStock || 0), product.unit),
+            statusLabel,
+            money(stock * Number(product.costPrice || 0))
+          ];
+        }),
+      kpis: [
+        ["Valor invertido", money(inventoryValue)],
+        ["Productos activos", String(activeProducts.length)],
+        ["Inventario bajo", String(lowStock.length)],
+        ["Venta proyectada", money(projectedValue)]
+      ]
+    };
+  }
+
+  return {
+    ...base,
+    eyebrow: "Reporte de ventas",
+    title: "Ventas registradas",
+    headers: ["Folio", "Fecha", "Atendió", "Pago", "Total"],
+    rows: sales
+      .slice()
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .map((sale) => [
+        sale.id || sale.folio || "—",
+        new Date(sale.createdAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }),
+        sale.operator?.name || sale.userName || "—",
+        String(sale.paymentMethod || "efectivo").replace(/^./, (letter) => letter.toUpperCase()),
+        money(sale.total)
+      ]),
+    kpis: [
+      ["Total vendido", money(totals.total)],
+      ["Ventas", String(totals.count)],
+      ["Ticket promedio", money(totals.count > 0 ? totals.total / totals.count : 0)],
+      ["Margen", `${margin.toFixed(2)}%`]
+    ]
+  };
+}
+
+function renderReports() {
+  if (!$("reportTableBody")) return;
+  const report = getGeneratedReport();
+  state.generatedReport = report;
+
+  $("reportPreviewEyebrow").textContent = report.eyebrow;
+  $("reportPreviewTitle").textContent = report.title;
+  $("reportPeriodCaption").textContent = report.caption;
+  const kpiIds = ["Primary", "Secondary", "Third", "Fourth"];
+  report.kpis.forEach(([label, value], index) => {
+    const id = kpiIds[index];
+    $("reportKpi" + id + "Label").textContent = label;
+    $("reportKpi" + id).textContent = value;
+  });
+
+  $("reportTableHead").innerHTML = `<tr>${report.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr>`;
+  $("reportTableBody").innerHTML = report.rows.length
+    ? report.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")
+    : `<tr><td class="report-empty" colspan="${report.headers.length}">No hay información para este periodo.</td></tr>`;
+}
+
+async function loadReports() {
+  if (!$("reportTableBody")) return;
+  try {
+    if (state.products.length === 0) state.products = await fetchJson("/api/products");
+    state.sales = await fetchJson("/api/sales");
+    renderReports();
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "No se pudo generar el reporte.");
+  }
+}
+
+function exportGeneratedReport() {
+  const report = state.generatedReport || getGeneratedReport();
+  const quote = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const csv = [report.headers, ...report.rows].map((row) => row.map(quote).join(",")).join("\r\n");
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `el-muelle-${report.type}-${report.dateString}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
+  showToast("Reporte exportado en CSV.");
+}
+
+function printGeneratedReport() {
+  const report = state.generatedReport || getGeneratedReport();
+  const rows = report.rows.slice(0, 60).map((row) => {
+    return `<div class="receipt-row"><span>${escapeHtml(row.slice(0, -1).join(" · "))}</span><strong>${escapeHtml(row.at(-1) || "")}</strong></div>`;
+  }).join("");
+  $("printArea").innerHTML = `
+    <div class="receipt report-printout">
+      <h1>EL MUELLE</h1>
+      <h2>${escapeHtml(report.title)}</h2>
+      <p>${escapeHtml(report.caption)}</p>
+      <div class="line"></div>
+      ${report.kpis.map(([label, value]) => `<div class="receipt-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}
+      <div class="line"></div>
+      ${rows || '<p>Sin información para este periodo.</p>'}
+    </div>
+  `;
+  window.print();
+}
+
 
 function applyScaleSettings() {
   scaleState.baudRate = Number($("scaleBaudRateInput").value || 9600);
   scaleState.unit = $("scaleUnitInput").value || "kg";
   scaleState.command = ($("scaleCommandInput").value || "P").trim() || "P";
   scaleState.pollMs = Number($("scalePollMsInput").value || 800);
-  localStorage.setItem("scaleBaudRate", String(scaleState.baudRate));
-  localStorage.setItem("scaleUnit", scaleState.unit);
-  localStorage.setItem("scaleCommand", scaleState.command);
-  localStorage.setItem("scalePollMs", String(scaleState.pollMs));
+  saveLocalPreference("scaleBaudRate", String(scaleState.baudRate));
+  saveLocalPreference("scaleUnit", scaleState.unit);
+  saveLocalPreference("scaleCommand", scaleState.command);
+  saveLocalPreference("scalePollMs", String(scaleState.pollMs));
 
   if (scaleState.connected) {
     startScalePolling();
@@ -4550,6 +5264,7 @@ function handleScaleChunk(chunk) {
   const parsed = parseScaleWeight(scaleState.buffer);
 
   if (parsed !== null) {
+    scaleState.error = false;
     scaleState.weightKg = parsed;
 
     if (state.selectedProduct && state.selectedProduct.unit === "kg") {
@@ -4579,6 +5294,8 @@ async function readScaleLoop() {
       if (scaleState.connected) {
         console.error(error);
         showToast("Se perdió lectura de báscula.");
+        scaleState.error = true;
+        updateScaleUi();
       }
     } finally {
       scaleState.reader.releaseLock();
@@ -4616,6 +5333,8 @@ async function requestScaleWeight() {
   } catch (error) {
     console.error(error);
     showToast("No se pudo pedir peso a la báscula.");
+    scaleState.error = true;
+    updateScaleUi();
   }
 }
 
@@ -4660,6 +5379,7 @@ async function connectScale() {
 
     scaleState.port = port;
     scaleState.connected = true;
+    scaleState.error = false;
     scaleState.raw = "";
     scaleState.buffer = "";
     updateScaleUi();
@@ -4669,11 +5389,13 @@ async function connectScale() {
   } catch (error) {
     console.error(error);
     showToast("No se pudo conectar la báscula.");
+    scaleState.error = error.name !== "NotFoundError";
     updateScaleUi();
   }
 }
 
 async function disconnectScale() {
+  scaleState.error = false;
   try {
     stopScalePolling();
 
@@ -4686,6 +5408,7 @@ async function disconnectScale() {
     }
   } catch (error) {
     console.error(error);
+    scaleState.error = true;
   } finally {
     scaleState.connected = false;
     scaleState.port = null;
@@ -4701,7 +5424,9 @@ async function disconnectScale() {
 
 function updateScaleUi() {
   const weightText = `${Number(scaleState.weightKg || 0).toFixed(3)} kg`;
-  const statusText = !scaleState.supported
+  const statusText = scaleState.error
+    ? "Error de báscula. Revisa la conexión."
+    : !scaleState.supported
     ? "Navegador sin Web Serial."
     : scaleState.connected
       ? scaleState.stable
@@ -4709,7 +5434,9 @@ function updateScaleUi() {
         : `RHINO BAR-9 conectada · solicitando con ${scaleState.command}`
       : "RHINO BAR-9 · 9600 8N1 · comando P.";
 
-  $("scaleStatusPill").textContent = scaleState.connected
+  $("scaleStatusPill").textContent = scaleState.error
+    ? "Error de báscula"
+    : scaleState.connected
     ? "Conectada"
     : scaleState.supported
       ? "Sin conexión"
@@ -4730,11 +5457,14 @@ function updateScaleUi() {
   });
 
   document.body.classList.toggle("scale-connected", scaleState.connected);
+  document.body.classList.toggle("scale-error", scaleState.error);
   document.body.classList.toggle("scale-unsupported", !scaleState.supported);
 
   const sidebarScaleCard = document.querySelector(".scale-card");
   if (sidebarScaleCard) {
-    const compactScaleStatus = !scaleState.supported
+    const compactScaleStatus = scaleState.error
+      ? "Error de báscula"
+      : !scaleState.supported
       ? "Báscula no compatible"
       : scaleState.connected
         ? "Báscula conectada"
@@ -4748,6 +5478,7 @@ function updateScaleUi() {
 }
 
 function bindEvents() {
+  bindModalAccessibility();
   on($("sidebarToggleBtn"), "click", toggleSidebar);
   on($("mobileSidebarToggleBtn"), "click", toggleSidebar);
   on($("ticketToggleBtn"), "click", () => toggleTicketPanel());
@@ -4760,6 +5491,15 @@ function bindEvents() {
   on($("accessLoginBtn"), "click", confirmAccessLogin);
   on($("accessPinInput"), "keydown", (event) => {
     if (event.key === "Enter") confirmAccessLogin();
+  });
+  on($("setupOwnerSubmitBtn"), "click", completeInitialOwnerSetup);
+  ["setupOwnerNameInput", "setupOwnerPinInput", "setupOwnerPinConfirmInput"].forEach((id) => {
+    on($(id), "keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        completeInitialOwnerSetup();
+      }
+    });
   });
   on($("authConfirmBtn"), "click", confirmAdminAccess);
   on($("authEmployeeBtn"), "click", () => {
@@ -4880,6 +5620,9 @@ function bindEvents() {
   $$(`[data-settings-mode-btn]`).forEach((button) => {
     button.addEventListener("click", () => setSettingsMode(button.dataset.settingsModeBtn));
   });
+  $$(`[data-reports-mode-btn]`).forEach((button) => {
+    button.addEventListener("click", () => setReportsMode(button.dataset.reportsModeBtn));
+  });
 
   on($("salesSearchInput"), "input", renderSalesAdmin);
   on($("salesStatusFilter"), "change", renderSalesAdmin);
@@ -4888,6 +5631,10 @@ function bindEvents() {
   on($("dashboardPeriodFilter"), "change", renderDashboard);
   on($("dashboardDateInput"), "change", renderDashboard);
   on($("dashboardEndDateInput"), "change", renderDashboard);
+  on($("dashboardChartPeriodFilter"), "change", renderDashboard);
+  on($("dashboardChartDateInput"), "change", renderDashboard);
+  on($("dashboardPaymentPeriodFilter"), "change", renderDashboard);
+  on($("dashboardPaymentDateInput"), "change", renderDashboard);
   on($("refreshDashboardBtn"), "click", loadDashboard);
   on($("recentSalesPeriodFilter"), "change", loadRecentSales);
   on($("recentSalesDateInput"), "change", loadRecentSales);
@@ -4898,6 +5645,13 @@ function bindEvents() {
   on($("cutDateInput"), "change", renderCashCut);
   on($("refreshCutBtn"), "click", loadCashCut);
   on($("printCutBtn"), "click", printCashCut);
+  on($("reportTypeFilter"), "change", renderReports);
+  on($("reportPeriodFilter"), "change", renderReports);
+  on($("reportDateInput"), "change", renderReports);
+  on($("reportEndDateInput"), "change", renderReports);
+  on($("generateReportBtn"), "click", loadReports);
+  on($("exportReportBtn"), "click", exportGeneratedReport);
+  on($("printReportBtn"), "click", printGeneratedReport);
   on($("openCashShiftBtn"), "click", openCashShift);
   on($("addCashMovementBtn"), "click", addCashMovement);
   on($("closeCashShiftBtn"), "click", closeCashShift);
@@ -4929,6 +5683,7 @@ function bindEvents() {
   });
   on($("saveUserSettingsBtn"), "click", saveUserSettings);
   on($("resetUserSettingsBtn"), "click", resetUserSettings);
+  on($("refreshAuditBtn"), "click", loadAuditEvents);
 
   on($("connectScaleBtn"), "click", connectScale);
   on($("requestScaleBtn"), "click", requestScaleWeight);
@@ -4950,6 +5705,13 @@ function initSettings() {
 }
 
 async function init() {
+  applyPosMotionPreference();
+  document.addEventListener("visibilitychange", applyPosMotionPreference);
+  $("posMotionToggle")?.addEventListener("click", () => {
+    posReducedMotion = !posReducedMotion;
+    saveLocalPreference(POS_MOTION_KEY, String(posReducedMotion));
+    applyPosMotionPreference();
+  });
   bindEvents();
   initSettings();
   await loadSettings();
@@ -4957,7 +5719,7 @@ async function init() {
   if (!sessionRestored) {
     logoutToAccess();
   }
-  ["salesDateInput", "dashboardDateInput", "dashboardEndDateInput", "recentSalesDateInput", "cutDateInput", "inventoryEntryDateInput"].forEach((id) => {
+  ["salesDateInput", "dashboardDateInput", "dashboardEndDateInput", "dashboardChartDateInput", "dashboardPaymentDateInput", "recentSalesDateInput", "cutDateInput", "reportDateInput", "reportEndDateInput", "inventoryEntryDateInput"].forEach((id) => {
     const input = $(id);
     if (input && !input.value) input.value = getLocalDateString();
   });
@@ -4973,9 +5735,12 @@ async function init() {
   setInventoryMode();
   setProductMode();
   setSettingsMode();
+  setReportsMode();
   updateShellState();
   updateScaleUi();
   updateCashGateUi();
+  if (sessionRestored) setAccessLocked(false);
+  if (!state.setupRequired) window.setTimeout(maximizeApplicationWindow, 0);
 }
 
 init();

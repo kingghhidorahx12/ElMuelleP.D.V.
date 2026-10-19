@@ -5,7 +5,11 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node src/server.js",
+    "dev": "node scripts/dev-server.js",
+    "dev:open": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Start-Development.ps1",
+    "dev:stop": "node scripts/dev-server.js --stop",
+    "build:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable.ps1",
+    "build:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "test": "node scripts/security-smoke-test.js",
     "test:security": "node scripts/security-smoke-test.js"
   },
@@ -15,7 +19,11 @@
     "punto-de-venta"
   ],
   "author": "El Muelle Marisquería",
-  "license": "ISC",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "type": "commonjs",
   "dependencies": {
     "cors": "^2.8.6",

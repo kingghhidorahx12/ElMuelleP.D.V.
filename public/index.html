@@ -4,29 +4,62 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>El Muelle POS</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2310213d'/%3E%3Ccircle cx='32' cy='32' r='22' fill='%23fff' stroke='%23c99a3e' stroke-width='4'/%3E%3Ctext x='32' y='38' text-anchor='middle' font-family='Arial,sans-serif' font-size='18' font-weight='900' fill='%2310213d'%3EEM%3C/text%3E%3C/svg%3E" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="icon" type="image/png" href="./assets/brand/el-muelle-app-icon.png" />
+  <link rel="shortcut icon" href="./assets/brand/el-muelle-app-icon.ico" />
+  <meta name="theme-color" content="#10213d" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body class="auth-locked">
-  <section id="accessScreen" class="access-screen" aria-label="Acceso al punto de venta">
+  <section id="setupScreen" class="access-screen setup-screen hidden" aria-label="Configuración inicial del punto de venta">
+    <div class="access-brand-panel">
+      <img src="./assets/brand/el-muelle-logo.png" alt="El Muelle Pescadería" />
+      <div>
+        <span>Primer arranque</span>
+        <h1>Tu punto de venta, listo para empezar.</h1>
+        <p>Configura la cuenta del dueño para proteger la operación desde esta computadora.</p>
+      </div>
+      <div class="access-status-grid setup-status-grid">
+        <article>
+          <span>Instalación</span>
+          <strong>Equipo local</strong>
+        </article>
+        <article>
+          <span>Acceso inicial</span>
+          <strong>Solo dueño</strong>
+        </article>
+      </div>
+    </div>
+    <div class="access-login-panel setup-login-panel">
+      <div class="access-card-head">
+        <span class="eyebrow">Configuración inicial</span>
+        <h2>Crea tu acceso de administrador</h2>
+        <p>Después podrás agregar encargados desde Configuración, cuando los necesites.</p>
+      </div>
+      <label class="access-pin-label">
+        <span>Nombre del dueño</span>
+        <input id="setupOwnerNameInput" type="text" maxlength="60" autocomplete="name" placeholder="Ej. Juan Pérez" />
+      </label>
+      <label class="access-pin-label">
+        <span>PIN de administrador</span>
+        <input id="setupOwnerPinInput" type="password" inputmode="numeric" minlength="6" maxlength="12" autocomplete="new-password" placeholder="6 a 12 dígitos" />
+      </label>
+      <label class="access-pin-label">
+        <span>Confirma el PIN</span>
+        <input id="setupOwnerPinConfirmInput" type="password" inputmode="numeric" minlength="6" maxlength="12" autocomplete="new-password" placeholder="Repite tu PIN" />
+      </label>
+      <p class="setup-security-note">Este PIN protege ventas, cortes, inventario y configuración. No lo compartas.</p>
+      <div class="access-actions">
+        <button id="setupOwnerSubmitBtn" class="solid-btn" type="button">Crear mi acceso</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="accessScreen" class="access-screen hidden" aria-label="Acceso al punto de venta">
     <div class="access-brand-panel">
       <img src="./assets/brand/el-muelle-logo.png" alt="El Muelle Pescaderia" />
       <div>
         <h1>Punto de Venta</h1>
         <p>Inicia sesion para abrir tu espacio de trabajo.</p>
-      </div>
-      <div class="access-status-grid">
-        <article>
-          <span>Servidor</span>
-          <strong id="accessServerStatus">Conectando...</strong>
-        </article>
-        <article>
-          <span>Bascula</span>
-          <strong id="accessScaleStatus">Revisando...</strong>
-        </article>
       </div>
     </div>
     <div class="access-login-panel">
@@ -37,7 +70,7 @@
       <div id="accessUserList" class="access-user-list" role="group" aria-label="Tipo de acceso"></div>
       <label class="access-pin-label">
         <span id="accessPinLabelText">PIN personal</span>
-        <input id="accessPinInput" type="password" inputmode="numeric" maxlength="12" autocomplete="current-password" placeholder="0000" />
+        <input id="accessPinInput" type="password" inputmode="numeric" minlength="6" maxlength="12" autocomplete="current-password" placeholder="6 a 12 dígitos" />
       </label>
       <div class="access-actions">
         <button id="accessLoginBtn" class="solid-btn" type="button">Entrar</button>
@@ -46,8 +79,9 @@
   </section>
 
   <aside class="sidebar">
+    <div class="pos-tide" aria-hidden="true"></div>
     <button id="sidebarToggleBtn" class="sidebar-toggle" type="button" title="Ocultar menú" aria-label="Ocultar menú">
-      <span id="sidebarToggleIcon">â€¹</span>
+      <span id="sidebarToggleIcon" aria-hidden="true">&lt;</span><img id="sidebarToggleAsset" src="./assets/pos/cerrar.svg" alt="" aria-hidden="true" />
     </button>
     <div class="brand">
       <div class="brand-mark"><img src="./assets/brand/el-muelle-logo.png" alt="El Muelle" /></div>
@@ -60,19 +94,19 @@
 
     <nav class="nav" aria-label="Módulos">
       <span class="nav-group-label">Operación</span>
-      <button class="nav-item active" type="button" data-view="pos" data-short="PV" data-label="Punto de Venta"><span>Punto de Venta</span></button>
-      <button class="nav-item" type="button" data-view="billing" data-short="F" data-label="Facturación"><span>Facturación</span></button>
-      <button class="nav-item" type="button" data-view="sales" data-short="V" data-label="Ventas"><span>Ventas</span></button>
+      <button class="nav-item active" type="button" data-view="pos" data-short="PV" data-label="Punto de Venta"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h2l2 11h12l2-8H6M9 20h.01M18 20h.01"/></svg><span>Punto de Venta</span></button>
+      <button class="nav-item" type="button" data-view="sales" data-short="V" data-label="Ventas"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3zM9 7h6M9 11h6M9 15h3"/></svg><span>Ventas</span></button>
+      <button class="nav-item" type="button" data-view="billing" data-short="F" data-label="Solicitud de factura"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18H6zM9 7h6M9 11h6M9 15h4"/></svg><span>Solicitud de factura</span></button>
       <span class="nav-group-label">Administración</span>
-      <button class="nav-item" type="button" data-view="dashboard" data-short="PA" data-label="Panel Administrativo"><span>Panel Administrativo</span></button>
-      <button class="nav-item" type="button" data-view="products" data-short="P" data-label="Productos"><span>Productos</span></button>
-      <button class="nav-item" type="button" data-view="inventory" data-short="I" data-label="Inventario"><span>Inventario</span></button>
-      <button class="nav-item" type="button" data-view="reports" data-short="$" data-label="Caja"><span>Caja</span></button>
+      <button class="nav-item" type="button" data-view="dashboard" data-short="PA" data-label="Panel Administrativo"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h8v8H3zM15 3h6v5h-6zM3 15h8v6H3zM15 12h6v9h-6z"/></svg><span>Panel Administrativo</span></button>
+      <button class="nav-item" type="button" data-view="products" data-short="P" data-label="Productos"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5zM3 8v9l9 5 9-5V8M12 13v9"/></svg><span>Productos</span></button>
+      <button class="nav-item" type="button" data-view="inventory" data-short="I" data-label="Inventario"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg><span>Inventario</span></button>
+      <button class="nav-item" type="button" data-view="reports" data-short="R" data-label="Reportes"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V11M10 21V4M16 21V8M2 21h20"/></svg><span>Reportes</span></button>
       <span class="nav-group-label">Sistema</span>
-      <button class="nav-item" type="button" data-view="settings" data-short="C" data-label="Configuración"><span>Configuración</span></button>
+      <button class="nav-item" type="button" data-view="settings" data-short="C" data-label="Configuración"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2-1 3 3 2 2-1 3 2 3-2 3 1 2-3-1-3 2-2-2-3-3-1-1-3zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/></svg><span>Configuración</span></button>
     </nav>
 
-    <section class="scale-card" aria-live="polite">
+    <section class="scale-card" aria-live="polite"><svg class="pos-scale-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16l2 9H2l2-9zM12 15v6M6 21h12M9 3h6"/></svg>
       <div class="scale-card-top">
         <span>Peso en vivo</span>
         <strong id="scaleStatusPill">Sin conexión</strong>
@@ -82,14 +116,17 @@
       <small id="scaleRawText">Sin lectura</small>
       <div class="scale-actions">
         <button id="connectScaleBtn" class="solid-btn" type="button">Conectar</button>
+        <button id="posMotionToggle" type="button" aria-pressed="false" title="Preferencia local de movimiento del POS">Reducir movimiento</button>
       </div>
     </section>
 
+    <div id="sidebarSessionSlot">
     <div class="session-box">
       <button id="sessionSwitchBtn" class="session-button" type="button">
-        <span id="sessionRoleLabel">Encargado</span>
+        <svg class="pos-user-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-3a8 8 0 0 1 16 0v3M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0"/></svg><span id="sessionRoleLabel">Encargado</span>
         <strong id="sessionUserName">Encargado</strong>
       </button>
+    </div>
     </div>
   </aside>
 
@@ -98,23 +135,28 @@
       <div class="topbar-left">
         <button id="mobileSidebarToggleBtn" class="icon-action mobile-menu-toggle" type="button" title="Mostrar menu" aria-label="Mostrar menu">&rsaquo;</button>
         <div>
+          <span class="pos-breadcrumb">EL MUELLE / OPERACIÓN</span>
           <h2 id="pageTitle">Punto de Venta</h2>
           <p id="pageSubtitle"></p>
         </div>
       </div>
+      <label class="pos-topbar-search"><svg class="pos-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 21-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg><input id="searchInput" type="search" aria-label="Buscar producto" placeholder="Buscar producto..." /></label>
       <div id="topbarContextSlot" class="topbar-context-slot" aria-label="Acciones de la pantalla actual"></div>
       <div class="topbar-meta">
+        <span class="pos-topbar-clock"><svg class="pos-clock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0"/></svg><time id="posClockText">--:--</time></span>
         <button id="cashStatusBtn" class="cash-status-btn" type="button">Caja cerrada</button>
         <strong id="ticketId">T-000000</strong>
-        <button id="ticketToggleBtn" class="topbar-ticket-btn" type="button" aria-expanded="false">Venta - $0.00</button>
+        <button id="ticketToggleBtn" class="topbar-ticket-btn" type="button" aria-label="Abrir venta actual, T-000000" aria-expanded="false" aria-controls="currentSalePanel"><span id="ticketToggleFolio" hidden>T-000000</span><span id="ticketToggleText" aria-hidden="true">T-000000</span></button>
+        <div id="topbarSessionSlot"></div>
       </div>
     </header>
 
-    <aside class="ticket-panel">
+    <div class="ticket-panel-viewport">
+    <aside id="currentSalePanel" class="ticket-panel" aria-label="Venta actual">
       <div class="ticket-drawer-head">
         <div>
-          <span class="eyebrow">Venta actual</span>
-          <h3 id="saleBarCount">Sin productos</h3>
+          <h3 class="pos-ticket-title">Venta actual</h3>
+          <span id="saleBarCount">Sin productos</span>
         </div>
         <div class="ticket-drawer-actions">
           <strong id="drawerTicketId">T-000000</strong>
@@ -162,7 +204,7 @@
       <button id="chargeBtn" class="charge-btn" type="button" disabled>Cobrar $0.00</button>
       <button id="clearTicketBtn" class="danger-soft-btn" type="button" disabled>Vaciar venta</button>
     </aside>
-
+    </div>
 
     <section class="workspace">
       <section id="posView" class="app-view active">
@@ -178,19 +220,16 @@
                 <button id="filterPiece" class="chip" type="button">Por pieza</button>
               </div>
 
-          <label class="search-box pos-search-box">
-                <span>Buscar</span>
-                <input id="searchInput" type="search" placeholder="Camarón, filete, pulpo..." />
-              </label>
+
 
               <div class="pager segmented-control pos-pager" role="group" aria-label="Navegación de productos">
                 <button id="prevPageBtn" class="quiet-btn" type="button">Anterior</button>
-                <span id="pageIndicator">Página 1</span>
+                <span id="posPageButtons" class="pos-page-buttons"></span><span id="pageIndicator" aria-live="polite">Página 1</span>
                 <button id="nextPageBtn" class="quiet-btn" type="button">Siguiente</button>
               </div>
             </div>
 
-            <div id="productGrid" class="product-grid"></div>
+            <div id="productGrid" class="product-grid" role="region" aria-label="Catálogo de productos" tabindex="0"></div>
           </section>
 
           <section class="weigh-panel">
@@ -285,6 +324,13 @@
             </article>
           </div>
 
+          <div class="kpi-grid dashboard-payment-kpis" aria-label="Resumen de formas de pago">
+            <article><span>Efectivo</span><strong id="dashboardCash">$0.00</strong></article>
+            <article><span>Tarjeta</span><strong id="dashboardCard">$0.00</strong></article>
+            <article><span>Transferencia</span><strong id="dashboardTransfer">$0.00</strong></article>
+            <article><span>Efectivo esperado</span><strong id="dashboardExpectedCash">$0.00</strong></article>
+          </div>
+
           <section class="dashboard-insights" aria-label="Indicadores visuales de ventas">
             <section class="inner-panel dashboard-chart-card">
               <div class="dashboard-chart-head">
@@ -292,7 +338,17 @@
                   <span class="eyebrow">Comportamiento</span>
                   <h4>Ventas del periodo</h4>
                 </div>
-                <span id="dashboardSalesChartCaption" class="dashboard-chart-caption">Ventas por hora</span>
+                <div class="dashboard-chart-actions">
+                  <select id="dashboardChartPeriodFilter" aria-label="Periodo de gráfica de ventas">
+                    <option value="day">Día</option>
+                    <option value="week">Semana</option>
+                    <option value="month">Mes</option>
+                    <option value="year">Año</option>
+                    <option value="all">Total</option>
+                  </select>
+                  <input id="dashboardChartDateInput" type="date" aria-label="Fecha de gráfica de ventas" />
+                  <span id="dashboardSalesChartCaption" class="dashboard-chart-caption">Ventas por hora</span>
+                </div>
               </div>
               <div id="dashboardSalesChart" class="dashboard-bar-chart" role="img" aria-live="polite"></div>
             </section>
@@ -302,6 +358,16 @@
                 <div>
                   <span class="eyebrow">Cobro</span>
                   <h4>Distribución de pagos</h4>
+                </div>
+                <div class="dashboard-chart-actions">
+                  <select id="dashboardPaymentPeriodFilter" aria-label="Periodo de gráfica de pagos">
+                    <option value="day">Día</option>
+                    <option value="week">Semana</option>
+                    <option value="month">Mes</option>
+                    <option value="year">Año</option>
+                    <option value="all">Total</option>
+                  </select>
+                  <input id="dashboardPaymentDateInput" type="date" aria-label="Fecha de gráfica de pagos" />
                 </div>
               </div>
               <div class="dashboard-payment-mix">
@@ -315,31 +381,26 @@
           </section>
 
           <div class="dashboard-grid">
-            <section class="inner-panel">
-              <h4>Más vendidos</h4>
-              <div id="dashboardTopProducts" class="top-products-list"></div>
-            </section>
-            <section class="inner-panel dashboard-best-days-card">
-              <h4>Días con más ventas</h4>
-              <div id="dashboardBestSalesDays" class="top-products-list"></div>
-            </section>
-            <section class="inner-panel">
-              <h4>Menos vendidos</h4>
-              <div id="dashboardSlowProducts" class="top-products-list"></div>
-            </section>
-            <section class="inner-panel">
-              <h4>Inventario bajo</h4>
-              <div id="dashboardInventoryAlerts" class="top-products-list"></div>
-            </section>
-            <section class="inner-panel">
-              <h4>Pagos</h4>
-              <div class="payment-summary">
-                <div><span>Efectivo</span><strong id="dashboardCash">$0.00</strong></div>
-                <div><span>Tarjeta</span><strong id="dashboardCard">$0.00</strong></div>
-                <div><span>Transferencia</span><strong id="dashboardTransfer">$0.00</strong></div>
-                <div><span>Efectivo esperado</span><strong id="dashboardExpectedCash">$0.00</strong></div>
-              </div>
-            </section>
+            <div class="dashboard-pair-row">
+              <section class="inner-panel">
+                <h4>Más vendidos</h4>
+                <div id="dashboardTopProducts" class="top-products-list"></div>
+              </section>
+              <section class="inner-panel">
+                <h4>Menos vendidos</h4>
+                <div id="dashboardSlowProducts" class="top-products-list"></div>
+              </section>
+            </div>
+            <div class="dashboard-pair-row">
+              <section class="inner-panel dashboard-best-days-card">
+                <h4>Días con más ventas</h4>
+                <div id="dashboardBestSalesDays" class="top-products-list"></div>
+              </section>
+              <section class="inner-panel">
+                <h4>Inventario bajo</h4>
+                <div id="dashboardInventoryAlerts" class="top-products-list"></div>
+              </section>
+            </div>
           </div>
         </section>
       </section>
@@ -349,7 +410,7 @@
           <section class="work-panel">
             <div class="panel-head premium-module-head premium-module-head--sales balanced-module-head">
               <div>
-                
+
                 <h3>Historial de ventas</h3>
               </div>
               <div class="toolbar">
@@ -379,8 +440,8 @@
       <section id="productsView" class="app-view">
         <div class="split-layout products-layout" data-products-mode="list">
           <div class="subview-tabs product-subview-tabs" role="tablist" aria-label="Secciones de productos">
-          <button class="active" type="button" data-products-mode-btn="list">Catálogo</button>
-          <button type="button" data-products-mode-btn="form">Agregar producto</button>
+          <button class="active" type="button" role="tab" aria-selected="true" data-products-mode-btn="list">Catálogo</button>
+          <button type="button" role="tab" aria-selected="false" data-products-mode-btn="form">Agregar producto</button>
         </div>
           <section class="work-panel product-form-panel">
             <form id="productForm" class="product-form">
@@ -462,7 +523,7 @@
           <section class="work-panel product-catalog-panel">
             <div class="panel-head premium-module-head premium-module-head--products balanced-module-head">
               <div>
-                
+
                 <h3>Catálogo</h3>
               </div>
               <div class="toolbar">
@@ -484,9 +545,9 @@
       <section id="inventoryView" class="app-view">
         <div class="inventory-management-layout" data-inventory-mode="stock">
           <div class="subview-tabs inventory-subview-tabs" role="tablist" aria-label="Secciones de inventario">
-            <button class="active" type="button" data-inventory-mode-btn="stock">Existencias</button>
-            <button type="button" data-inventory-mode-btn="entry">Entrada de mercancía</button>
-            <button type="button" data-inventory-mode-btn="history">Historial</button>
+            <button class="active" type="button" role="tab" aria-selected="true" data-inventory-mode-btn="stock">Existencias</button>
+            <button type="button" role="tab" aria-selected="false" data-inventory-mode-btn="entry">Entrada de mercancía</button>
+            <button type="button" role="tab" aria-selected="false" data-inventory-mode-btn="history">Historial</button>
           </div>
           <section class="work-panel inventory-entry-panel">
             <form id="inventoryEntryForm" class="inventory-entry-form">
@@ -495,8 +556,8 @@
               </div>
 
               <div class="entry-mode-toggle wide" role="tablist" aria-label="Tipo de entrada de mercancía">
-                <button class="active" type="button" data-entry-product-mode="existing">Producto existente</button>
-                <button type="button" data-entry-product-mode="new">Producto nuevo</button>
+                <button class="active" type="button" role="tab" aria-selected="true" data-entry-product-mode="existing">Producto existente</button>
+                <button type="button" role="tab" aria-selected="false" data-entry-product-mode="new">Producto nuevo</button>
               </div>
 
               <label class="wide entry-existing-field">
@@ -616,15 +677,15 @@
               <div class="inventory-sales-insights" aria-label="Rotación de productos">
                 <section class="inventory-sales-card top">
                   <div class="inventory-sales-head">
-                    <span>Rotación 30 días</span>
-                    <strong>Más vendidos</strong>
+                    <span>Producto destacado</span>
+                    <strong>Campeón</strong>
                   </div>
                   <div id="inventoryTopProducts" class="inventory-sales-list"></div>
                 </section>
                 <section class="inventory-sales-card slow">
                   <div class="inventory-sales-head">
-                    <span>Rotación 30 días</span>
-                    <strong>Menos vendidos</strong>
+                    <span>Producto a vigilar</span>
+                    <strong>Menor rotación</strong>
                   </div>
                   <div id="inventorySlowProducts" class="inventory-sales-list"></div>
                 </section>
@@ -645,7 +706,7 @@
           <section class="work-panel inventory-history-panel">
             <div class="panel-head premium-module-head premium-module-head--inventory balanced-module-head">
               <div>
-                
+
                 <h3>Historial de entradas</h3>
               </div>
               <input id="inventoryEntrySearchInput" type="search" placeholder="Buscar producto, nota o folio..." />
@@ -662,7 +723,8 @@
           <section class="work-panel">
             <form id="invoiceForm" class="invoice-form">
               <div class="form-title wide premium-module-head premium-module-head--billing balanced-module-head">
-                <h3>Datos fiscales</h3>
+                <h3>Solicitud de factura</h3>
+                <p>Registra los datos para facturación; este módulo aún no timbra CFDI.</p>
               </div>
               <label>
                 Folio
@@ -697,7 +759,7 @@
                 Correo
                 <input id="invoiceEmail" type="email" placeholder="correo@cliente.com" />
               </label>
-              <button class="solid-btn wide" type="submit">Registrar solicitud</button>
+              <button class="solid-btn wide" type="submit">Guardar solicitud</button>
             </form>
           </section>
           <section class="work-panel">
@@ -723,6 +785,64 @@
       </section>
 
       <section id="reportsView" class="app-view">
+        <div class="subview-tabs reports-subview-tabs" role="tablist" aria-label="Secciones de reportes">
+          <button class="active" type="button" role="tab" aria-selected="true" data-reports-mode-btn="reports">Generar reportes</button>
+          <button type="button" role="tab" aria-selected="false" data-reports-mode-btn="cash">Caja y cortes</button>
+        </div>
+
+        <section class="work-panel full-panel report-generator-panel">
+          <div class="panel-head premium-module-head premium-module-head--reports">
+            <div>
+              <span class="eyebrow">Reportes</span>
+              <h3>Genera un resumen de tu negocio</h3>
+              <p>Consulta la información y expórtala cuando la necesites.</p>
+            </div>
+            <div class="toolbar report-toolbar">
+              <select id="reportTypeFilter" aria-label="Tipo de reporte">
+                <option value="sales">Ventas</option>
+                <option value="products">Productos vendidos</option>
+                <option value="inventory">Inventario</option>
+              </select>
+              <select id="reportPeriodFilter" aria-label="Periodo del reporte">
+                <option value="day">Día</option>
+                <option value="week">Semana</option>
+                <option value="month">Mes</option>
+                <option value="year">Año</option>
+                <option value="all">Total</option>
+                <option value="range">Rango</option>
+              </select>
+              <input id="reportDateInput" type="date" aria-label="Fecha inicial del reporte" />
+              <input id="reportEndDateInput" type="date" aria-label="Fecha final del reporte" class="hidden" />
+              <button id="generateReportBtn" class="quiet-btn" type="button">Actualizar</button>
+              <button id="exportReportBtn" class="quiet-btn" type="button">Exportar CSV</button>
+              <button id="printReportBtn" class="solid-btn" type="button">Imprimir</button>
+            </div>
+          </div>
+
+          <div class="kpi-grid report-kpis" aria-label="Indicadores del reporte">
+            <article><span id="reportKpiPrimaryLabel">Total vendido</span><strong id="reportKpiPrimary">$0.00</strong></article>
+            <article><span id="reportKpiSecondaryLabel">Ventas</span><strong id="reportKpiSecondary">0</strong></article>
+            <article><span id="reportKpiThirdLabel">Ticket promedio</span><strong id="reportKpiThird">$0.00</strong></article>
+            <article><span id="reportKpiFourthLabel">Margen</span><strong id="reportKpiFourth">0.00%</strong></article>
+          </div>
+
+          <section class="inner-panel report-preview-panel">
+            <div class="report-preview-head">
+              <div>
+                <span class="eyebrow" id="reportPreviewEyebrow">Reporte de ventas</span>
+                <h4 id="reportPreviewTitle">Ventas del día</h4>
+              </div>
+              <span id="reportPeriodCaption" class="report-period-caption"></span>
+            </div>
+            <div class="report-table-wrap">
+              <table class="report-table">
+                <thead id="reportTableHead"></thead>
+                <tbody id="reportTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
         <section class="work-panel full-panel cash-control-page">
           <section class="inner-panel cash-current-panel">
             <div class="cash-current-head premium-module-head premium-module-head--cash">
@@ -924,8 +1044,9 @@
       <section id="settingsView" class="app-view">
         <div class="split-layout settings-layout" data-settings-mode="scale">
           <div class="subview-tabs settings-subview-tabs" role="tablist" aria-label="Secciones de configuracion">
-            <button class="active" type="button" data-settings-mode-btn="scale">Bascula</button>
-            <button type="button" data-settings-mode-btn="users">Usuarios y PIN</button>
+            <button class="active" type="button" role="tab" aria-selected="true" data-settings-mode-btn="scale">Bascula</button>
+            <button type="button" role="tab" aria-selected="false" data-settings-mode-btn="users">Usuarios y PIN</button>
+            <button type="button" role="tab" aria-selected="false" data-settings-mode-btn="audit">Auditoría</button>
           </div>
           <section class="work-panel">
             <div class="form-title premium-module-head premium-module-head--settings">
@@ -1012,15 +1133,15 @@
                 <div class="users-pin-grid">
                   <label>
                     PIN actual (para cambiarlo)
-                    <input id="currentAdminPinInput" type="password" inputmode="numeric" maxlength="12" placeholder="PIN actual" autocomplete="current-password" />
+                    <input id="currentAdminPinInput" type="password" inputmode="numeric" minlength="6" maxlength="12" placeholder="PIN actual" autocomplete="current-password" />
                   </label>
                   <label>
                     PIN nuevo
-                    <input id="newAdminPinInput" type="password" inputmode="numeric" maxlength="12" placeholder="Dejar vacío para conservar" autocomplete="new-password" />
+                    <input id="newAdminPinInput" type="password" inputmode="numeric" minlength="6" maxlength="12" placeholder="6 a 12 dígitos" autocomplete="new-password" />
                   </label>
                   <label>
                     Confirmar PIN nuevo
-                    <input id="confirmAdminPinInput" type="password" inputmode="numeric" maxlength="12" placeholder="Repite el PIN nuevo" autocomplete="new-password" />
+                    <input id="confirmAdminPinInput" type="password" inputmode="numeric" minlength="6" maxlength="12" placeholder="Repite el PIN nuevo" autocomplete="new-password" />
                   </label>
                 </div>
               </section>
@@ -1036,10 +1157,10 @@
 
                 <div class="employee-add-row">
                   <input id="newEmployeeNameInput" type="text" maxlength="60" placeholder="Nombre del empleado" autocomplete="off" />
-                  <input id="newEmployeePinInput" type="password" inputmode="numeric" maxlength="12" placeholder="PIN inicial" autocomplete="new-password" />
+                  <input id="newEmployeePinInput" type="password" inputmode="numeric" minlength="6" maxlength="12" placeholder="PIN de 6 a 12 dígitos" autocomplete="new-password" />
                   <button id="addEmployeeBtn" class="quiet-btn" type="button">Agregar</button>
                 </div>
-                <p class="users-helper-text">Cada encargado entra con su propio PIN. El PIN inicial es 0000 hasta que lo cambies.</p>
+                <p class="users-helper-text">Cada encargado entra con su propio PIN de 6 a 12 dígitos. Nunca uses PINs predecibles.</p>
 
                 <div id="employeesList" class="users-list">
                   <p class="empty-list">No hay empleados cargados.</p>
@@ -1052,22 +1173,35 @@
               <button id="resetUserSettingsBtn" class="quiet-btn" type="button">Descartar cambios</button>
             </div>
           </section>
+          <section class="work-panel audit-settings-panel">
+            <div class="panel-head premium-module-head premium-module-head--settings">
+              <div>
+                <span class="eyebrow">Trazabilidad</span>
+                <h3>Bitácora de acciones</h3>
+                <p>Registra ventas, cancelaciones, inventario, usuarios y movimientos de caja.</p>
+              </div>
+              <button id="refreshAuditBtn" class="quiet-btn" type="button">Actualizar</button>
+            </div>
+            <div id="auditEventsList" class="audit-events-list" aria-live="polite">
+              <p class="empty-state">Carga la bitácora para consultar cambios.</p>
+            </div>
+          </section>
         </div>
       </section>
     </section>
   </main>
 
-  <div id="manualModal" class="modal hidden">
+  <div id="manualModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="manualModalTitle">
     <div class="modal-card">
       <div class="modal-head">
         <div>
-          <h3>Captura manual</h3>
+          <h3 id="manualModalTitle">Captura manual</h3>
           </div>
         <button id="closeManualModalBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
       </div>
       <label>
         PIN administrador
-        <input id="adminPinInput" type="password" placeholder="PIN" />
+        <input id="adminPinInput" type="password" inputmode="numeric" minlength="6" maxlength="12" placeholder="PIN" />
       </label>
       <label>
         <span id="manualQuantityLabelText">Peso manual (kg)</span>
@@ -1081,23 +1215,23 @@
     </div>
   </div>
 
-  <div id="invoiceDecisionModal" class="modal hidden">
+  <div id="invoiceDecisionModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="invoiceDecisionTitle">
     <div class="modal-card">
       <div class="modal-head">
         <div>
-          <h3>Factura</h3>
-          <p>Confirma antes de cobrar.</p>
+          <h3 id="invoiceDecisionTitle">Solicitud de factura</h3>
+          <p>Confirma antes de cobrar; no se timbra CFDI desde esta aplicación.</p>
         </div>
         <button id="closeInvoiceDecisionBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
       </div>
       <div class="decision-grid">
-        <button id="invoiceYesBtn" class="solid-btn" type="button">Sí requiere</button>
+        <button id="invoiceYesBtn" class="solid-btn" type="button">Sí, solicitar</button>
         <button id="invoiceNoBtn" class="quiet-btn" type="button">No requiere</button>
       </div>
     </div>
   </div>
 
-  <div id="productConfirmModal" class="modal hidden">
+  <div id="productConfirmModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="productConfirmTitle">
     <div class="modal-card">
       <div class="modal-head">
         <div>
@@ -1113,18 +1247,18 @@
       </div>
     </div>
   </div>
-  <div id="authModal" class="modal hidden">
+  <div id="authModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
     <div class="modal-card auth-card">
       <div class="modal-head">
         <div>
-          <h3>Acceso administrativo</h3>
+          <h3 id="authModalTitle">Acceso administrativo</h3>
           <p id="authMessage">Ingresa el PIN para entrar.</p>
         </div>
         <button id="authCloseBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
       </div>
       <label>
         PIN
-        <input id="authPinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="1234" />
+        <input id="authPinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="6 a 12 dígitos" />
       </label>
       <div class="modal-actions">
         <button id="authConfirmBtn" class="solid-btn" type="button">Entrar como admin</button>

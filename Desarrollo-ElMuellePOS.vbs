@@ -1,0 +1,8 @@
+Option Explicit
+Dim shell, files, root, command, result
+Set shell = CreateObject("WScript.Shell")
+Set files = CreateObject("Scripting.FileSystemObject")
+root = files.GetParentFolderName(WScript.ScriptFullName)
+command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & root & "\scripts\Start-Development.ps1" & Chr(34)
+result = shell.Run(command, 0, True)
+If result <> 0 Then MsgBox "No se pudo iniciar desarrollo. Revisa .dev\server.err.log y el puerto 3001.", 48, "El Muelle POS - Desarrollo"

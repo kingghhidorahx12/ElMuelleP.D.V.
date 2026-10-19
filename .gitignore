@@ -19,5 +19,14 @@ ui-checks/
 public/assets/products/*.png
 
 data/cash-sessions.json
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+data/backups/
+data/.secrets.json
+dist/
 *.zip
 *.log
+
+# Entorno de desarrollo aislado: SQLite sintética, secretos, PID y logs.
+.dev/
