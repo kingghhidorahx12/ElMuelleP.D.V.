@@ -23,6 +23,7 @@ class PosDatabase {
     this.transactionDepth = 0;
     this.transactionDirty = false;
     this.suppressBackups = true;
+    this.backupStatus = { failed:false, lastAttempt:null, lastSuccess:null };
 
     fs.mkdirSync(dataDir, { recursive: true });
     this.db = new DatabaseSync(this.databasePath, {
@@ -89,6 +90,17 @@ class PosDatabase {
     this.transaction(() => this.replaceCollection(collection, data));
   }
 
+  readDocument(collection, id, fallback = null) {
+    const row = this.db.prepare("SELECT payload FROM documents WHERE collection = ? AND document_id = ?").get(collection, id);
+    return row ? JSON.parse(row.payload) : fallback;
+  }
+
+  saveDocument(collection, id, value) {
+    this.db.prepare("INSERT INTO documents(collection, document_id, payload, updated_at) VALUES(?,?,?,?) ON CONFLICT(collection,document_id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at")
+      .run(collection, id, JSON.stringify(value), new Date().toISOString());
+    this.transactionDirty = true;
+  }
+
   replaceCollection(collection, data) {
     const now = new Date().toISOString();
     const entries = collection === "settings"
@@ -121,21 +133,26 @@ class PosDatabase {
 
     try {
       const result = work();
-      this.transactionDepth -= 1;
-
-      if (isOuterTransaction) {
-        this.db.exec("COMMIT");
-        if (this.transactionDirty && !this.suppressBackups) this.createDailyBackup();
-      }
-
+      if (isOuterTransaction) this.db.exec("COMMIT");
       return result;
     } catch (error) {
-      this.transactionDepth -= 1;
       if (isOuterTransaction) {
-        this.db.exec("ROLLBACK");
+        // Conservar el error original incluso si SQLite ya abortó la transacción.
+        try { this.db.exec("ROLLBACK"); } catch { /* No ocultar el fallo original. */ }
         this.transactionDirty = false;
       }
       throw error;
+    } finally {
+      this.transactionDepth -= 1;
+      // El respaldo ocurre después del commit. Su fallo no convierte una operación
+      // ya confirmada en un error que el cliente podría reintentar y duplicar.
+      if (isOuterTransaction && this.transactionDirty) {
+        this.transactionDirty = false;
+        if (!this.suppressBackups) {
+          try { this.createDailyBackup(); }
+          catch { this.backupStatus = {...this.backupStatus, failed:true, lastAttempt:new Date().toISOString()}; console.error("Respaldo pendiente: la operación quedó confirmada en SQLite."); }
+        }
+      }
     }
   }
 
@@ -219,7 +236,7 @@ class PosDatabase {
   }
 
   createDailyBackup() {
-    fs.mkdirSync(this.backupDir, { recursive: true });
+    this.backupStatus.lastAttempt = new Date().toISOString();
     const date = new Date().toISOString().slice(0, 10);
     const backupPath = path.join(this.backupDir, `el-muelle-pos-${date}.sqlite`);
     const temporaryBackupPath = path.join(
@@ -228,12 +245,21 @@ class PosDatabase {
     );
 
     try {
+      fs.mkdirSync(this.backupDir, { recursive: true });
       this.db.exec(`VACUUM INTO ${sqlString(temporaryBackupPath)}`);
       fs.renameSync(temporaryBackupPath, backupPath);
+      this.backupStatus.failed = false;
+      this.backupStatus.lastSuccess = new Date().toISOString();
     } catch (error) {
-      console.error("No se pudo crear el respaldo diario de SQLite:", error);
-      if (fs.existsSync(temporaryBackupPath)) fs.rmSync(temporaryBackupPath);
+      this.backupStatus.failed = true;
+      console.error("Respaldo diario pendiente; la base activa conserva la operación confirmada.");
+      try { if (fs.existsSync(temporaryBackupPath)) fs.rmSync(temporaryBackupPath); } catch { /* Conservar el respaldo anterior. */ }
     }
+  }
+
+  close() {
+    try { this.db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); }
+    finally { this.db.close(); }
   }
 }
 

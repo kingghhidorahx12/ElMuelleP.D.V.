@@ -1,6 +1,7 @@
 param(
   [switch]$Clean,
-  [switch]$SkipPortableBuild
+  [switch]$SkipPortableBuild,
+  [string]$OutputDirectory
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,7 +28,21 @@ if (-not $SkipPortableBuild -and $null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 
   exit $LASTEXITCODE
 }
 
-& $compilerCandidates[0] $installerScript
+$portableRoot = Join-Path $projectRoot "dist\ElMuellePOS-Portable"
+$manifest = Join-Path $portableRoot "release-manifest.json"
+if (-not (Test-Path -LiteralPath $manifest)) { throw "Falta el descriptor de seguridad del paquete. Regenera el portable." }
+$releaseHasher = [Security.Cryptography.SHA256]::Create()
+try { $releaseHash = ([BitConverter]::ToString($releaseHasher.ComputeHash([IO.File]::ReadAllBytes($manifest)))).Replace('-', '').ToLowerInvariant() }
+finally { $releaseHasher.Dispose() }
+& node.exe (Join-Path $projectRoot "src\release-compatibility.js") --package $portableRoot --sha256 $releaseHash
+if ($LASTEXITCODE -ne 0) { throw "El paquete no corresponde a una revisión compatible verificada." }
+$compilerArgs = @()
+if ($OutputDirectory) { $compilerArgs += "/O$([IO.Path]::GetFullPath($OutputDirectory))" }
+$effectiveOutput = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $projectRoot "dist\installer" }
+if (Test-Path -LiteralPath (Join-Path $effectiveOutput "ElMuellePOS-Setup.exe.release.json")) { throw "La salida ya tiene una revisión sellada. Elige una ruta nueva para conservar el EXE y su recibo." }
+$compilerArgs += $installerScript
+& $compilerCandidates[0] @compilerArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-Write-Host "Instalador creado en dist\installer\ElMuellePOS-Setup.exe"
+& node.exe (Join-Path $PSScriptRoot "seal-release.js") installer $portableRoot (Join-Path $effectiveOutput "ElMuellePOS-Setup.exe")
+if ($LASTEXITCODE -ne 0) { throw "No se pudo generar el recibo de identidad del instalador." }
+Write-Host "Instalador creado en $effectiveOutput"

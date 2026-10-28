@@ -1,0 +1,18 @@
+@media screen {
+ .permission-editor-toolbar { display:flex; align-items:end; flex-wrap:wrap; gap:8px 12px; }
+ .permission-editor-toolbar label { display:grid; gap:4px; flex:1 1 220px; font-size:12px; }
+ .permission-editor-toolbar select { width:100%; min-width:0; }
+ #permissionEmployeeRole { align-self:center; color:#4f7090; font-size:11px; overflow-wrap:anywhere; }
+ .permission-modules { position:relative; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px 14px; min-width:0; margin:10px 0; padding:0; border:0; }
+ .permission-modules .configuration-option { padding:5px 0; border-bottom:1px solid #d6e7f2; }
+ .permission-modules .permission-description { display:block; color:#426585; line-height:1.45; margin:4px 0; }
+ .permission-modules:disabled { opacity:.65; }
+ .permission-editor-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; }
+ #permissionStatus { margin:0; font-size:12px; }
+ .screen-role-note { margin:0 0 8px; padding:7px 10px; border:1px solid #c4e1f4; border-radius:8px; color:#426c90; background:#edf8ff; font-size:11px; }
+ .restricted-access { max-width:640px; margin:16px auto; }
+ .restricted-access h3 { margin:0 0 10px; }
+ .screen-readonly :is([data-products-mode-btn=form],[data-inventory-mode-btn=entry],#inventoryEntryShortcutBtn,[data-edit-product],[data-toggle-product],[data-edit-inventory]) { display:none !important; }
+ @media(max-width:1250px) { .permission-modules { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+ @media(max-width:760px) { .permission-modules { grid-template-columns:minmax(0,1fr); }.permission-editor-toolbar { align-items:stretch; }.permission-editor-toolbar button { width:100%; } }
+}

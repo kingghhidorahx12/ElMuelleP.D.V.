@@ -11,7 +11,8 @@
     "build:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable.ps1",
     "build:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "test": "node scripts/security-smoke-test.js",
-    "test:security": "node scripts/security-smoke-test.js"
+    "test:security": "node scripts/security-smoke-test.js",
+    "test:p1": "node scripts/verify-p1.js"
   },
   "keywords": [
     "pos",

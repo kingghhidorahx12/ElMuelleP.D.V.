@@ -43,6 +43,7 @@ async function waitForServer(baseUrl, processHandle) {
 }
 
 async function request(baseUrl, pathname, options = {}) {
+  if (pathname === '/api/sales' && options.method === 'POST' && options.body) options = {...options, body:JSON.stringify(await require('./checkout-test-client').completeCheckout(baseUrl, JSON.parse(options.body), options.headers))};
   const response = await fetch(`${baseUrl}${pathname}`, options);
   const body = await response.json().catch(() => null);
   const setCookie = response.headers.get("set-cookie") || "";
@@ -299,6 +300,12 @@ async function main() {
       body: JSON.stringify({ openingAmount: 100, businessDate: "2026-07-17" })
     });
     assert.equal(openCash.response.status, 201);
+    const manualIntent = require('node:crypto').randomUUID();
+    const manualGrant = await request(baseUrl, '/api/authorizations/manual-weight', {
+      method:'POST', headers:employeeHeaders,
+      body:JSON.stringify({pin:'246810',productId:protectedProduct.id,quantity:1,checkoutIntentId:manualIntent,cashSessionId:openCash.body.id})
+    });
+    assert.equal(manualGrant.response.status,200);
 
     const fakeProductSale = await request(baseUrl, "/api/sales", {
       method: "POST",
@@ -314,8 +321,10 @@ async function main() {
       method: "POST",
       headers: employeeHeaders,
       body: JSON.stringify({
+        checkoutIntentId:manualIntent,
         items: [{
           productId: protectedProduct.id,
+          source:'manual',manualAuthorization:manualGrant.body.token,
           name: "Precio manipulado",
           unit: "pieza",
           quantity: 1,
@@ -333,8 +342,10 @@ async function main() {
       method: "POST",
       headers: employeeHeaders,
       body: JSON.stringify({
+        checkoutIntentId:manualIntent,
         items: [{
           productId: protectedProduct.id,
+          source:'manual',manualAuthorization:manualGrant.body.token,
           name: "Precio manipulado",
           category: "Manipulada",
           unit: "pieza",

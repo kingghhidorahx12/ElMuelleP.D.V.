@@ -8,8 +8,10 @@
   <link rel="shortcut icon" href="./assets/brand/el-muelle-app-icon.ico" />
   <meta name="theme-color" content="#10213d" />
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./configuration.css" />
+  <link rel="stylesheet" href="./access-control.css" />
 </head>
-<body class="auth-locked">
+<body class="atelier auth-locked">
   <section id="setupScreen" class="access-screen setup-screen hidden" aria-label="Configuración inicial del punto de venta">
     <div class="access-brand-panel">
       <img src="./assets/brand/el-muelle-logo.png" alt="El Muelle Pescadería" />
@@ -54,25 +56,25 @@
     </div>
   </section>
 
-  <section id="accessScreen" class="access-screen hidden" aria-label="Acceso al punto de venta">
-    <div class="access-brand-panel">
-      <img src="./assets/brand/el-muelle-logo.png" alt="El Muelle Pescaderia" />
+  <section id="accessScreen" class="login-screen hidden" aria-label="Acceso al punto de venta">
+    <div class="login-identity">
+      <img src="./assets/brand/el-muelle-logo.png" alt="El Muelle Pescadería" width="1084" height="1041" />
       <div>
         <h1>Punto de Venta</h1>
-        <p>Inicia sesion para abrir tu espacio de trabajo.</p>
+        <p>Inicia sesión para abrir tu espacio de trabajo.</p>
       </div>
     </div>
-    <div class="access-login-panel">
-      <div class="access-card-head">
-        <h2>Selecciona usuario</h2>
+    <div class="login-panel" role="group" aria-labelledby="loginHeading">
+      <div class="login-head">
+        <h2 id="loginHeading">Selecciona usuario</h2>
         <p id="accessSelectedName">Encargado</p>
       </div>
-      <div id="accessUserList" class="access-user-list" role="group" aria-label="Tipo de acceso"></div>
-      <label class="access-pin-label">
+      <div id="accessUserList" class="login-user-list" role="group" aria-label="Tipo de acceso"></div>
+      <label class="login-pin">
         <span id="accessPinLabelText">PIN personal</span>
         <input id="accessPinInput" type="password" inputmode="numeric" minlength="6" maxlength="12" autocomplete="current-password" placeholder="6 a 12 dígitos" />
       </label>
-      <div class="access-actions">
+      <div class="login-actions">
         <button id="accessLoginBtn" class="solid-btn" type="button">Entrar</button>
       </div>
     </div>
@@ -96,11 +98,13 @@
       <span class="nav-group-label">Operación</span>
       <button class="nav-item active" type="button" data-view="pos" data-short="PV" data-label="Punto de Venta"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h2l2 11h12l2-8H6M9 20h.01M18 20h.01"/></svg><span>Punto de Venta</span></button>
       <button class="nav-item" type="button" data-view="sales" data-short="V" data-label="Ventas"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3zM9 7h6M9 11h6M9 15h3"/></svg><span>Ventas</span></button>
-      <button class="nav-item" type="button" data-view="billing" data-short="F" data-label="Solicitud de factura"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18H6zM9 7h6M9 11h6M9 15h4"/></svg><span>Solicitud de factura</span></button>
-      <span class="nav-group-label">Administración</span>
-      <button class="nav-item" type="button" data-view="dashboard" data-short="PA" data-label="Panel Administrativo"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h8v8H3zM15 3h6v5h-6zM3 15h8v6H3zM15 12h6v9h-6z"/></svg><span>Panel Administrativo</span></button>
+      <button class="nav-item" type="button" data-view="reports" data-reports-target="cash" data-short="CJ" data-label="Caja y cortes"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V11M10 21V4M16 21V8M2 21h20"/></svg><span>Caja y cortes</span></button>
+      <button class="nav-item" type="button" data-view="billing" data-short="F" data-label="Solicitudes de factura"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18H6zM9 7h6M9 11h6M9 15h4"/></svg><span>Solicitudes de factura</span></button>
+      <span class="nav-group-label">Catálogo</span>
       <button class="nav-item" type="button" data-view="products" data-short="P" data-label="Productos"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5zM3 8v9l9 5 9-5V8M12 13v9"/></svg><span>Productos</span></button>
       <button class="nav-item" type="button" data-view="inventory" data-short="I" data-label="Inventario"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg><span>Inventario</span></button>
+      <span class="nav-group-label">Análisis</span>
+      <button class="nav-item" type="button" data-view="dashboard" data-short="PA" data-label="Resumen del negocio"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h8v8H3zM15 3h6v5h-6zM3 15h8v6H3zM15 12h6v9h-6z"/></svg><span>Resumen del negocio</span></button>
       <button class="nav-item" type="button" data-view="reports" data-short="R" data-label="Reportes"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V11M10 21V4M16 21V8M2 21h20"/></svg><span>Reportes</span></button>
       <span class="nav-group-label">Sistema</span>
       <button class="nav-item" type="button" data-view="settings" data-short="C" data-label="Configuración"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2-1 3 3 2 2-1 3 2 3-2 3 1 2-3-1-3 2-2-2-3-3-1-1-3zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/></svg><span>Configuración</span></button>
@@ -114,18 +118,21 @@
       <div class="scale-readout" id="scaleWeightText">0.000 kg</div>
       <p id="scaleStatusText">RHINO BAR-9 · 9600 8N1 · comando P.</p>
       <small id="scaleRawText">Sin lectura</small>
-      <div class="scale-actions">
-        <button id="connectScaleBtn" class="solid-btn" type="button">Conectar</button>
-        <button id="posMotionToggle" type="button" aria-pressed="false" title="Preferencia local de movimiento del POS">Reducir movimiento</button>
-      </div>
+
     </section>
 
     <div id="sidebarSessionSlot">
     <div class="session-box">
-      <button id="sessionSwitchBtn" class="session-button" type="button">
+      <button id="sessionSwitchBtn" aria-expanded="false" aria-controls="accountMenu" class="session-button" type="button">
         <svg class="pos-user-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-3a8 8 0 0 1 16 0v3M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0"/></svg><span id="sessionRoleLabel">Encargado</span>
         <strong id="sessionUserName">Encargado</strong>
       </button>
+      <section id="accountMenu" class="account-menu hidden" aria-label="Mi cuenta">
+        <h3>Mi cuenta</h3><strong id="accountUserName"></strong><p id="accountUserRole"></p>
+        <button id="accountDevicePreferencesBtn" type="button" hidden>Preferencias del dispositivo</button>
+        <button id="accountSwitchBtn" type="button">Cambiar usuario</button>
+        <button id="accountLogoutBtn" type="button">Cerrar sesión</button>
+      </section>
     </div>
     </div>
   </aside>
@@ -140,13 +147,12 @@
           <p id="pageSubtitle"></p>
         </div>
       </div>
-      <label class="pos-topbar-search"><svg class="pos-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 21-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg><input id="searchInput" type="search" aria-label="Buscar producto" placeholder="Buscar producto..." /></label>
       <div id="topbarContextSlot" class="topbar-context-slot" aria-label="Acciones de la pantalla actual"></div>
       <div class="topbar-meta">
+        <button id="ticketToggleBtn" class="topbar-ticket-btn" type="button" aria-label="Abrir venta actual, T-000000" aria-expanded="false" aria-controls="currentSalePanel"><span id="ticketToggleFolio" hidden>T-000000</span><span id="ticketToggleText" aria-hidden="true">T-000000</span></button>
         <span class="pos-topbar-clock"><svg class="pos-clock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0"/></svg><time id="posClockText">--:--</time></span>
         <button id="cashStatusBtn" class="cash-status-btn" type="button">Caja cerrada</button>
         <strong id="ticketId">T-000000</strong>
-        <button id="ticketToggleBtn" class="topbar-ticket-btn" type="button" aria-label="Abrir venta actual, T-000000" aria-expanded="false" aria-controls="currentSalePanel"><span id="ticketToggleFolio" hidden>T-000000</span><span id="ticketToggleText" aria-hidden="true">T-000000</span></button>
         <div id="topbarSessionSlot"></div>
       </div>
     </header>
@@ -164,16 +170,16 @@
         </div>
       </div>
 
-      <div id="ticketItems" class="ticket-items">
-        <p class="empty-state">Agrega productos para iniciar.</p>
-      </div>
-
       <div id="cashGateNotice" class="cash-gate-notice" hidden>
         <div>
           <strong>Caja cerrada</strong>
           <span>Abre la caja del día antes de cobrar ventas.</span>
         </div>
         <button id="openCashFromSaleBtn" class="quiet-btn" type="button">Abrir caja</button>
+      </div>
+
+      <div id="ticketItems" class="ticket-items">
+        <p class="empty-state">Agrega productos para iniciar.</p>
       </div>
 
       <div class="summary">
@@ -211,33 +217,36 @@
         <div class="pos-section-title premium-module-head premium-module-head--pos balanced-module-head"><h3>Selecciona el producto</h3></div>
         <div class="pos-layout">
           <section class="catalog-panel">
-            <div id="categoryGrid" class="category-grid"></div>
+            <div class="pos-catalog-tools" role="group" aria-label="Herramientas del catálogo">
+              <label class="pos-catalog-search"><svg class="pos-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 21-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg><input id="searchInput" type="search" aria-label="Buscar producto por nombre o código" placeholder="Buscar producto por nombre o código..." /></label>
+              <button id="scanProductBtn" class="pos-tool-btn" type="button" title="Preparar búsqueda para lector de códigos de teclado"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7V4h4M16 4h4v3M20 17v3h-4M8 20H4v-3M7 8v8M10 7v10M13 8v8M16 7v10"/></svg><span>Escanear</span></button>
+              <button id="catalogFavoritesBtn" class="pos-tool-btn" type="button" aria-pressed="false"><span class="pos-tool-star" aria-hidden="true">★</span><span>Favoritos</span></button>
+              <div class="pos-view-switch" role="group" aria-label="Vista del catálogo">
+                <button id="catalogImagesBtn" class="pos-tool-btn active" type="button" aria-pressed="true" aria-controls="productGrid" aria-label="Vista Imágenes" title="Imágenes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg></button>
+                <button id="catalogListBtn" class="pos-tool-btn" type="button" aria-pressed="false" aria-controls="productGrid" aria-label="Vista Lista" title="Lista"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h13M8 12h13M8 19h13M3 5h1M3 12h1M3 19h1"/></svg></button>
+              </div>
+            </div>
 
             <div class="catalog-control-row">
+              <div id="categoryGrid" class="category-grid" role="group" aria-label="Categorías de productos"></div>
               <div class="filter-row segmented-control pos-filter-tabs" role="group" aria-label="Filtro de venta">
                 <button id="filterAll" class="chip active" type="button">Todos</button>
                 <button id="filterKg" class="chip" type="button">Por kg</button>
                 <button id="filterPiece" class="chip" type="button">Por pieza</button>
-              </div>
-
-
-
-              <div class="pager segmented-control pos-pager" role="group" aria-label="Navegación de productos">
-                <button id="prevPageBtn" class="quiet-btn" type="button">Anterior</button>
-                <span id="posPageButtons" class="pos-page-buttons"></span><span id="pageIndicator" aria-live="polite">Página 1</span>
-                <button id="nextPageBtn" class="quiet-btn" type="button">Siguiente</button>
               </div>
             </div>
 
             <div id="productGrid" class="product-grid" role="region" aria-label="Catálogo de productos" tabindex="0"></div>
           </section>
 
-          <section class="weigh-panel">
-            <div>
+          <section class="weigh-panel" role="region" aria-labelledby="weighProductName" aria-hidden="true" inert>
+            <div class="pos-tide" aria-hidden="true"></div>
+            <div class="weigh-heading">
               <span class="eyebrow">Pesaje</span>
               <h3 id="weighProductName">Selecciona un producto</h3>
               <p id="weighDescription">El peso entra automático al conectar la báscula.</p>
             </div>
+            <div class="weigh-photo-space"><img id="weighProductPhoto" alt="" /><strong id="weighAvailableStock"></strong></div>
 
             <div class="weigh-metrics">
               <article>
@@ -262,184 +271,91 @@
         </div>
       </section>
 
-      <section id="dashboardView" class="app-view">
-        <section class="work-panel full-panel dashboard-panel">
-          <div class="panel-head dashboard-controls premium-module-head premium-module-head--dashboard">
-            <div class="premium-module-copy">
-              <span class="eyebrow">Panel administrativo</span>
-              <h3>Resumen del negocio</h3>
-            </div>
-            <div class="toolbar dashboard-toolbar">
-              <select id="dashboardPeriodFilter">
-                <option value="day">Día</option>
-                <option value="week">Semana</option>
-                <option value="month">Mes</option>
-                <option value="year">Año</option>
-                <option value="range">Rango</option>
-                <option value="all">Total</option>
-              </select>
-              <label class="dashboard-date-field">
-                <span id="dashboardDateLabel">Fecha</span>
-                <input id="dashboardDateInput" type="date" aria-label="Fecha del periodo" />
-              </label>
-              <label id="dashboardEndDateField" class="dashboard-date-field" hidden>
-                <span>Hasta</span>
-                <input id="dashboardEndDateInput" type="date" aria-label="Fecha final del rango" />
-              </label>
-              <button id="refreshDashboardBtn" class="quiet-btn" type="button">Actualizar</button>
+      <section id="dashboardView" class="app-view" data-product-mode="top" data-metric="sales">
+        <section class="business-dashboard" aria-label="Resumen del negocio">
+          <div class="business-banner">
+            <div class="business-period-summary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18M7 14h2M13 14h2M7 17h2"/></svg><div><span class="business-period-copy" id="dashboardPeriodCaption" aria-live="polite"></span><small id="dashboardPeriodDetail" hidden></small></div></div>
+            <div class="business-filters">
+              <select id="dashboardPeriodFilter" aria-label="Periodo del resumen"><option value="day">Día</option><option value="week">Semana</option><option value="month">Mes</option><option value="year">Año</option><option value="range">Rango</option><option value="all">Todo el historial</option></select>
+              <label><span id="dashboardDateLabel">Fecha</span><input id="dashboardDateInput" type="date" aria-label="Fecha del periodo"></label>
+              <label id="dashboardEndDateField" hidden><span>Hasta</span><input id="dashboardEndDateInput" type="date" aria-label="Fecha final del rango"></label>
+              <button id="refreshDashboardBtn" class="solid-btn" type="button">Actualizar</button>
             </div>
           </div>
-
-          <div class="dashboard-hero">
-            <article>
-              <span>Ganancia</span>
-              <strong id="dashboardProfit">$0.00</strong>
-            </article>
-            <article>
-              <span>Para reinvertir</span>
-              <strong id="dashboardReinvest">$0.00</strong>
-            </article>
-            <article>
-              <span>Caja de hoy</span>
-              <strong id="dashboardCashStatus">Cerrada</strong>
-            </article>
+          <div class="business-kpis summary-banner" aria-label="Indicadores del periodo">
+            <article class="business-kpi business-kpi-0 summary-banner-key"><span class="business-kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v5c0 4 16 4 16 0V5M4 10v5c0 4 16 4 16 0v-5M4 15v4c0 4 16 4 16 0v-4"/></svg></span><div><span>Ganancia del periodo</span><strong id="dashboardProfit">$0.00</strong><small>Utilidad bruta del periodo</small></div></article>
+            <article class="business-kpi business-kpi-1"><span class="business-kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7a8 8 0 0 0-14-2L3 8m0-5v5h5M4 17a8 8 0 0 0 14 2l3-3m0 5v-5h-5"/></svg></span><div><span>Para reinvertir</span><strong id="dashboardReinvest">$0.00</strong><small>Costo de ventas</small></div></article>
+            <article class="business-kpi business-kpi-2"><span class="business-kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M5 8h1M18 16h1"/></svg></span><div><span>Ventas totales</span><strong id="dashboardTotalSales">$0.00</strong><small><span id="dashboardSalesCount">0</span> ventas completadas</small></div></article>
+            <article class="business-kpi business-kpi-3"><span class="business-kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20v-2a5 5 0 0 1 10 0v2M9 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8M17 5a3 3 0 0 1 0 6M17 14a4 4 0 0 1 4 4v2"/></svg></span><div><span>Ticket promedio</span><strong id="dashboardAverageTicket">$0.00</strong><small>Por venta completada</small></div></article>
+            <article class="business-kpi business-kpi-4"><span class="business-kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20v-7M12 20V4M19 20V9"/></svg></span><div><span>Margen</span><strong id="dashboardMargin">0.00%</strong><small>Utilidad bruta / ventas</small></div></article>
           </div>
-
-          <div class="kpi-grid dashboard-kpis">
-            <article>
-              <span>Total vendido</span>
-              <strong id="dashboardTotalSales">$0.00</strong>
-            </article>
-            <article>
-              <span>Ventas</span>
-              <strong id="dashboardSalesCount">0</strong>
-            </article>
-            <article>
-              <span>Ticket promedio</span>
-              <strong id="dashboardAverageTicket">$0.00</strong>
-            </article>
-            <article>
-              <span>Margen</span>
-              <strong id="dashboardMargin">0.00%</strong>
-            </article>
-          </div>
-
-          <div class="kpi-grid dashboard-payment-kpis" aria-label="Resumen de formas de pago">
-            <article><span>Efectivo</span><strong id="dashboardCash">$0.00</strong></article>
-            <article><span>Tarjeta</span><strong id="dashboardCard">$0.00</strong></article>
-            <article><span>Transferencia</span><strong id="dashboardTransfer">$0.00</strong></article>
-            <article><span>Efectivo esperado</span><strong id="dashboardExpectedCash">$0.00</strong></article>
-          </div>
-
-          <section class="dashboard-insights" aria-label="Indicadores visuales de ventas">
-            <section class="inner-panel dashboard-chart-card">
-              <div class="dashboard-chart-head">
-                <div>
-                  <span class="eyebrow">Comportamiento</span>
-                  <h4>Ventas del periodo</h4>
-                </div>
-                <div class="dashboard-chart-actions">
-                  <select id="dashboardChartPeriodFilter" aria-label="Periodo de gráfica de ventas">
-                    <option value="day">Día</option>
-                    <option value="week">Semana</option>
-                    <option value="month">Mes</option>
-                    <option value="year">Año</option>
-                    <option value="all">Total</option>
-                  </select>
-                  <input id="dashboardChartDateInput" type="date" aria-label="Fecha de gráfica de ventas" />
-                  <span id="dashboardSalesChartCaption" class="dashboard-chart-caption">Ventas por hora</span>
-                </div>
-              </div>
-              <div id="dashboardSalesChart" class="dashboard-bar-chart" role="img" aria-live="polite"></div>
+          <div class="business-row business-row-main">
+            <section class="business-card business-featured" aria-labelledby="dashboardFeaturedHeading">
+              <div class="business-card-head"><h3 id="dashboardFeaturedHeading" tabindex="0" data-dashboard-heading="products" aria-live="polite">Productos más vendidos</h3><select id="dashboardProductLimit" aria-label="Cantidad de productos destacados"><option value="5">Top 5</option><option value="10">Top 10</option><option value="all">Todos</option></select></div>
+              <button class="business-arrow business-edge-arrow business-edge-prev" type="button" data-dashboard-products-cycle="-1" aria-label="Clasificación de productos anterior" title="Clasificación de productos anterior"></button><button class="business-arrow business-edge-arrow business-edge-next" type="button" data-dashboard-products-cycle="1" aria-label="Clasificación de productos siguiente" title="Clasificación de productos siguiente"></button>
+              <p class="business-note">Clasificación por importe vendido. Cantidades en su unidad.</p>
+              <div class="business-carousel"><div id="dashboardFeaturedProducts" class="business-product-strip" role="region" aria-labelledby="dashboardFeaturedHeading" tabindex="0"></div></div>
+              <p class="business-note business-dependency-note">Popularidad, ganancia y margen por producto: pendientes de definición.</p>
             </section>
-
-            <section class="inner-panel dashboard-chart-card dashboard-payment-card">
-              <div class="dashboard-chart-head">
-                <div>
-                  <span class="eyebrow">Cobro</span>
-                  <h4>Distribución de pagos</h4>
-                </div>
-                <div class="dashboard-chart-actions">
-                  <select id="dashboardPaymentPeriodFilter" aria-label="Periodo de gráfica de pagos">
-                    <option value="day">Día</option>
-                    <option value="week">Semana</option>
-                    <option value="month">Mes</option>
-                    <option value="year">Año</option>
-                    <option value="all">Total</option>
-                  </select>
-                  <input id="dashboardPaymentDateInput" type="date" aria-label="Fecha de gráfica de pagos" />
-                </div>
-              </div>
-              <div class="dashboard-payment-mix">
-                <div id="dashboardPaymentDonut" class="dashboard-payment-donut" role="img">
-                  <span>Total</span>
-                  <strong id="dashboardPaymentTotal">$0.00</strong>
-                </div>
-                <div id="dashboardPaymentLegend" class="dashboard-payment-legend"></div>
-              </div>
+            <section class="business-card" aria-labelledby="dashboardSalesChartCaption">
+              <div class="business-card-head business-chart-head"><h3 id="dashboardSalesChartCaption" tabindex="0" data-dashboard-heading="metrics" aria-live="polite">Ventas del periodo</h3><select id="dashboardChartType" class="glass-chart-select" aria-label="Tipo de gráfica de comparativas" title="Tipo de gráfica de comparativas"><option value="line" selected>Líneas</option><option value="bar">Barras</option><option value="area">Área</option></select><div class="business-panel-controls"><select id="dashboardChartPeriodFilter" class="business-period-select" aria-label="Periodo de comparativas"><option value="inherit">Periodo general</option><option value="day">Día</option><option value="week">Semana</option><option value="month">Mes</option><option value="year">Año</option><option value="all">Todo el historial</option></select></div></div>
+              <button class="business-arrow business-edge-arrow business-edge-prev" type="button" data-dashboard-cycle="-1" aria-label="Métrica anterior" title="Métrica anterior"></button><button class="business-arrow business-edge-arrow business-edge-next" type="button" data-dashboard-cycle="1" aria-label="Métrica siguiente" title="Métrica siguiente"></button>
+              <div id="dashboardComparisonPanel" class="business-carousel" role="region" aria-labelledby="dashboardSalesChartCaption"><div id="dashboardSalesChart" class="business-chart" aria-live="polite"></div></div>
             </section>
-          </section>
-
-          <div class="dashboard-grid">
-            <div class="dashboard-pair-row">
-              <section class="inner-panel">
-                <h4>Más vendidos</h4>
-                <div id="dashboardTopProducts" class="top-products-list"></div>
-              </section>
-              <section class="inner-panel">
-                <h4>Menos vendidos</h4>
-                <div id="dashboardSlowProducts" class="top-products-list"></div>
-              </section>
-            </div>
-            <div class="dashboard-pair-row">
-              <section class="inner-panel dashboard-best-days-card">
-                <h4>Días con más ventas</h4>
-                <div id="dashboardBestSalesDays" class="top-products-list"></div>
-              </section>
-              <section class="inner-panel">
-                <h4>Inventario bajo</h4>
-                <div id="dashboardInventoryAlerts" class="top-products-list"></div>
-              </section>
-            </div>
+          </div>
+          <div class="business-row business-row-analysis">
+            <section class="business-card" aria-labelledby="dashboardCategoryHeading">
+              <div class="business-card-head"><h3 id="dashboardCategoryHeading">Ventas por categoría</h3><select class="business-period-select" aria-label="Periodo de categorías, pendiente de soporte" disabled><option>Periodo general</option></select></div>
+              <div class="business-unavailable"><span class="business-placeholder-ring" aria-hidden="true"></span><strong>No disponible</strong><p>El resumen actual no proporciona ventas desglosadas por categoría.</p></div>
+            </section>
+            <section class="business-card" aria-labelledby="dashboardPaymentHeading">
+              <div class="business-card-head business-chart-head"><h3 id="dashboardPaymentHeading">Distribución de pagos</h3><select id="dashboardPaymentType" class="glass-chart-select" aria-label="Tipo de gráfica de pagos" title="Tipo de gráfica de pagos"><option value="donut">Dona</option></select><div class="business-panel-controls"><select id="dashboardPaymentPeriodFilter" class="business-period-select" aria-label="Periodo de pagos"><option value="inherit">Periodo general</option><option value="day">Día</option><option value="week">Semana</option><option value="month">Mes</option><option value="year">Año</option><option value="all">Todo el historial</option></select></div></div>
+              <div id="dashboardPayments" class="business-donut-layout"></div>
+            </section>
+            <section class="business-card" aria-labelledby="dashboardTrendHeading">
+              <div class="business-card-head business-chart-head"><h3 id="dashboardTrendHeading" tabindex="0" data-dashboard-heading="trends" aria-live="polite">Ventas frente a ganancias</h3><select id="dashboardTrendType" class="glass-chart-select" aria-label="Tipo de gráfica de tendencias" title="Tipo de gráfica de tendencias"><option value="line">Líneas</option><option value="bar" selected>Barras</option><option value="area">Área</option></select><div class="business-panel-controls"><select id="dashboardTrendPeriodFilter" class="business-period-select" aria-label="Periodo de tendencias"><option value="inherit">Periodo general</option><option value="day">Día</option><option value="week">Semana</option><option value="month">Mes</option><option value="year">Año</option><option value="all">Todo el historial</option></select></div></div>
+              <button class="business-arrow business-edge-arrow business-edge-prev" type="button" data-dashboard-trend-cycle="-1" aria-label="Comparativa de tendencias anterior" title="Comparativa de tendencias anterior"></button><button class="business-arrow business-edge-arrow business-edge-next" type="button" data-dashboard-trend-cycle="1" aria-label="Comparativa de tendencias siguiente" title="Comparativa de tendencias siguiente"></button>
+              <div class="business-carousel"><div id="dashboardTrendLegend" class="business-chart-legend"></div><div id="dashboardTrendChart" class="business-chart" aria-live="polite"></div></div>
+            </section>
+          </div>
+          <div class="business-row business-row-bottom">
+            <section class="business-card" aria-labelledby="dashboardActivityHeading">
+              <div class="business-card-head"><h3 id="dashboardActivityHeading">Actividad reciente</h3><button id="dashboardAllSalesBtn" class="quiet-btn" type="button">Ver todas</button></div>
+              <p class="business-note">Ventas completadas del periodo seleccionado.</p>
+              <div id="dashboardRecentActivity" class="business-activity"></div>
+            </section>
+            <section class="business-card" aria-labelledby="dashboardAlertsHeading">
+              <div class="business-card-head"><h3 id="dashboardAlertsHeading">Alertas y recomendaciones</h3></div>
+              <div class="business-carousel business-alert-carousel">
+                <button class="business-arrow business-edge-arrow business-edge-prev" type="button" data-dashboard-scroll="dashboardAlerts" data-direction="-1" aria-label="Alertas anteriores" disabled></button>
+                <div id="dashboardAlerts" class="business-alert-strip" tabindex="0" aria-label="Alertas de existencias"></div>
+                <button class="business-arrow business-edge-arrow business-edge-next" type="button" data-dashboard-scroll="dashboardAlerts" data-direction="1" aria-label="Alertas siguientes" disabled></button>
+              </div>
+              <p class="business-note">Baja rotación y oportunidades de crecimiento: pendientes de criterios comerciales.</p>
+            </section>
           </div>
         </section>
       </section>
 
       <section id="salesView" class="app-view">
-        <div class="split-layout">
-          <section class="work-panel">
-            <div class="panel-head premium-module-head premium-module-head--sales balanced-module-head">
-              <div>
-
-                <h3>Historial de ventas</h3>
-              </div>
-              <div class="toolbar">
-                <input id="salesSearchInput" type="search" placeholder="Folio..." />
-                <select id="salesPeriodFilter">
-                  <option value="day">Día</option>
-                  <option value="week">Semana</option>
-                  <option value="month">Mes</option>
-                  <option value="year">Año</option>
-                  <option value="all">Total</option>
-                </select>
-                <input id="salesDateInput" type="date" />
-                <select id="salesStatusFilter">
-                  <option value="all">Todas</option>
-                  <option value="completada">Completadas</option>
-                  <option value="cancelada">Canceladas</option>
-                  <option value="factura">Con factura</option>
-                </select>
-              </div>
-            </div>
-            <div id="salesList" class="sales-list"></div>
-          </section>
-          <aside id="salesDetail" class="detail-panel"></aside>
+        <form id="salesFiltersForm" class="sales-filter-bar" aria-label="Filtros de ventas">
+          <label>Periodo<select id="salesPeriodFilter"><option value="day">Día</option><option value="week">Semana</option><option value="month">Mes</option><option value="year">Año</option><option value="all">Total</option></select></label>
+          <label>Fecha<input id="salesDateInput" type="date" /></label>
+          <label class="sales-search-field">Buscar<input id="salesSearchInput" type="search" placeholder="Buscar por folio..." /></label>
+          <label>Estado<select id="salesStatusFilter"><option value="all">Todas</option><option value="completada">Completadas</option><option value="cancelada">Canceladas</option><option value="factura">Con factura</option></select></label>
+          <button class="quiet-btn sales-filter-submit" type="submit">Filtrar</button>
+          <button id="clearSalesFiltersBtn" class="quiet-btn" type="button">Limpiar</button>
+        </form>
+        <div class="sales-summary summary-banner" aria-label="Indicadores del periodo y filtros seleccionados"><article class="sales-stat sales-stat-0 summary-banner-key"><span class="sales-stat-icon"><svg class="module-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3zM9 7h6M9 11h6M9 15h3"/></svg></span><div><span id="salesKpiLabel0">Ventas del día</span><strong id="salesKpi0">—</strong><small>Ventas completadas</small></div></article><article class="sales-stat sales-stat-1"><span class="sales-stat-icon"><svg class="module-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h2l2 11h12l2-8H6M9 20h.01M18 20h.01"/></svg></span><div><span id="salesKpiLabel1">Total de tickets</span><strong id="salesKpi1">—</strong><small>Ventas completadas</small></div></article><article class="sales-stat sales-stat-2"><span class="sales-stat-icon"><svg class="module-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20v-2a5 5 0 0 1 10 0v2M9 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8M17 5a3 3 0 0 1 0 6M17 14a4 4 0 0 1 4 4v2"/></svg></span><div><span id="salesKpiLabel2">Ticket promedio</span><strong id="salesKpi2">—</strong><small>Ventas completadas</small></div></article><article class="sales-stat sales-stat-3"><span class="sales-stat-icon"><svg class="module-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5zM3 8v9l9 5 9-5V8M12 13v9"/></svg></span><div><span id="salesKpiLabel3">Productos vendidos</span><strong id="salesKpi3">—</strong><small>Productos distintos</small></div></article></div>
+        <div class="sales-content-layout">
+          <section class="work-panel sales-table-panel" aria-label="Historial de ventas"><div id="salesList" class="sales-list"></div></section>
+          <aside id="salesDetail" class="detail-panel" aria-label="Detalle de venta"></aside>
         </div>
       </section>
 
       <section id="productsView" class="app-view">
         <div class="split-layout products-layout" data-products-mode="list">
-          <div class="subview-tabs product-subview-tabs" role="tablist" aria-label="Secciones de productos">
+          <div class="subview-tabs product-subview-tabs atelier-tabs" role="tablist" aria-label="Secciones de productos">
           <button class="active" type="button" role="tab" aria-selected="true" data-products-mode-btn="list">Catálogo</button>
           <button type="button" role="tab" aria-selected="false" data-products-mode-btn="form">Agregar producto</button>
         </div>
@@ -520,31 +436,32 @@
             </div>
           </section>
 
-          <section class="work-panel product-catalog-panel">
-            <div class="panel-head premium-module-head premium-module-head--products balanced-module-head">
-              <div>
-
-                <h3>Catálogo</h3>
-              </div>
-              <div class="toolbar">
-                <input id="productAdminSearch" type="search" placeholder="Buscar..." />
-                <select id="productAdminCategoryFilter">
-                  <option value="all">Todas</option>
-                  <option value="Pescados y mariscos">Pescados y mariscos</option>
-                  <option value="Carnes selectas">Carnes selectas</option>
-                  <option value="Para el antojo">Para el antojo</option>
-                  <option value="Condimentos y salsas">Condimentos y salsas</option>
-                </select>
-              </div>
+          <section class="work-panel product-catalog-panel management-catalog">
+            <div class="management-toolbar">
+              <label class="management-search"><span class="sr-only">Buscar en el catálogo</span><input id="productAdminSearch" type="search" placeholder="Buscar por nombre, categoría o código..." /></label>
+              <select id="productAdminCategoryFilter" aria-label="Categoría de productos">
+                <option value="all">Todas las categorías</option>
+                <option value="Pescados y mariscos">Pescados y mariscos</option>
+                <option value="Carnes selectas">Carnes selectas</option>
+                <option value="Para el antojo">Para el antojo</option>
+                <option value="Condimentos y salsas">Condimentos y salsas</option>
+              </select>
+              <button id="newAdminProductBtn" class="solid-btn management-toolbar-action" type="button">+ Nuevo producto</button>
             </div>
-            <div id="productAdminList" class="product-admin-list"></div>
+            <div class="management-indicators summary-banner" aria-label="Indicadores del catálogo">
+              <article class="management-indicator management-indicator-primary summary-banner-key"><span class="management-indicator-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 8v9l9 5 9-5V8M12 13v9"/></svg></span><div><span>Total de productos</span><strong id="catalogProductCount">—</strong><small>Productos registrados</small></div></article>
+              <article class="management-indicator management-indicator-mint"><span class="management-indicator-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg></span><div><span>Productos activos</span><strong id="catalogActiveCount">—</strong><small>Disponibles en venta</small></div></article>
+              <article class="management-indicator management-indicator-orange"><span class="management-indicator-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h8l10 10-8 8L3 11V3Z"/><circle cx="7.5" cy="7.5" r="1"/></svg></span><div><span>Categorías</span><strong id="catalogCategoryCount">—</strong><small>Categorías registradas</small></div></article>
+              <article class="management-indicator management-indicator-gold"><span class="management-indicator-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v5c0 4 16 4 16 0V5M4 10v5c0 4 16 4 16 0v-5M4 15v4c0 4 16 4 16 0v-4"/></svg></span><div><span>Valor de inventario</span><strong id="catalogInventoryValue">—</strong><small>Costo total estimado</small></div></article>
+            </div>
+            <div id="productAdminList" class="product-admin-list management-table-panel"></div>
           </section>
         </div>
       </section>
 
       <section id="inventoryView" class="app-view">
         <div class="inventory-management-layout" data-inventory-mode="stock">
-          <div class="subview-tabs inventory-subview-tabs" role="tablist" aria-label="Secciones de inventario">
+          <div class="subview-tabs inventory-subview-tabs atelier-tabs" role="tablist" aria-label="Secciones de inventario">
             <button class="active" type="button" role="tab" aria-selected="true" data-inventory-mode-btn="stock">Existencias</button>
             <button type="button" role="tab" aria-selected="false" data-inventory-mode-btn="entry">Entrada de mercancía</button>
             <button type="button" role="tab" aria-selected="false" data-inventory-mode-btn="history">Historial</button>
@@ -648,59 +565,43 @@
             </div>
           </section>
 
-          <section class="work-panel inventory-stock-panel">
-            <section class="inventory-overview-column">
-              <div class="panel-head premium-module-head premium-module-head--inventory balanced-module-head">
-                <div class="inventory-overview-title">
-                  <span class="eyebrow">Inventario</span>
-                  <h3>Existencias actuales</h3>
-                </div>
-                <div class="toolbar">
-                  <input id="inventorySearchInput" type="search" placeholder="Buscar producto..." />
-                  <select id="inventoryCategoryFilter">
-                    <option value="all">Todas</option>
-                    <option value="Pescados y mariscos">Pescados y mariscos</option>
-                    <option value="Carnes selectas">Carnes selectas</option>
-                    <option value="Para el antojo">Para el antojo</option>
-                    <option value="Condimentos y salsas">Condimentos y salsas</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="inventory-kpis">
-                <article><span>Valor invertido</span><strong id="inventoryInvestmentValue">$0.00</strong></article>
-                <article><span>Venta proyectada</span><strong id="inventoryProjectedValue">$0.00</strong></article>
-                <article><span>Ganancia proyectada</span><strong id="inventoryProjectedProfit">$0.00</strong></article>
-                <article><span>Entradas registradas</span><strong id="inventoryEntriesCount">0</strong></article>
-              </div>
-
-              <div class="inventory-sales-insights" aria-label="Rotación de productos">
-                <section class="inventory-sales-card top">
-                  <div class="inventory-sales-head">
-                    <span>Producto destacado</span>
-                    <strong>Campeón</strong>
+          <section class="inventory-catalog-board">
+            <div class="management-indicators summary-banner" aria-label="Indicadores de inventario">
+              <article class="management-indicator management-indicator-primary summary-banner-key"><span class="management-indicator-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18v15H3zM3 10h18M9 15h6M12 2v6"/></svg></span><div><span>Existencias totales</span><strong id="inventoryProductCount">—</strong><small>Productos registrados</small></div></article>
+              <article class="management-indicator management-indicator-gold"><span class="management-indicator-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 10 18H2L12 3ZM12 9v5M12 17h.01"/></svg></span><div><span>Stock bajo</span><strong id="inventoryAttentionCount">—</strong><small>Productos por revisar</small></div></article>
+              <article class="management-indicator management-indicator-blue"><span class="management-indicator-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h16l-4-4M21 17H5l4 4M19 7l-4 4M5 17l4-4"/></svg></span><div><span>Movimientos del día</span><strong id="inventoryDayMovements">—</strong><small>Entradas registradas hoy</small></div></article>
+              <article class="management-indicator management-indicator-pink"><span class="management-indicator-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12v18H6zM9 2h6v5H9zM9 12h6M9 16h6"/></svg></span><div><span>Ajustes pendientes</span><strong id="inventoryPendingAdjustments">—</strong><small>Estado no registrado</small></div></article>
+            </div>
+            <div class="management-toolbar">
+              <label class="management-search"><span class="sr-only">Buscar existencias</span><input id="inventorySearchInput" type="search" placeholder="Buscar por nombre, categoría o código..." /></label>
+              <select id="inventoryCategoryFilter" aria-label="Categoría de inventario">
+                <option value="all">Todas las categorías</option>
+                <option value="Pescados y mariscos">Pescados y mariscos</option>
+                <option value="Carnes selectas">Carnes selectas</option>
+                <option value="Para el antojo">Para el antojo</option>
+                <option value="Condimentos y salsas">Condimentos y salsas</option>
+              </select>
+              <select id="inventoryStatusFilter" aria-label="Estado de existencias"><option value="all">Todos los estados</option><option value="ok">Disponible</option><option value="warn">Stock bajo</option><option value="neutral">Sin conteo</option></select>
+              <button id="inventoryEntryShortcutBtn" class="solid-btn management-toolbar-action" type="button">+ Entrada de mercancía</button>
+            </div>
+            <div class="management-inventory-grid">
+              <section class="management-table-panel"><h3>Existencias por producto</h3><div id="inventoryList"></div></section>
+              <aside class="management-activity-panel">
+                <h3>Actividad reciente</h3>
+                <div id="inventoryRecentActivity" class="management-activity-list"></div>
+                <button id="inventoryHistoryShortcutBtn" class="management-history-btn" type="button">Abrir historial ›</button>
+                <details class="management-valuation"><summary>Valoración y rotación</summary>
+                  <div class="management-valuation-grid">
+                    <article><span>Valor invertido</span><strong id="inventoryInvestmentValue">$0.00</strong></article>
+                    <article><span>Venta proyectada</span><strong id="inventoryProjectedValue">$0.00</strong></article>
+                    <article><span>Ganancia proyectada</span><strong id="inventoryProjectedProfit">$0.00</strong></article>
+                    <article><span>Entradas registradas</span><strong id="inventoryEntriesCount">0</strong></article>
                   </div>
-                  <div id="inventoryTopProducts" class="inventory-sales-list"></div>
-                </section>
-                <section class="inventory-sales-card slow">
-                  <div class="inventory-sales-head">
-                    <span>Producto a vigilar</span>
-                    <strong>Menor rotación</strong>
-                  </div>
-                  <div id="inventorySlowProducts" class="inventory-sales-list"></div>
-                </section>
-              </div>
-            </section>
-
-            <section class="inventory-products-column">
-              <div class="inventory-products-column-head">
-                <div>
-                  <h4>INVENTARIO POR PRODUCTO</h4>
-                </div>
-                <span class="inventory-products-column-note">Existencias, costos y rotación</span>
-              </div>
-              <div id="inventoryList" class="inventory-list"></div>
-            </section>
+                  <h4>Producto destacado</h4><div id="inventoryTopProducts"></div>
+                  <h4>Menor rotación</h4><div id="inventorySlowProducts"></div>
+                </details>
+              </aside>
+            </div>
           </section>
 
           <section class="work-panel inventory-history-panel">
@@ -719,193 +620,174 @@
       </section>
 
       <section id="billingView" class="app-view">
-        <div class="split-layout">
-          <section class="work-panel">
+        <div class="split-layout billing-layout">
+          <section class="work-panel billing-form-panel">
             <form id="invoiceForm" class="invoice-form">
-              <div class="form-title wide premium-module-head premium-module-head--billing balanced-module-head">
-                <h3>Solicitud de factura</h3>
-                <p>Registra los datos para facturación; este módulo aún no timbra CFDI.</p>
-              </div>
-              <label>
-                Folio
-                <input id="invoiceSaleId" type="text" placeholder="T-000001" />
-              </label>
-              <label>
-                RFC
-                <input id="invoiceRfc" type="text" placeholder="RFC" />
-              </label>
-              <label class="wide">
-                Razón social
-                <input id="invoiceName" type="text" placeholder="Nombre fiscal" />
-              </label>
-              <label>
-                Código postal
-                <input id="invoiceZip" type="text" placeholder="00000" />
-              </label>
-              <label>
-                Régimen fiscal
-                <input id="invoiceRegime" type="text" placeholder="601, 612, 626..." />
-              </label>
-              <label>
-                Uso CFDI
-                <select id="invoiceUse">
-                  <option value="">Selecciona</option>
-                  <option value="G01">G01 - Mercancías</option>
-                  <option value="G03">G03 - Gastos en general</option>
-                  <option value="S01">S01 - Sin efectos fiscales</option>
-                </select>
-              </label>
-              <label>
-                Correo
-                <input id="invoiceEmail" type="email" placeholder="correo@cliente.com" />
-              </label>
-              <button class="solid-btn wide" type="submit">Guardar solicitud</button>
+              <div class="form-title wide"><svg class="module-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18H6zM9 7h6M9 11h6M9 15h4"/></svg><h3>Nueva solicitud de factura</h3></div>
+              <p class="billing-instruction wide">Paso 1 · Relaciona una venta con el cliente fiscal.</p>
+              <div class="billing-sale-picker wide"><label>Venta / folio<input id="invoiceSaleId" type="text" placeholder="Buscar venta o folio..." /></label><button id="selectInvoiceSaleBtn" class="quiet-btn" type="button">Seleccionar</button></div>
+              <div id="invoiceSaleSummary" class="billing-sale-summary wide" role="status" aria-live="polite"><span>Venta seleccionada</span><p>Selecciona un folio existente o utiliza una venta de la lista.</p></div>
+              <label>RFC<input id="invoiceRfc" type="text" placeholder="RFC del cliente" /></label>
+              <label>Nombre o razón social<input id="invoiceName" type="text" placeholder="Nombre fiscal" /></label>
+              <label>Código postal<input id="invoiceZip" type="text" placeholder="C. P." /></label>
+              <label>Régimen fiscal<input id="invoiceRegime" type="text" placeholder="601, 612, 626..." /></label>
+              <label>Uso de CFDI<select id="invoiceUse"><option value="">Selecciona</option><option value="G01">G01 - Mercancías</option><option value="G03">G03 - Gastos en general</option><option value="S01">S01 - Sin efectos fiscales</option></select></label>
+              <label>Correo<input id="invoiceEmail" type="email" placeholder="Correo de contacto" /></label>
+              <div class="billing-form-actions wide"><button class="quiet-btn" type="reset">Limpiar</button><button class="solid-btn" type="submit">Guardar solicitud</button></div>
             </form>
           </section>
-          <section class="work-panel">
-            <div class="panel-head compact premium-module-head premium-module-head--billing premium-module-head--compact balanced-module-head">
-              <div>
-                <h3>Solicitudes recientes</h3>
-              </div>
-              <div class="toolbar">
-                <select id="recentSalesPeriodFilter">
-                  <option value="day">Día</option>
-                  <option value="week">Semana</option>
-                  <option value="month">Mes</option>
-                  <option value="year">Año</option>
-                  <option value="all">Total</option>
-                </select>
-                <input id="recentSalesDateInput" type="date" />
-                <button id="refreshSalesBtn" class="quiet-btn" type="button">Actualizar</button>
-              </div>
-            </div>
+          <section class="work-panel billing-recent-panel">
+            <div class="panel-head compact"><div><h3>Ventas y solicitudes</h3><p>Ventas del periodo, con o sin solicitud registrada. Selecciona una para capturar sus datos fiscales.</p></div><div class="toolbar"><select id="recentSalesPeriodFilter" aria-label="Periodo de ventas recientes"><option value="day">Día</option><option value="week">Semana</option><option value="month">Mes</option><option value="year">Año</option><option value="all">Total</option></select><input id="recentSalesDateInput" type="date" aria-label="Fecha de ventas recientes" /><button id="refreshSalesBtn" class="quiet-btn" type="button">Actualizar</button></div></div>
             <div id="recentSalesList" class="recent-sales-list"></div>
+            <p class="billing-fiscal-note">Solicitud guardada ≠ CFDI emitido</p>
           </section>
         </div>
       </section>
 
       <section id="reportsView" class="app-view">
-        <div class="subview-tabs reports-subview-tabs" role="tablist" aria-label="Secciones de reportes">
-          <button class="active" type="button" role="tab" aria-selected="true" data-reports-mode-btn="reports">Generar reportes</button>
-          <button type="button" role="tab" aria-selected="false" data-reports-mode-btn="cash">Caja y cortes</button>
-        </div>
+
 
         <section class="work-panel full-panel report-generator-panel">
-          <div class="panel-head premium-module-head premium-module-head--reports">
-            <div>
-              <span class="eyebrow">Reportes</span>
-              <h3>Genera un resumen de tu negocio</h3>
-              <p>Consulta la información y expórtala cuando la necesites.</p>
+          <div class="report-controls">
+            <div class="report-control-head">
+              <div class="report-type-tabs atelier-tabs" role="tablist" aria-label="Tipo de reporte">
+                <button id="reportTab-sales" data-report-type="sales" role="tab" aria-selected="true" aria-controls="reportContent" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 21V11m8 10V3m8 18V7M2 21h20"/></svg>Ventas</button>
+                <button id="reportTab-products" data-report-type="products" role="tab" aria-selected="false" aria-controls="reportContent" tabindex="-1" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7l9-5ZM3 7l9 5 9-5M12 12v10"/></svg>Productos vendidos</button>
+                <button id="reportTab-inventory" data-report-type="inventory" role="tab" aria-selected="false" aria-controls="reportContent" tabindex="-1" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z"/></svg>Inventario</button>
+              </div>
+              <input id="reportTypeFilter" type="hidden" value="sales" />
+              <div class="report-output-actions" role="group" aria-label="Exportar o imprimir el reporte">
+                <button id="exportReportBtn" class="quiet-btn" type="button" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/></svg>Exportar CSV</button>
+                <button id="printReportBtn" class="quiet-btn" type="button" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8V3h10v5M7 17H4V9h16v8h-3M7 14h10v7H7zM17 11h.01"/></svg>Imprimir</button>
+              </div>
             </div>
-            <div class="toolbar report-toolbar">
-              <select id="reportTypeFilter" aria-label="Tipo de reporte">
-                <option value="sales">Ventas</option>
-                <option value="products">Productos vendidos</option>
-                <option value="inventory">Inventario</option>
-              </select>
-              <select id="reportPeriodFilter" aria-label="Periodo del reporte">
-                <option value="day">Día</option>
-                <option value="week">Semana</option>
-                <option value="month">Mes</option>
-                <option value="year">Año</option>
-                <option value="all">Total</option>
-                <option value="range">Rango</option>
-              </select>
-              <input id="reportDateInput" type="date" aria-label="Fecha inicial del reporte" />
-              <input id="reportEndDateInput" type="date" aria-label="Fecha final del reporte" class="hidden" />
-              <button id="generateReportBtn" class="quiet-btn" type="button">Actualizar</button>
-              <button id="exportReportBtn" class="quiet-btn" type="button">Exportar CSV</button>
-              <button id="printReportBtn" class="solid-btn" type="button">Imprimir</button>
+            <div class="report-filter-fields" role="group" aria-label="Filtros del reporte">
+              <label class="report-field">Periodo
+                <select id="reportPeriodFilter"><option value="day">Día</option><option value="week">Semana</option><option value="month">Mes</option><option value="year">Año</option><option value="all">Total</option><option value="range">Rango</option></select>
+              </label>
+              <label class="report-field" id="reportDateField"><span id="reportDateLabel">Fecha</span><input id="reportDateInput" type="date" aria-label="Fecha inicial del reporte" /></label>
+              <label class="report-field hidden" id="reportEndDateField">Hasta<input id="reportEndDateInput" type="date" aria-label="Fecha final del reporte" class="hidden" /></label>
+              <button id="generateReportBtn" class="solid-btn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10a8 8 0 1 0-.8 6M20 4v6h-6"/></svg>Actualizar</button>
             </div>
+            <p id="reportStatus" class="report-status" role="status" hidden></p>
           </div>
 
-          <div class="kpi-grid report-kpis" aria-label="Indicadores del reporte">
-            <article><span id="reportKpiPrimaryLabel">Total vendido</span><strong id="reportKpiPrimary">$0.00</strong></article>
-            <article><span id="reportKpiSecondaryLabel">Ventas</span><strong id="reportKpiSecondary">0</strong></article>
-            <article><span id="reportKpiThirdLabel">Ticket promedio</span><strong id="reportKpiThird">$0.00</strong></article>
-            <article><span id="reportKpiFourthLabel">Margen</span><strong id="reportKpiFourth">0.00%</strong></article>
-          </div>
+          <div id="reportContent" role="tabpanel" aria-labelledby="reportTab-sales" tabindex="0" class="report-content">
+            <div class="kpi-grid report-kpis summary-banner" aria-label="Indicadores del reporte">
+              <article class="summary-banner-key"><span id="reportKpiPrimaryIcon" class="report-kpi-icon" aria-hidden="true"></span><div><span id="reportKpiPrimaryLabel">Total vendido</span><strong id="reportKpiPrimary">$0.00</strong><small id="reportKpiPrimaryNote">Ventas del periodo</small></div></article>
+              <article><span id="reportKpiSecondaryIcon" class="report-kpi-icon" aria-hidden="true"></span><div><span id="reportKpiSecondaryLabel">Ventas</span><strong id="reportKpiSecondary">0</strong><small id="reportKpiSecondaryNote">Operaciones completadas</small></div></article>
+              <article><span id="reportKpiThirdIcon" class="report-kpi-icon" aria-hidden="true"></span><div><span id="reportKpiThirdLabel">Ticket promedio</span><strong id="reportKpiThird">$0.00</strong><small id="reportKpiThirdNote">Por venta completada</small></div></article>
+              <article><span id="reportKpiFourthIcon" class="report-kpi-icon" aria-hidden="true"></span><div><span id="reportKpiFourthLabel">Margen</span><strong id="reportKpiFourth">0.00%</strong><small id="reportKpiFourthNote">Utilidad bruta / ventas</small></div></article>
+            </div>
 
           <section class="inner-panel report-preview-panel">
             <div class="report-preview-head">
               <div>
-                <span class="eyebrow" id="reportPreviewEyebrow">Reporte de ventas</span>
+                <span class="eyebrow" id="reportPreviewEyebrow" hidden>Reporte de ventas</span>
                 <h4 id="reportPreviewTitle">Ventas del día</h4>
+                <span id="reportPeriodCaption" class="report-period-caption"></span>
               </div>
-              <span id="reportPeriodCaption" class="report-period-caption"></span>
             </div>
-            <div class="report-table-wrap">
-              <table class="report-table">
+            <p id="reportDataNote" class="report-data-note" hidden></p>
+            <div class="report-table-wrap" tabindex="0" role="region" aria-label="Resultados del reporte, desplazamiento horizontal y vertical">
+              <table class="report-table" aria-labelledby="reportPreviewTitle">
                 <thead id="reportTableHead"></thead>
                 <tbody id="reportTableBody"></tbody>
               </table>
             </div>
           </section>
+            <div class="report-charts">
+              <section class="inner-panel report-chart-panel" aria-labelledby="reportSalesChartTitle">
+                <div class="report-chart-head"><h4 id="reportSalesChartTitle">Ventas por día</h4><div class="report-chart-controls">
+                  <label class="sr-only" for="reportChartGrouping">Agrupar ventas por</label><select id="reportChartGrouping"><option value="day">Por día</option><option value="week">Por semana</option><option value="month">Por mes</option></select>
+                  <label class="sr-only" for="reportChartType">Tipo de gráfica</label><select id="reportChartType" class="glass-chart-select"><option value="bar">Barras</option><option value="line">Líneas</option></select>
+                </div></div>
+                <div id="reportSalesChart" class="report-chart-body"></div>
+                <p id="reportChartScope" class="report-chart-scope"></p>
+              </section>
+              <section class="inner-panel report-chart-panel" aria-labelledby="reportPaymentsTitle"><div class="report-chart-head"><h4 id="reportPaymentsTitle">Métodos de pago</h4></div><div id="reportPaymentsChart" class="report-payments-body"></div></section>
+            </div>
+          </div>
         </section>
 
-        <section class="work-panel full-panel cash-control-page">
-          <section class="inner-panel cash-current-panel">
-            <div class="cash-current-head premium-module-head premium-module-head--cash">
-              <div>
-                <h3>Apertura y cierre</h3>
-                <p id="cashShiftStatus">Sin caja abierta.</p>
+        <section class="cashdesk" aria-labelledby="pageTitle">
+          <div class="cashdesk-summary summary-banner">
+            <section class="cashdesk-identity" aria-label="Identificación de caja">
+              <span class="cashdesk-summary-icon"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12l1 6H5l1-6ZM4 10h16v11H4zM8 14h8M8 18h3M16 17h1"/></svg></span>
+              <div class="cashdesk-identity-copy">
+                <div class="cashdesk-identity-title"><h3 id="cashShiftStatus">Caja —</h3><span id="cashSessionStatusBadge" class="cash-session-status closed">Cerrada</span></div>
+                <div class="cashdesk-meta">
+                  <div class="cashdesk-meta-item"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 2v6M17 2v6M3 11h18"/></svg><span>Apertura</span><strong id="cashCurrentOpenedAt">—</strong></div>
+                  <div class="cashdesk-meta-item"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="6" r="4"/><path d="M4 22v-3a8 8 0 0 1 16 0v3"/></svg><span>Responsable</span><strong id="cashCurrentOperator">—</strong></div>
+                </div>
               </div>
-              <span id="cashSessionStatusBadge" class="cash-session-status closed">Cerrada</span>
-            </div>
-
-            <div class="cash-current-summary">
-              <article>
-                <span>Hora de apertura</span>
-                <strong id="cashCurrentOpenedAt">--:--</strong>
-              </article>
-              <article>
-                <span>Fondo inicial</span>
-                <strong id="cashCurrentOpeningAmount">$0.00</strong>
-              </article>
-              <article>
-                <span>Efectivo esperado</span>
-                <strong id="cashCurrentExpected">$0.00</strong>
-              </article>
-            </div>
-
-            <div id="cashOpenControls" class="cash-open-controls">
-              <label>
-                Fondo inicial
-                <input id="openingCashInput" type="number" min="0" step="0.01" placeholder="0.00" />
-              </label>
+            </section>
+            <article class="cashdesk-expected summary-banner-key"><span class="cashdesk-summary-icon"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v5c0 4 16 4 16 0V5M4 10v5c0 4 16 4 16 0v-5M4 15v4c0 4 16 4 16 0v-4"/></svg></span><div><span>Efectivo esperado</span><strong id="cashCurrentExpected">$0.00</strong></div></article>
+          </div>
+          <div class="cashdesk-kpis" aria-label="Resumen de la caja actual">
+            <article class="cashdesk-kpi-opening"><span class="cashdesk-kpi-icon"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 5H6a3 3 0 0 0-3 3v11a2 2 0 0 0 2 2h15V8H6a3 3 0 0 1 0-6h12v3M15 12h5v5h-5z"/></svg></span><div><span>Fondo inicial</span><strong id="cashCurrentOpeningAmount">$0.00</strong></div></article>
+            <article class="cashdesk-kpi-sales"><span class="cashdesk-kpi-icon"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20v-7M12 20V4M19 20V9"/></svg></span><div><span>Ventas</span><strong id="sessionTotalSales">$0.00</strong></div></article>
+            <article class="cashdesk-kpi-in"><span class="cashdesk-kpi-icon"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M7 12h10"/></svg></span><div><span>Entradas</span><strong id="sessionCashIn">$0.00</strong></div></article>
+            <article class="cashdesk-kpi-out"><span class="cashdesk-kpi-icon"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M7 12h10"/></svg></span><div><span>Retiros</span><strong id="sessionCashOut">$0.00</strong></div></article>
+          </div>
+          <p id="cashLoadError" class="cashdesk-notice" role="alert" hidden>No se pudo actualizar la caja. La información puede estar desactualizada; vuelve a abrir Caja y cortes para reintentar.</p>
+          <div class="cashdesk-tabs atelier-tabs" role="tablist" aria-label="Operaciones de caja">
+            <button id="cashTab-current" type="button" role="tab" aria-selected="true" aria-controls="cashPane-current" tabindex="0" data-cash-tab="current"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12l1 6H5l1-6ZM4 10h16v11H4zM8 14h8M8 18h3M16 17h1"/></svg><span>Caja actual</span></button>
+            <button id="cashTab-movements" type="button" role="tab" aria-selected="false" aria-controls="cashPane-movements" tabindex="-1" data-cash-tab="movements"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5h13M8 12h13M8 19h13M3 5h.01M3 12h.01M3 19h.01"/></svg><span>Movimientos</span></button>
+            <button id="cashTab-count" type="button" role="tab" aria-selected="false" aria-controls="cashPane-count" tabindex="-1" data-cash-tab="count"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M8 6h8M8 10h1M12 10h1M16 10h.01M8 14h1M12 14h1M16 14v4M8 18h1M12 18h1"/></svg><span>Conteo y cierre</span></button>
+            <button id="cashTab-history" type="button" role="tab" aria-selected="false" aria-controls="cashPane-history" tabindex="-1" data-cash-tab="history"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l4 2"/></svg><span>Historial</span></button>
+          </div>
+          <section id="cashPane-current" class="cashdesk-pane" role="tabpanel" aria-labelledby="cashTab-current" tabindex="0">
+            <div id="cashOpenControls" class="cashdesk-card cashdesk-opening">
+              <div><h3>Iniciar la operación</h3><p>Confirma el fondo inicial para abrir la caja.</p></div>
+              <label>Fondo inicial<input id="openingCashInput" type="number" min="0" step="0.01" placeholder="0.00" inputmode="decimal" /></label>
               <button id="openCashShiftBtn" class="solid-btn" type="button">Abrir caja</button>
             </div>
-
-            <div id="cashLiveControls" class="cash-live-controls hidden">
-              <section class="cash-action-card cash-close-card">
-                <div class="cash-action-head">
-                  <div>
-                    <span class="eyebrow">Cierre</span>
-                    <h4>Contar y cerrar caja</h4>
-                  </div>
-                  <div class="cash-difference-indicator">
-                    <span>Diferencia</span>
-                    <strong id="cashShiftDifference">$0.00</strong>
-                  </div>
+            <section id="cashQuickActions" class="cashdesk-card hidden">
+              <div class="cashdesk-operation-head"><span class="cashdesk-block-icon"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 3 1-2h4l1 2 3 2 2 1-1 4v4l1 4-3 2-2 1-1 2h-4l-1-2-3-2-2-1 1-4v-4L4 6l3-2z"/><circle cx="12" cy="12" r="4"/></svg></span><div><h3>Operaciones de la caja abierta</h3><p>Registra efectivo o realiza el conteo antes de cerrar la caja.</p></div><p class="cashdesk-operation-note"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg><span>La diferencia se mostrará al realizar el conteo final.</span></p></div>
+              <div class="cashdesk-actions">
+                <button type="button" class="quiet-btn admin-only-cash-movements" data-cash-action="in"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M7 12h10"/></svg><span>Registrar entrada</span></button>
+                <button type="button" class="quiet-btn admin-only-cash-movements" data-cash-action="out"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M7 12h10"/></svg><span>Registrar retiro</span></button>
+                <button type="button" class="solid-btn" data-cash-action="count"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M8 6h8M8 10h1M12 10h1M16 10h.01M8 14h1M12 14h1M16 14v4M8 18h1M12 18h1"/></svg><span>Realizar conteo</span></button>
+                <button type="button" class="quiet-btn cashdesk-close-link" data-cash-action="close"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/></svg><span>Cerrar caja</span></button>
+              </div>
+            </section>
+            <section class="cashdesk-card cashdesk-activity-card"><div class="cashdesk-activity-head"><span class="cashdesk-block-icon"><svg class="cashdesk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20v-7M12 20V4M19 20V9"/></svg></span><div><h3>Actividad de esta caja</h3><p>Movimientos registrados desde la apertura de la caja.</p></div></div>
+              <div id="cashActivityList" class="cashdesk-activity table-scroll"><p class="empty-state">Sin actividad de caja.</p></div>
+            </section>
+          </section>
+          <section id="cashPane-movements" class="cashdesk-pane" role="tabpanel" aria-labelledby="cashTab-movements" tabindex="0" hidden>
+            <p id="cashMovementsNotice" class="cashdesk-notice">Abre una caja para registrar movimientos.</p>
+            <section id="cashMovementsSection" class="cashdesk-movements admin-only-cash-movements hidden">
+              <section class="cashdesk-card"><h3>Registrar entrada o retiro</h3><p>Movimiento manual de la caja actual. Disponible para el administrador.</p>
+                <div class="cashdesk-movement-form">
+                  <label>Tipo<select id="cashMovementType"><option value="out">Retiro</option><option value="in">Entrada</option></select></label>
+                  <label>Importe<input id="cashMovementAmount" type="number" min="0.01" step="0.01" placeholder="0.00" inputmode="decimal" /></label>
+                  <button id="addCashMovementBtn" class="solid-btn" type="button">Guardar movimiento</button>
                 </div>
-                <div class="cash-close-form cash-close-footer">
-                  <label class="cash-close-counted-field">
-                    Efectivo contado
-                    <input id="countedCashInput" type="number" min="0" step="0.01" placeholder="0.00" inputmode="decimal" />
-                  </label>
-                  <button id="cashCountToggleBtn" class="quiet-btn cash-count-toggle" type="button">Calculadora de efectivo</button>
-                  <button id="closeCashShiftBtn" class="warning-btn" type="button">Cerrar caja</button>
-                </div>
-                <section id="cashCountTool" class="cash-count-tool hidden" aria-label="Calculadora de efectivo">
-                  <div class="cash-count-head">
+              </section>
+              <section class="cashdesk-card"><h3>Movimientos registrados</h3><div id="cashMovementsList" class="cashdesk-movement-list"><p class="empty-state">Sin movimientos manuales.</p></div></section>
+            </section>
+          </section>
+          <section id="cashPane-count" class="cashdesk-pane" role="tabpanel" aria-labelledby="cashTab-count" tabindex="0" hidden>
+            <p id="cashCountNotice" class="cashdesk-notice">Abre una caja para realizar el conteo y cierre.</p>
+            <section id="cashLiveControls" class="cashdesk-card hidden">
+              <h3>Conteo y cierre</h3><p>Revisa el efectivo contado. El corte sólo se guarda después de confirmar el cierre.</p>
+              <div class="cashdesk-count-inputs">
+                <article class="cashdesk-count-reference"><span>1. Efectivo esperado</span><strong id="cashCloseExpected">$0.00</strong></article>
+                <label>2. Efectivo contado<input id="countedCashInput" type="number" min="0" step="0.01" placeholder="0.00" inputmode="decimal" /></label>
+              </div>
+              <button id="cashCountToggleBtn" class="quiet-btn" type="button" aria-expanded="false" aria-controls="cashCountTool">3. Calculadora de efectivo</button>
+                <section id="cashCountTool" class="cashdesk-count-tool hidden" aria-label="Calculadora de efectivo">
+                  <div class="cashdesk-count-head">
                     <div>
                       <span class="eyebrow">Conteo opcional</span>
                       <h5>Calculadora de efectivo</h5>
                     </div>
                     <button id="cashCountClearBtn" class="quiet-btn" type="button">Limpiar</button>
                   </div>
-                  <div id="cashCountGrid" class="cash-count-grid"></div>
-                  <div class="cash-count-summary">
+                  <div id="cashCountGrid" class="cashdesk-count-grid"></div>
+                  <div class="cashdesk-count-summary">
                     <article>
                       <span>Total contado</span>
                       <strong id="cashCountTotal">$0.00</strong>
@@ -915,110 +797,46 @@
                       <strong id="cashCountExpected">$0.00</strong>
                     </article>
                     <article>
-                      <span>Diferencia</span>
+                      <span>Diferencia preliminar</span>
                       <strong id="cashCountDifference">$0.00</strong>
                     </article>
                     <button id="cashCountUseBtn" class="solid-btn" type="button">Usar total</button>
                   </div>
                 </section>
-              </section>
-            </div>
+              <div class="cashdesk-count-result" aria-live="polite"><span>4. Diferencia preliminar</span><strong id="cashShiftDifference">Pendiente de conteo</strong><small id="cashDifferenceHint">Captura el efectivo contado o utiliza la calculadora.</small></div>
+              <div class="cashdesk-close-action"><span>5. Revisar y confirmar el corte</span><button id="closeCashShiftBtn" class="solid-btn" type="button">Cerrar caja</button></div>
+            </section>
           </section>
-
-          <section class="inner-panel cash-live-summary-panel">
-            <div class="panel-head compact">
-              <div>
-                <span class="eyebrow">Resumen actual</span>
-                <h3>Actividad de la caja abierta</h3>
-              </div>
-            </div>
-            <div class="cash-live-kpis">
-              <article><span>Total vendido</span><strong id="sessionTotalSales">$0.00</strong></article>
-              <article><span>Efectivo</span><strong id="sessionCashSales">$0.00</strong></article>
-              <article><span>Tarjeta</span><strong id="sessionCardSales">$0.00</strong></article>
-              <article><span>Transferencia</span><strong id="sessionTransferSales">$0.00</strong></article>
-              <article><span>Entradas</span><strong id="sessionCashIn">$0.00</strong></article>
-              <article><span>Retiros</span><strong id="sessionCashOut">$0.00</strong></article>
-              <article><span>Ventas</span><strong id="sessionSalesCount">0</strong></article>
-              <article><span>Canceladas</span><strong id="sessionCanceledCount">0</strong></article>
-            </div>
-          </section>
-
-          <section id="cashMovementsSection" class="inner-panel cash-operations-panel admin-only-cash-movements hidden">
-            <div class="panel-head compact">
-              <div>
-                <span class="eyebrow">Operaciones</span>
-                <h3>Movimientos de efectivo</h3>
-                <p>Entradas y retiros manuales de la caja actual. Solo disponibles para el administrador.</p>
-              </div>
-            </div>
-
-            <div class="cash-operations-grid">
-              <section class="cash-action-card">
-                <div class="cash-action-head">
-                  <div>
-                    <span class="eyebrow">Nuevo movimiento</span>
-                    <h4>Registrar entrada o retiro</h4>
-                  </div>
-                </div>
-                <div class="cash-movement-form">
-                  <label>
-                    Tipo
-                    <select id="cashMovementType">
-                      <option value="out">Retiro</option>
-                      <option value="in">Entrada</option>
-                    </select>
-                  </label>
-                  <label>
-                    Importe
-                    <input id="cashMovementAmount" type="number" min="0.01" step="0.01" placeholder="0.00" />
-                  </label>
-                  <button id="addCashMovementBtn" class="quiet-btn" type="button">Guardar movimiento</button>
-                </div>
-              </section>
-
-              <section class="cash-action-card cash-movements-history-card">
-                <div class="cash-action-head">
-                  <div>
-                    <span class="eyebrow">Historial actual</span>
-                    <h4>Movimientos registrados</h4>
-                  </div>
-                </div>
-                <div id="cashMovementsList" class="cash-movements-list">
-                  <p class="empty-state">Sin movimientos manuales.</p>
-                </div>
-              </section>
-            </div>
-          </section>
-
-          <div class="cut-filter-bar admin-cash-reporting">
+          <section id="cashPane-history" class="cashdesk-pane" role="tabpanel" aria-labelledby="cashTab-history" tabindex="0" hidden>
+            <p id="cashHistoryNotice" class="cashdesk-notice" hidden>El historial de cortes está disponible para el administrador.</p>
+          <div class="cashdesk-filter admin-cash-reporting">
             <div>
               <strong>Resumen por periodo</strong>
               <span>Consulta ventas, rentabilidad y cortes anteriores.</span>
             </div>
             <div class="toolbar">
-              <select id="cutPeriodFilter">
+              <select id="cutPeriodFilter" aria-label="Periodo del historial">
                 <option value="day">Día</option>
                 <option value="week">Semana</option>
                 <option value="month">Mes</option>
                 <option value="year">Año</option>
                 <option value="all">Total</option>
               </select>
-              <input id="cutDateInput" type="date" />
+              <input id="cutDateInput" type="date" aria-label="Fecha del historial" />
               <button id="refreshCutBtn" class="quiet-btn" type="button">Actualizar</button>
               <button id="printCutBtn" class="solid-btn" type="button">Imprimir resumen</button>
             </div>
           </div>
 
-          <div class="kpi-grid admin-cash-reporting">
+          <div class="cashdesk-period-kpis admin-cash-reporting">
             <article><span>Total vendido</span><strong id="cutTotalSales">$0.00</strong></article>
             <article><span>Ganancia</span><strong id="cutGrossProfit">$0.00</strong></article>
             <article><span>Margen</span><strong id="cutMargin">0.00%</strong></article>
             <article><span>Ventas</span><strong id="cutSalesCount">0</strong></article>
           </div>
 
-          <div class="report-grid admin-cash-reporting">
-            <section class="inner-panel">
+          <div class="cashdesk-period-payments admin-cash-reporting">
+            <section class="cashdesk-card">
               <h4>Pagos</h4>
               <div class="payment-summary">
                 <div><span>Efectivo</span><strong id="cutCash">$0.00</strong></div>
@@ -1029,37 +847,29 @@
             </section>
           </div>
 
-          <section class="inner-panel cash-history-panel admin-cash-reporting">
-            <div class="panel-head compact">
-              <div>
-                <span class="eyebrow">Historial</span>
-                <h3>Cortes cerrados</h3>
-              </div>
-            </div>
-            <div id="cashHistoryList" class="cash-history-list"></div>
+
+            <section class="cashdesk-card admin-cash-reporting"><h3>Historial de cortes</h3><p>Consulta las cajas del periodo y conserva su comprobante.</p><div id="cashHistoryList" class="cashdesk-history"></div></section>
           </section>
         </section>
       </section>
 
       <section id="settingsView" class="app-view">
-        <div class="split-layout settings-layout" data-settings-mode="scale">
-          <div class="subview-tabs settings-subview-tabs" role="tablist" aria-label="Secciones de configuracion">
-            <button class="active" type="button" role="tab" aria-selected="true" data-settings-mode-btn="scale">Bascula</button>
-            <button type="button" role="tab" aria-selected="false" data-settings-mode-btn="users">Usuarios y PIN</button>
-            <button type="button" role="tab" aria-selected="false" data-settings-mode-btn="audit">Auditoría</button>
-          </div>
-          <section class="work-panel">
-            <div class="form-title premium-module-head premium-module-head--settings">
-              <span class="eyebrow">Báscula</span>
-              <h3>Puerto serial</h3>
-            </div>
-            <div class="settings-grid">
+        <div class="settings-layout settings-center" data-settings-mode="scale">
+          <nav class="settings-navigation" aria-label="Secciones de Configuración"><h3>Secciones</h3><div class="settings-subview-tabs atelier-tabs" role="tablist" aria-orientation="vertical" aria-label="Secciones de Configuración"><button id="settingsTab-general" type="button" role="tab" aria-selected="false" aria-controls="settingsPane-general" tabindex="-1" data-settings-mode-btn="general"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18V3Z"/></svg><span>General<small>Movimiento y apariencia</small></span></button>
+<button id="settingsTab-scale" type="button" role="tab" aria-selected="true" aria-controls="settingsPane-scale" tabindex="0" data-settings-mode-btn="scale"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16l2 9H2l2-9ZM12 15v6M6 21h12M9 3h6"/></svg><span>Báscula<small>Conexión y lectura</small></span></button>
+<button id="settingsTab-users" type="button" role="tab" aria-selected="false" aria-controls="settingsPane-users" tabindex="-1" data-settings-mode-btn="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="4"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M17 4a4 4 0 0 1 0 8M18 15a5 5 0 0 1 4 5"/></svg><span>Usuarios y PIN<small>Accesos y empleados</small></span></button>
+<button id="settingsTab-audit" type="button" role="tab" aria-selected="false" aria-controls="settingsPane-audit" tabindex="-1" data-settings-mode-btn="audit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5h13M8 12h13M8 19h13M3 5h.01M3 12h.01M3 19h.01"/></svg><span>Auditoría<small>Bitácora de acciones</small></span></button></div><p>Las opciones se muestran según los permisos del usuario.</p></nav>
+          <div class="settings-content">
+            <header class="settings-section-head"><div><span id="settingsSectionEyebrow">Configuración del dispositivo</span><h3 id="settingsSectionTitle">Báscula · RHINO BAR-9</h3></div><span id="settingsScaleConnectionBadge" class="settings-connection-badge" role="status">Sin conexión</span></header>
+            <section id="settingsPane-general" data-settings-pane="general" role="tabpanel" aria-labelledby="settingsTab-general" tabindex="0" hidden><article class="work-panel settings-appearance"><h4>Movimiento de la interfaz</h4><p>Reduce las animaciones del punto de venta y de la interfaz. Esta preferencia se conserva en este navegador.</p><div id="settingsMotionSlot"><button id="posMotionToggle" class="quiet-btn" type="button" aria-pressed="false" title="Preferencia local de movimiento del POS">Reducir movimiento</button></div></article></section>
+            <section id="settingsPane-scale" data-settings-pane="scale" role="tabpanel" aria-labelledby="settingsTab-scale" tabindex="0">
+              <div class="settings-scale-grid"><section class="work-panel settings-serial-panel"><div class="settings-panel-title"><h4>Puerto serial</h4><p>Ajustes técnicos de lectura</p></div>            <div class="settings-grid">
               <label class="wide">
                 Modelo
                 <input id="scaleModelInput" type="text" value="RHINO BAR-9" readonly />
               </label>
               <label>
-                Baud rate
+                Velocidad del puerto
                 <select id="scaleBaudRateInput">
                   <option value="9600">9600</option>
                   <option value="4800">4800</option>
@@ -1072,7 +882,7 @@
                 <input id="scaleCommandInput" type="text" value="P" maxlength="4" />
               </label>
               <label>
-                Solicitar cada
+                Intervalo de lectura
                 <select id="scalePollMsInput">
                   <option value="500">0.5 s</option>
                   <option value="800">0.8 s</option>
@@ -1094,26 +904,15 @@
               <button id="requestScaleBtnSettings" class="quiet-btn" type="button" disabled>Pedir peso</button>
               <button id="disconnectScaleBtnSettings" class="quiet-btn" type="button" disabled>Desconectar</button>
             </div>
-            <div class="scale-protocol-card">
+</section>
+              <section class="work-panel settings-monitor-panel"><h4>Monitor en vivo</h4><div class="settings-monitor"><span>Lectura en vivo</span><h3 id="settingsScaleWeight">0.000 kg</h3><p id="settingsScaleStatus" role="status">Sin conexión</p><div class="settings-raw"><span>Datos recibidos</span><pre id="settingsScaleRaw" class="raw-box">Sin datos</pre></div></div></section></div>            <div class="scale-protocol-card">
               <strong>Protocolo RHINO BAR-9</strong>
               <span>9600 BPS · 8 bits · sin paridad · 1 bit de parada · sin flujo · enviar &quot;P&quot;.</span>
             </div>
-          </section>
-          <section class="work-panel">
-            <div class="form-title premium-module-head premium-module-head--settings premium-module-head--compact">
-              <span class="eyebrow">Lectura en vivo</span>
-              <h3 id="settingsScaleWeight">0.000 kg</h3>
-              <p id="settingsScaleStatus">Sin conexión.</p>
-            </div>
-            <pre id="settingsScaleRaw" class="raw-box">Sin datos</pre>
-          </section>
 
-          <section class="work-panel users-settings-panel">
-            <div class="form-title premium-module-head premium-module-head--settings">
-              <span class="eyebrow">Usuarios</span>
-              <h3>Acceso y PIN</h3>
-              <p>Administra el nombre del encargado, el PIN protegido y las cuentas de acceso.</p>
-            </div>
+            </section>
+          <section id="settingsPane-users" class="work-panel users-settings-panel" data-settings-pane="users" role="tabpanel" aria-labelledby="settingsTab-users" tabindex="0" hidden>
+<p class="settings-section-note">Administra los nombres y PIN de las cuentas de acceso. Los cambios se aplican al guardar.</p>
 
             <div class="users-settings-grid">
               <section class="users-settings-card">
@@ -1156,8 +955,8 @@
                 </div>
 
                 <div class="employee-add-row">
-                  <input id="newEmployeeNameInput" type="text" maxlength="60" placeholder="Nombre del empleado" autocomplete="off" />
-                  <input id="newEmployeePinInput" type="password" inputmode="numeric" minlength="6" maxlength="12" placeholder="PIN de 6 a 12 dígitos" autocomplete="new-password" />
+                  <label for="newEmployeeNameInput">Nombre del empleado<input id="newEmployeeNameInput" type="text" maxlength="60" placeholder="Nombre del empleado" autocomplete="off" /></label>
+                  <label for="newEmployeePinInput">PIN del empleado<input id="newEmployeePinInput" type="password" inputmode="numeric" minlength="6" maxlength="12" placeholder="PIN de 6 a 12 dígitos" autocomplete="new-password" /></label>
                   <button id="addEmployeeBtn" class="quiet-btn" type="button">Agregar</button>
                 </div>
                 <p class="users-helper-text">Cada encargado entra con su propio PIN de 6 a 12 dígitos. Nunca uses PINs predecibles.</p>
@@ -1173,7 +972,8 @@
               <button id="resetUserSettingsBtn" class="quiet-btn" type="button">Descartar cambios</button>
             </div>
           </section>
-          <section class="work-panel audit-settings-panel">
+
+          <section id="settingsPane-audit" class="work-panel audit-settings-panel" data-settings-pane="audit" role="tabpanel" aria-labelledby="settingsTab-audit" tabindex="0" hidden>
             <div class="panel-head premium-module-head premium-module-head--settings">
               <div>
                 <span class="eyebrow">Trazabilidad</span>
@@ -1186,12 +986,37 @@
               <p class="empty-state">Carga la bitácora para consultar cambios.</p>
             </div>
           </section>
+
+          </div>
         </div>
       </section>
     </section>
   </main>
 
-  <div id="manualModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="manualModalTitle">
+  <div id="devicePreferencesModal" class="modal hidden" role="dialog" aria-modal="true" aria-hidden="true" inert aria-labelledby="devicePreferencesTitle"><section class="modal-card device-preferences-card"><div class="modal-head"><h3 id="devicePreferencesTitle">Preferencias del dispositivo</h3><button id="devicePreferencesCloseBtn" class="icon-btn" type="button" aria-label="Cerrar">×</button></div><section class="device-preference-section"><h4>Báscula</h4><strong id="personalScaleWeight">0.000 kg</strong><p id="personalScaleStatus" role="status">Sin conexión</p><button id="connectScaleBtn" class="solid-btn" type="button">Conectar báscula</button></section><section class="device-preference-section"><h4>Movimiento</h4><p>Preferencia local de este navegador.</p><div id="employeeMotionSlot"></div></section></section></div>
+  <div id="pieceQuantityModal" class="modal hidden" aria-hidden="true" inert role="dialog" aria-modal="true" aria-labelledby="pieceQuantityTitle" aria-describedby="pieceQuantityProductName">
+    <form id="pieceQuantityForm" class="modal-card" novalidate>
+      <div class="modal-head">
+        <div><h3 id="pieceQuantityTitle">Cantidad por pieza</h3><p id="pieceQuantityProductName"></p></div>
+        <button id="closePieceQuantityBtn" class="icon-btn" type="button" aria-label="Cerrar">×</button>
+      </div>
+      <div class="piece-quantity-details"><strong id="pieceQuantityUnitPrice"></strong><span id="pieceQuantityStock"></span></div>
+      <label for="pieceQuantityInput">Cantidad</label>
+      <div class="piece-quantity-stepper">
+        <button id="decreasePieceQuantityBtn" class="quiet-btn" type="button" aria-label="Disminuir cantidad">−</button>
+        <input id="pieceQuantityInput" type="text" inputmode="numeric" autocomplete="off" aria-describedby="pieceQuantityError" />
+        <button id="increasePieceQuantityBtn" class="quiet-btn" type="button" aria-label="Aumentar cantidad">+</button>
+      </div>
+      <p id="pieceQuantityError" class="piece-quantity-error" aria-live="polite"></p>
+      <div class="piece-quantity-subtotal"><span>Subtotal</span><strong id="pieceQuantitySubtotal" aria-live="polite">$0.00</strong></div>
+      <div class="modal-actions">
+        <button id="cancelPieceQuantityBtn" class="quiet-btn" type="button">Cancelar</button>
+        <button id="confirmPieceQuantityBtn" class="solid-btn" type="submit">Agregar al carrito</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="manualModal" class="modal hidden" aria-hidden="true" inert role="dialog" aria-modal="true" aria-labelledby="manualModalTitle">
     <div class="modal-card">
       <div class="modal-head">
         <div>
@@ -1231,7 +1056,7 @@
     </div>
   </div>
 
-  <div id="productConfirmModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="productConfirmTitle">
+  <div id="productConfirmModal" class="modal hidden" aria-hidden="true" inert role="dialog" aria-modal="true" aria-labelledby="productConfirmTitle">
     <div class="modal-card">
       <div class="modal-head">
         <div>
@@ -1270,5 +1095,7 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="./app.js"></script>
+  <script src="./settings-center.js"></script>
+  <script src="./access-control.js"></script>
 </body>
 </html>

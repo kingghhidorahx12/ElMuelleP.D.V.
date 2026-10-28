@@ -3,11 +3,12 @@ const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const validate = require('./validation');
 const { PosDatabase } = require("./database");
+const persistence = require("./persistence");
+const initialStorage = persistence.resolveStorage();
 
-const envPath = process.env.ENV_FILE
-  ? path.resolve(process.env.ENV_FILE)
-  : path.join(__dirname, "..", ".env");
+const envPath = initialStorage.envPath;
 if (fs.existsSync(envPath)) {
   process.loadEnvFile(envPath);
 }
@@ -19,46 +20,21 @@ const REQUIRE_HTTPS = String(process.env.REQUIRE_HTTPS || "").toLowerCase() === 
 const PIN_PATTERN = /^\d{6,12}$/;
 const AUTH_SESSION_MS = 30 * 60 * 1000;
 const MAX_AUTH_SESSIONS = 1000;
-const dataDir = process.env.DATA_DIR
-  ? path.resolve(process.env.DATA_DIR)
-  : path.join(__dirname, "..", "data");
-
+const storage = persistence.resolveStorage();
+if (initialStorage.installed && (!storage.installed || storage.dataDir !== initialStorage.dataDir || storage.root !== initialStorage.root)) throw new Error("La configuración no puede cambiar silenciosamente DATA_DIR; selecciónalo explícitamente al iniciar.");
+if(storage.installed){
+  const compatibility=require('./release-compatibility');
+  compatibility.verifyPackage(path.resolve(__dirname,'../..'));
+  compatibility.checkData(storage.dataDir);
+}
+persistence.prepareInstalledStorage(storage);
+const dataDir = storage.dataDir;
 const ADMIN_PIN = String(process.env.ADMIN_PIN || "").trim();
 const DEFAULT_EMPLOYEE_PIN = String(process.env.EMPLOYEE_PIN || "").trim();
-
-function resolveDataEncryptionKey() {
-  const configuredKey = String(process.env.DATA_ENCRYPTION_KEY || "").trim();
-  if (configuredKey.length >= 32) return configuredKey;
-
-  fs.mkdirSync(dataDir, { recursive: true });
-  const secretPath = path.join(dataDir, ".secrets.json");
-
-  if (fs.existsSync(secretPath)) {
-    try {
-      const saved = JSON.parse(fs.readFileSync(secretPath, "utf8"));
-      const savedKey = String(saved?.dataEncryptionKey || "").trim();
-      if (savedKey.length >= 32) return savedKey;
-    } catch (error) {
-      throw new Error("No se pudo leer la clave local de cifrado. Restaura .secrets.json desde un respaldo seguro.");
-    }
-
-    throw new Error("La clave local de cifrado no es válida. Restaura .secrets.json desde un respaldo seguro.");
-  }
-
-  const generatedKey = crypto.randomBytes(48).toString("base64url");
-  const temporaryPath = `${secretPath}.${process.pid}.tmp`;
-  fs.writeFileSync(
-    temporaryPath,
-    JSON.stringify({ dataEncryptionKey: generatedKey, createdAt: new Date().toISOString() }, null, 2),
-    { encoding: "utf8", mode: 0o600 }
-  );
-  fs.renameSync(temporaryPath, secretPath);
-  return generatedKey;
-}
-
-const DATA_ENCRYPTION_KEY = resolveDataEncryptionKey();
+const DATA_ENCRYPTION_KEY = persistence.resolveEncryptionKey(dataDir, process.env.DATA_ENCRYPTION_KEY);
 const encryptionKey = crypto.createHash("sha256").update(DATA_ENCRYPTION_KEY).digest();
 const authSessions = new Map();
+const manualWeightAuthorizations = new Map();
 const productsPath = path.join(dataDir, "products.json");
 const salesPath = path.join(dataDir, "sales.json");
 const cashShiftsPath = path.join(dataDir, "cash-shifts.json");
@@ -66,6 +42,7 @@ const cashSessionsPath = path.join(dataDir, "cash-sessions.json");
 const settingsPath = path.join(dataDir, "settings.json");
 const inventoryEntriesPath = path.join(dataDir, "inventory-entries.json");
 const database = new PosDatabase(dataDir);
+persistence.ensureKeyCheck(database, DATA_ENCRYPTION_KEY);
 
 const corsOrigins = String(process.env.CORS_ORIGIN || "")
   .split(",")
@@ -116,7 +93,19 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: "1mb" }));
+app.use('/api', (req, _res, next) => {
+  if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+    if (req.body !== undefined) validate.object(req.body);
+    else req.body = {};
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, "..", "public")));
+app.use('/api', (_req, res, next) => {
+  const send = res.json.bind(res);
+  res.json = value => { if (database.backupStatus.failed) res.set('X-ElMuelle-Backup', 'pending'); return send(value); };
+  next();
+});
 
 const authAttemptBuckets = new Map();
 const AUTH_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
@@ -401,6 +390,7 @@ function cleanupAuthSessions() {
 
 function createAuthSession(user) {
   cleanupAuthSessions();
+  configuration.recordAccess(user.id);
   const token = crypto.randomBytes(32).toString("hex");
   authSessions.set(token, {
     userId: user.id,
@@ -453,7 +443,7 @@ function clearSessionCookie(res) {
   res.setHeader("Set-Cookie", attributes.join("; "));
 }
 
-function getSessionUser(req) {
+function getSessionUser(req, touch = true) {
   const token = String(getCookies(req).el_muelle_session || "").trim();
   if (!token) return null;
 
@@ -472,7 +462,7 @@ function getSessionUser(req) {
     return null;
   }
 
-  session.expiresAt = Date.now() + AUTH_SESSION_MS;
+  if (touch) session.expiresAt = Date.now() + AUTH_SESSION_MS;
   authSessions.set(token, session);
   return user;
 }
@@ -649,30 +639,29 @@ function calculateSaleProfit(items, total) {
 }
 
 function normalizeProductPayload(body, existingProduct = {}) {
+  validate.object(body, 'Producto');
+  const unit = body.unit === undefined ? existingProduct.unit || 'kg' : body.unit;
+  if (!['kg', 'pieza'].includes(unit)) validate.invalid('La unidad del producto no es válida.');
   const stockValue =
-    body.stockQuantity === "" || body.stockQuantity === null
+    body.stockQuantity === null
       ? null
-      : roundQuantity(body.stockQuantity ?? existingProduct.stockQuantity ?? 0);
+      : validate.number(body.stockQuantity === undefined ? existingProduct.stockQuantity ?? 0 : body.stockQuantity, 'Existencia', { decimals: 3, integer: unit === 'pieza' });
 
   const minStockValue =
-    body.minStock === "" || body.minStock === null
+    body.minStock === null
       ? null
-      : roundQuantity(body.minStock ?? existingProduct.minStock ?? 0);
+      : validate.number(body.minStock === undefined ? existingProduct.minStock ?? 0 : body.minStock, 'Mínimo', { decimals: 3, integer: unit === 'pieza' });
 
   return {
-    name: sanitizeText(body.name ?? existingProduct.name ?? "", 120),
-    category: sanitizeText(body.category ?? existingProduct.category ?? "", 80),
-    unit: ["kg", "pieza"].includes(body.unit)
-      ? body.unit
-      : existingProduct.unit || "kg",
-    price: Math.max(0, roundMoney(body.price ?? existingProduct.price ?? 0)),
-    costPrice: Math.max(0, roundMoney(body.costPrice ?? existingProduct.costPrice ?? 0)),
+    name: validate.text(body.name === undefined ? existingProduct.name : body.name, 'Nombre', 120),
+    category: validate.text(body.category === undefined ? existingProduct.category : body.category, 'Categoría', 80),
+    unit,
+    price: validate.number(body.price === undefined ? existingProduct.price ?? 0 : body.price, 'Precio'),
+    costPrice: validate.number(body.costPrice === undefined ? existingProduct.costPrice ?? 0 : body.costPrice, 'Costo'),
     stockQuantity: stockValue,
     minStock: minStockValue,
     active:
-      typeof body.active === "boolean"
-        ? body.active
-        : existingProduct.active !== false,
+      body.active === undefined ? existingProduct.active !== false : validate.boolean(body.active, 'Producto activo'),
     updatedAt: new Date().toISOString()
   };
 }
@@ -687,10 +676,11 @@ function buildSaleItems(items, products) {
   const quantitiesByProduct = new Map();
 
   return items.map((item) => {
+    validate.object(item, 'Partida');
     const productId = sanitizeText(item?.productId, 80);
     const product = products.find((candidate) => candidate.id === productId);
     const rawQuantity = Number(item?.quantity);
-    const quantity = roundQuantity(rawQuantity);
+    const quantity = validate.number(item.quantity, 'Cantidad', { decimals: 3 });
 
     if (!product || product.active === false) {
       const error = new Error("Uno de los productos ya no existe o está inactivo.");
@@ -702,7 +692,7 @@ function buildSaleItems(items, products) {
       error.statusCode = 400;
       throw error;
     }
-    if (product.unit === "kg" && quantity > 40) {
+    if (product.unit === "kg" && (quantity < 0.1 || quantity > 40)) {
       const error = new Error(`La cantidad máxima por producto es 40 kg (${product.name}).`);
       error.statusCode = 400;
       throw error;
@@ -733,8 +723,9 @@ function buildSaleItems(items, products) {
       throw error;
     }
 
-    const total = roundMoney(quantity * price);
-    const lineCost = roundMoney(quantity * costPrice);
+    const total = validate.number(quantity * price, 'Importe de partida');
+    const lineCost = validate.number(quantity * costPrice, 'Costo de partida');
+    if (item.source !== undefined && !['manual', 'scale'].includes(item.source)) validate.invalid('Origen de cantidad inválido.');
     return {
       productId: product.id,
       name: sanitizeText(product.name, 120),
@@ -899,13 +890,13 @@ function calculateCashSessionSummary(session, sales = readJson(salesPath, [])) {
   const totals = completedSales.reduce(
     (acc, sale) => {
       const total = roundMoney(sale.total || 0);
-      acc.totalSales = roundMoney(acc.totalSales + total);
-      acc.grossProfit = roundMoney(acc.grossProfit + roundMoney(sale.grossProfit || 0));
+      acc.totalSales = validate.number(acc.totalSales + total, 'Ventas acumuladas');
+      acc.grossProfit = validate.number(acc.grossProfit + roundMoney(sale.grossProfit || 0), 'Ganancia acumulada', {min:-Number.MAX_VALUE});
       acc.salesCount += 1;
 
-      if (sale.paymentMethod === "tarjeta") acc.cardSales = roundMoney(acc.cardSales + total);
-      else if (sale.paymentMethod === "transferencia") acc.transferSales = roundMoney(acc.transferSales + total);
-      else acc.cashSales = roundMoney(acc.cashSales + total);
+      if (sale.paymentMethod === "tarjeta") acc.cardSales = validate.number(acc.cardSales + total, 'Cobros con tarjeta');
+      else if (sale.paymentMethod === "transferencia") acc.transferSales = validate.number(acc.transferSales + total, 'Transferencias');
+      else acc.cashSales = validate.number(acc.cashSales + total, 'Cobros en efectivo');
 
       return acc;
     },
@@ -920,18 +911,18 @@ function calculateCashSessionSummary(session, sales = readJson(salesPath, [])) {
   );
 
   const movements = Array.isArray(session.movements) ? session.movements : [];
-  const cashIn = roundMoney(
+  const cashIn = validate.number(
     movements
       .filter((movement) => movement.type === "in")
-      .reduce((sum, movement) => sum + roundMoney(movement.amount || 0), 0)
+      .reduce((sum, movement) => sum + roundMoney(movement.amount || 0), 0), 'Entradas acumuladas'
   );
-  const cashOut = roundMoney(
+  const cashOut = validate.number(
     movements
       .filter((movement) => movement.type === "out")
-      .reduce((sum, movement) => sum + roundMoney(movement.amount || 0), 0)
+      .reduce((sum, movement) => sum + roundMoney(movement.amount || 0), 0), 'Retiros acumulados'
   );
-  const expectedCash = roundMoney(
-    roundMoney(session.openingAmount || 0) + totals.cashSales + cashIn - cashOut
+  const expectedCash = validate.number(
+    roundMoney(session.openingAmount || 0) + totals.cashSales + cashIn - cashOut, 'Efectivo esperado', {min:-Number.MAX_VALUE}
   );
 
   return {
@@ -959,9 +950,9 @@ function serializeCashSession(session, sales = readJson(salesPath, [])) {
 }
 
 function calculatePurchaseProjection(quantity, unitCost, salePrice) {
-  const totalCost = roundMoney(quantity * unitCost);
-  const projectedRevenue = roundMoney(quantity * salePrice);
-  const projectedProfit = roundMoney(projectedRevenue - totalCost);
+  const totalCost = validate.number(quantity * unitCost, 'Costo de compra');
+  const projectedRevenue = validate.number(quantity * salePrice, 'Venta proyectada');
+  const projectedProfit = validate.number(projectedRevenue - totalCost, 'Ganancia proyectada', {min:-Number.MAX_VALUE});
   const marginPercent = projectedRevenue > 0
     ? Math.round((projectedProfit / projectedRevenue) * 10000) / 100
     : 0;
@@ -1032,6 +1023,8 @@ function migrateSensitiveSalesData() {
 
 migrateSensitiveSalesData();
 
+const access = require('./access').registerAccess({app,database,getSessionUser,requireAdminUser,recordAuditEvent,readUsers:()=>readSettings().users});
+
 app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
@@ -1088,7 +1081,7 @@ app.post("/api/setup/owner", limitAuthenticationAttempts, (req, res) => {
   writeSessionCookie(res, createAuthSession(owner));
   return res.status(201).json({
     ok: true,
-    user: toPublicUser(owner),
+    user: access.sessionUser(owner),
     settings: getPublicSettings(settings)
   });
 });
@@ -1118,7 +1111,7 @@ app.post("/api/auth/admin", limitAuthenticationAttempts, (req, res) => {
   writeSessionCookie(res, createAuthSession(adminUser));
   res.json({
     ok: true,
-    user: toPublicUser(adminUser),
+    user: access.sessionUser(adminUser),
     settings: getPublicSettings(settings)
   });
 });
@@ -1160,7 +1153,7 @@ app.post("/api/auth/employee", limitAuthenticationAttempts, (req, res) => {
   writeSessionCookie(res, createAuthSession(employee));
   res.json({
     ok: true,
-    user: toPublicUser(employee),
+    user: access.sessionUser(employee),
     settings: getPublicSettings(settings)
   });
 });
@@ -1185,7 +1178,7 @@ app.get("/api/auth/session", (req, res) => {
   res.json({
     ok: true,
     authenticated: true,
-    user: toPublicUser(user),
+    user: access.sessionUser(user),
     settings: getPublicSettings()
   });
 });
@@ -1195,9 +1188,19 @@ app.put("/api/settings", (req, res) => {
   if (!authenticatedAdmin) return;
 
   const current = readSettings();
+  let adminContact;
+  try { if (req.body?.adminContact !== undefined) adminContact = configuration.normalizeContact(req.body.adminContact); }
+  catch(error) { return res.status(400).json({message:error.message}); }
   const newPin = String(req.body?.newAdminPin || "").trim();
   const currentAdminPin = String(req.body?.currentAdminPin || "").trim();
   const requestedUsers = Array.isArray(req.body?.users) ? req.body.users : current.users;
+  if (req.body.users !== undefined && !Array.isArray(req.body.users)) validate.invalid('Lista de usuarios inválida.');
+  if (requestedUsers.some(user => user?.active !== undefined && typeof user.active !== 'boolean')) validate.invalid('Estado de usuario inválido.');
+  if (requestedUsers.find(user => user?.role === 'admin')?.active === false) validate.invalid('No se puede desactivar la cuenta administrativa.');
+  const requestedIds = requestedUsers.map(user => String(user?.id || ''));
+  const requestedNames = requestedUsers.map(user => String(user?.name || '').trim().toLocaleLowerCase('es-MX'));
+  if(requestedUsers.find(user=>user?.role==='admin')?.id!==current.users.find(user=>user.role==='admin')?.id) return res.status(400).json({message:'No se puede sustituir la identidad del administrador.'});
+  if (requestedUsers.length > 100 || requestedUsers.some(user => !user || !['admin','employee'].includes(user.role) || typeof user.name !== 'string' || !user.name.trim() || user.name.length > 60 || !/^[a-zA-Z0-9_-]{1,80}$/.test(String(user.id || ''))) || new Set(requestedIds).size !== requestedIds.length || new Set(requestedNames).size !== requestedNames.length || requestedUsers.filter(user => user.role === 'admin').length !== 1) return res.status(400).json({message:'Usuarios inválidos: revisa nombres, identificadores y duplicados.'});
   const employeePins = req.body?.employeePins && typeof req.body.employeePins === "object"
     ? req.body.employeePins
     : {};
@@ -1257,13 +1260,14 @@ app.put("/api/settings", (req, res) => {
       }
 
       const normalizedEmployee = normalizeUser(
-        { ...requestedUser, role: "employee", active: true },
+        { ...requestedUser, role: "employee", active: requestedUser.active === undefined ? existing?.active !== false : requestedUser.active },
         existing || {}
       );
 
       if (employeePin) {
         Object.assign(normalizedEmployee, createPinSecret(employeePin));
       }
+      normalizedEmployee.active = requestedUser.active === undefined ? existing?.active !== false : requestedUser.active;
 
       return normalizedEmployee;
     })
@@ -1275,6 +1279,7 @@ app.put("/api/settings", (req, res) => {
   }
 
   const settings = withDataTransaction(() => {
+    if (adminContact) configuration.saveProfile(authenticatedAdmin.id, adminContact);
     const newAdminSecret = newPin ? createPinSecret(newPin) : null;
     const savedSettings = writeSettings({
       ...current,
@@ -1296,9 +1301,17 @@ app.put("/api/settings", (req, res) => {
       adminPinChanged: Boolean(newPin),
       employeePinsChanged: Object.keys(employeePins).length
     });
+    for (const next of normalizedUsers) {
+      const previous = current.users.find(user => user.id === next.id);
+      if (previous && previous.active !== next.active) recordAuditEvent(next.active ? 'user_activated' : 'user_deactivated', 'user', next.id, authenticatedAdmin, {active:next.active});
+    }
     return savedSettings;
   });
 
+  const revoked = new Set(current.users.filter(user => !settings.users.some(next => next.id === user.id && next.active !== false)).map(user => user.id));
+  for (const [token, session] of authSessions) if (revoked.has(session.userId)) authSessions.delete(token);
+  for (const [token, grant] of manualWeightAuthorizations) if (revoked.has(grant.operatorId)) manualWeightAuthorizations.delete(token);
+  access.notifyUsers(revoked);
   res.json(getPublicSettings(settings));
 });
 
@@ -1411,12 +1424,8 @@ app.patch("/api/products/:id/inventory", (req, res) => {
     });
   }
 
-  const stockQuantity = req.body.stockQuantity === "" || req.body.stockQuantity === null
-    ? null
-    : Number(req.body.stockQuantity);
-  const minStock = req.body.minStock === "" || req.body.minStock === null
-    ? null
-    : Number(req.body.minStock);
+  const stockQuantity = validate.number(req.body.stockQuantity, 'Existencia', { nullable: true, decimals: 3, integer: products[productIndex].unit === 'pieza' });
+  const minStock = validate.number(req.body.minStock, 'Mínimo', { nullable: true, decimals: 3, integer: products[productIndex].unit === 'pieza' });
   const reason = sanitizeText(req.body.reason, 180);
 
   if (
@@ -1451,7 +1460,7 @@ app.patch("/api/products/:id/inventory", (req, res) => {
 });
 
 app.get("/api/inventory/entries", (req, res) => {
-  const adminUser = requireAdminUser(req, res);
+  const adminUser = requireSessionUser(req, res);
   if (!adminUser) return;
 
   const entries = readJson(inventoryEntriesPath, [])
@@ -1467,17 +1476,14 @@ app.post("/api/inventory/entries", (req, res) => {
   if (!adminUser) return;
 
   const productId = sanitizeText(req.body?.productId, 80);
-  const rawQuantity = Number(req.body?.quantity);
-  const rawUnitCost = Number(req.body?.unitCost);
-  const rawSalePrice = Number(req.body?.salePrice || 0);
-  const quantity = roundQuantity(rawQuantity);
-  const unitCost = roundMoney(rawUnitCost);
-  const requestedSalePrice = roundMoney(rawSalePrice);
+  const quantity = validate.number(req.body.quantity, 'Cantidad de entrada', { decimals: 3 });
+  const unitCost = validate.number(req.body.unitCost, 'Costo de entrada');
+  const requestedSalePrice = validate.number(req.body.salePrice === undefined ? 0 : req.body.salePrice, 'Precio de venta');
   const supplier = sanitizeText(req.body?.supplier, 120);
   const notes = sanitizeText(req.body?.notes, 180);
-  const receivedAt = sanitizeText(req.body?.receivedAt, 10) || new Date().toISOString().slice(0, 10);
+  const receivedAt = validate.date(req.body.receivedAt === undefined ? new Date().toISOString().slice(0, 10) : req.body.receivedAt, 'Fecha de recepción');
 
-  if (!productId || !Number.isFinite(rawQuantity) || !Number.isFinite(rawUnitCost) || quantity <= 0 || unitCost <= 0) {
+  if (!productId || quantity <= 0 || unitCost <= 0) {
     return res.status(400).json({
       message: "Selecciona un producto y captura cantidad y costo mayores a cero."
     });
@@ -1485,7 +1491,7 @@ app.post("/api/inventory/entries", (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(receivedAt)) {
     return res.status(400).json({ message: "La fecha de recepción no es válida." });
   }
-  if (!Number.isFinite(rawSalePrice) || requestedSalePrice < 0) {
+  if (requestedSalePrice < 0) {
     return res.status(400).json({ message: "El precio de venta no es válido." });
   }
 
@@ -1499,6 +1505,7 @@ app.post("/api/inventory/entries", (req, res) => {
   }
 
   const product = products[productIndex];
+  if (product.unit === 'pieza' && !Number.isInteger(quantity)) validate.invalid('Las entradas por pieza requieren cantidades enteras.');
   const currentStock = typeof product.stockQuantity === "number"
     ? Math.max(roundQuantity(product.stockQuantity), 0)
     : 0;
@@ -1506,9 +1513,9 @@ app.post("/api/inventory/entries", (req, res) => {
   const salePrice = requestedSalePrice > 0
     ? requestedSalePrice
     : Math.max(roundMoney(product.price || 0), 0);
-  const newStock = roundQuantity(currentStock + quantity);
-  const currentInventoryValue = roundMoney(currentStock * currentCost);
-  const newPurchaseValue = roundMoney(quantity * unitCost);
+  const newStock = validate.number(currentStock + quantity, 'Existencia resultante', { decimals: 3 });
+  const currentInventoryValue = validate.number(currentStock * currentCost, 'Valor de inventario');
+  const newPurchaseValue = validate.number(quantity * unitCost, 'Importe de compra');
   const weightedAverageCost = newStock > 0
     ? roundMoney((currentInventoryValue + newPurchaseValue) / newStock)
     : unitCost;
@@ -1580,6 +1587,8 @@ app.get("/api/sales", (req, res) => {
     ? sales
     : sales.filter((sale) => sale.operator?.id === user.id);
 
+  if(req.query.context==='pos')return res.json(visibleSales.slice(-1).map(sale=>({id:sale.id,createdAt:sale.createdAt,status:sale.status,items:[]})));
+
   res.json(visibleSales.map((sale) => serializeSaleForUser(sale, user)));
 });
 
@@ -1631,6 +1640,8 @@ app.get("/api/cash-sessions/current", (req, res) => {
   const sessions = readCashSessions();
   const current = getOpenCashSession(sessions);
 
+  if(user.role!=='admin'&&!access.allows(user,['cash']))return res.json({session:current?{id:current.id,status:current.status,businessDate:current.businessDate}:null});
+
   res.json({
     session: current ? serializeCashSession(current) : null
   });
@@ -1649,8 +1660,8 @@ app.post("/api/cash-sessions/open", (req, res) => {
     });
   }
 
-  const openingAmount = roundMoney(req.body?.openingAmount || 0);
-  const businessDate = String(req.body?.businessDate || "").trim() || new Date().toISOString().slice(0, 10);
+  const openingAmount = validate.number(req.body.openingAmount === undefined ? 0 : req.body.openingAmount, 'Fondo inicial');
+  const businessDate = validate.date(req.body.businessDate === undefined ? new Date().toISOString().slice(0, 10) : req.body.businessDate, 'Fecha de apertura');
 
   if (openingAmount < 0) {
     return res.status(400).json({
@@ -1702,8 +1713,9 @@ app.post("/api/cash-sessions/:id/movements", (req, res) => {
     return res.status(409).json({ message: "La caja ya está cerrada." });
   }
 
-  const type = req.body?.type === "out" ? "out" : "in";
-  const amount = roundMoney(req.body?.amount || 0);
+  const type = req.body.type;
+  if (!['in', 'out'].includes(type)) validate.invalid('Tipo de movimiento inválido.');
+  const amount = validate.number(req.body.amount, 'Importe del movimiento');
   const reason = type === "out" ? "Retiro de efectivo" : "Entrada de efectivo";
 
   if (amount <= 0) {
@@ -1723,6 +1735,7 @@ app.post("/api/cash-sessions/:id/movements", (req, res) => {
 
   withDataTransaction(() => {
     sessions[sessionIndex].movements.push(movement);
+    calculateCashSessionSummary(sessions[sessionIndex]);
     writeCashSessions(sessions);
     recordAuditEvent("cash_movement_added", "cash_session", sessions[sessionIndex].id, user, {
       movementId: movement.id,
@@ -1754,13 +1767,22 @@ app.post("/api/cash-sessions/:id/close", (req, res) => {
     return res.status(409).json({ message: "La caja ya está cerrada." });
   }
 
-  const countedCash = roundMoney(req.body?.countedCash);
+  const countedCash = validate.number(req.body.countedCash, 'Efectivo contado');
+  if (req.body.denominations !== undefined && req.body.denominations !== null) {
+    validate.object(req.body.denominations, 'Desglose de efectivo');
+    for (const [denomination, count] of Object.entries(req.body.denominations)) {
+      const value = validate.number(denomination, 'Denominación');
+      if (value <= 0) validate.invalid('Denominación inválida.');
+      const units = validate.number(count, 'Cantidad de billetes o monedas', { decimals: 0, integer: true });
+      validate.number(value * units, 'Subtotal de denominación');
+    }
+  }
   if (!Number.isFinite(Number(req.body?.countedCash)) || countedCash < 0) {
     return res.status(400).json({ message: "Captura el efectivo contado correctamente." });
   }
 
   const summary = calculateCashSessionSummary(session);
-  const difference = roundMoney(countedCash - summary.expectedCash);
+  const difference = validate.number(countedCash - summary.expectedCash, 'Diferencia de caja', {min:-Number.MAX_VALUE});
 
   sessions[sessionIndex] = normalizeCashSession({
     ...session,
@@ -1799,6 +1821,51 @@ app.put("/api/cash-shifts", (req, res) => {
   });
 });
 
+function checkoutIdentity(body) {
+  const id = body.checkoutIntentId;
+  if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{16,100}$/.test(id)) validate.invalid('Falta un identificador válido de intención de cobro.');
+  return id;
+}
+
+function checkoutFingerprint(body) {
+  return crypto.createHash('sha256').update(JSON.stringify({
+    items: Array.isArray(body.items) ? body.items.map(item => [item?.productId, item?.quantity, item?.source || 'manual', item?.manualAuthorization || null]) : body.items,
+    cashSessionId: body.cashSessionId, businessDate: body.businessDate || null,
+    paymentMethod: body.paymentMethod || 'efectivo', reference: body.paymentDetails?.reference || body.paymentReference || '',
+    discount: body.discount ?? 0, discountReason: body.discountReason || '', invoiceRequested: body.invoiceRequested ?? false
+  })).digest('hex');
+}
+
+app.post('/api/authorizations/manual-weight', limitAuthenticationAttempts, (req, res) => {
+  const operator = requireSessionUser(req, res);
+  if (!operator) return;
+  const pin = typeof req.body.pin === 'string' ? req.body.pin.trim() : '';
+  if (!PIN_PATTERN.test(pin) || !isAdminPin(pin)) {
+    recordAuthenticationFailure(req);
+    return res.status(401).json({ message: 'PIN de administrador incorrecto.' });
+  }
+  const intentId = checkoutIdentity(req.body);
+  const product = readJson(productsPath, []).find(item => item.id === req.body.productId && item.active !== false);
+  if (!product || product.unit !== 'kg') validate.invalid('Selecciona un producto por kilogramo válido.');
+  const quantity = validate.number(req.body.quantity, 'Peso manual', { decimals: 3 });
+  if (quantity < 0.1 || quantity > 40) validate.invalid('Peso permitido: 0.100 a 40 kg.');
+  const current = getOpenCashSession();
+  if (req.body.cashSessionId !== undefined && req.body.cashSessionId !== null && req.body.cashSessionId !== current?.id) return res.status(409).json({message:'La caja cambió. Recupera su estado antes de autorizar.'});
+  const now = Date.now();
+  for (const [token, grant] of manualWeightAuthorizations) if (grant.expiresAt <= now) manualWeightAuthorizations.delete(token);
+  if (manualWeightAuthorizations.size >= 1000) return res.status(429).json({message:'Demasiadas autorizaciones pendientes. Intenta más tarde.'});
+  const administrator = readSettings().users.find(user => user.role === 'admin' && user.active !== false);
+  const token = crypto.randomBytes(32).toString('base64url');
+  const grant = { operatorId:operator.id, sessionToken:getCookies(req).el_muelle_session, administratorId:administrator.id,
+    intentId, productId:product.id, quantity, cashSessionId:current?.id || null, expiresAt:now + 5 * 60 * 1000 };
+  withDataTransaction(() => recordAuditEvent('manual_weight_authorized', 'checkout', intentId, administrator, {
+    operatorId:operator.id, productId:product.id, quantity
+  }));
+  manualWeightAuthorizations.set(token, grant);
+  clearAuthenticationFailures(req);
+  res.json({ token, expiresAt:new Date(grant.expiresAt).toISOString() });
+});
+
 app.post("/api/sales", (req, res) => {
   const operator = getSessionUser(req);
 
@@ -1809,7 +1876,20 @@ app.post("/api/sales", (req, res) => {
   }
 
   try {
+    let replayed = false;
+    const consumedAuthorizations = new Set();
     const sale = withDataTransaction(() => {
+      const intentId = checkoutIdentity(req.body);
+      const intentKey = operator.id + ':' + intentId;
+      const fingerprint = checkoutFingerprint(req.body);
+      const confirmed = database.readDocument('checkout-intents', intentKey);
+      if (confirmed) {
+        if (confirmed.fingerprint !== fingerprint) { const error = new Error('Esta intención de cobro ya confirmó otra operación.'); error.statusCode = 409; error.code = 'CHECKOUT_INTENT_CONFLICT'; throw error; }
+        const storedSale = readJson(salesPath, []).find(item => item.id === confirmed.saleId && item.operator?.id === operator.id);
+        if (!storedSale) { const error = new Error('La intención confirmada requiere revisión técnica; no se creó otra venta.'); error.statusCode = 409; throw error; }
+        replayed = true;
+        return storedSale;
+      }
       const products = readJson(productsPath, []);
       const items = buildSaleItems(req.body?.items, products);
       const cashSessions = readCashSessions();
@@ -1821,10 +1901,30 @@ app.post("/api/sales", (req, res) => {
         throw error;
       }
 
-      const subtotal = roundMoney(items.reduce((sum, item) => sum + item.total, 0));
-      const requestedDiscount = Number(req.body?.discount || 0);
-      const discount = roundMoney(requestedDiscount);
-      const discountReason = sanitizeText(req.body?.discountReason, 180);
+      if (typeof req.body.cashSessionId !== 'string' || req.body.cashSessionId !== activeCashSession.id || (req.body.businessDate !== undefined && req.body.businessDate !== activeCashSession.businessDate)) {
+        const error = new Error('La caja indicada no corresponde a la caja abierta. Actualiza y revisa el turno antes de cobrar.');
+        error.statusCode = 409;
+        throw error;
+      }
+      for (let index = 0; index < items.length; index++) {
+        const item = items[index], submitted = req.body.items[index];
+        if (submitted.manualAuthorization !== undefined && (item.unit !== 'kg' || item.source !== 'manual')) validate.invalid('La autorización manual no corresponde al origen de esta captura.');
+        if (item.unit !== 'kg' || item.source !== 'manual') continue;
+        const token = submitted.manualAuthorization;
+        const grant = typeof token === 'string' ? manualWeightAuthorizations.get(token) : null;
+        if (operator.role !== 'admin' || token !== undefined) {
+          if (!grant || grant.operatorId !== operator.id || grant.sessionToken !== getCookies(req).el_muelle_session || grant.intentId !== intentId || grant.productId !== item.productId || grant.quantity !== item.quantity || grant.expiresAt <= Date.now() || (grant.cashSessionId && grant.cashSessionId !== activeCashSession.id) || consumedAuthorizations.has(token)) {
+            const error = new Error('El peso manual requiere una autorización administrativa vigente para esta captura.'); error.statusCode = 403; throw error;
+          }
+          consumedAuthorizations.add(token);
+          item.manualAuthorizedBy = grant.administratorId;
+        } else item.manualAuthorizedBy = operator.id;
+      }
+
+      const subtotal = validate.number(items.reduce((sum, item) => sum + item.total, 0), 'Subtotal');
+      const requestedDiscount = Number(req.body.discount ?? 0);
+      const discount = validate.number(req.body.discount === undefined ? 0 : req.body.discount, 'Descuento');
+      const discountReason = validate.text(req.body.discountReason, 'Motivo del descuento', 180, { optional:true });
 
       if (!Number.isFinite(requestedDiscount) || discount < 0 || discount > subtotal) {
         const error = new Error("El descuento no es válido.");
@@ -1842,15 +1942,11 @@ app.post("/api/sales", (req, res) => {
         throw error;
       }
 
-      const paymentMethod = ["efectivo", "tarjeta", "transferencia"].includes(
-        req.body?.paymentMethod
-      )
-        ? req.body.paymentMethod
-        : "efectivo";
-      const paymentReference = sanitizeText(
-        req.body?.paymentDetails?.reference || req.body?.paymentReference,
-        80
-      );
+      const paymentMethod = req.body.paymentMethod === undefined ? 'efectivo' : req.body.paymentMethod;
+      if (!['efectivo', 'tarjeta', 'transferencia'].includes(paymentMethod)) validate.invalid('Método de pago inválido.');
+      if (req.body.paymentDetails !== undefined) validate.object(req.body.paymentDetails, 'Datos de pago');
+      if (req.body.invoiceRequested !== undefined) validate.boolean(req.body.invoiceRequested, 'Solicitud de factura');
+      const paymentReference = validate.text(req.body.paymentDetails?.reference ?? req.body.paymentReference, 'Referencia', 80, { optional:true });
       if ((paymentMethod === "tarjeta" || paymentMethod === "transferencia") && !paymentReference) {
         const error = new Error("La referencia de pago es obligatoria para tarjeta o transferencia.");
         error.statusCode = 400;
@@ -1859,6 +1955,8 @@ app.post("/api/sales", (req, res) => {
 
       const total = roundMoney(subtotal - discount);
       const profitSummary = calculateSaleProfit(items, total);
+      validate.number(profitSummary.totalCost, 'Costo total');
+      validate.number(profitSummary.grossProfit, 'Ganancia de venta', {min:-Number.MAX_VALUE});
       const sales = readJson(salesPath, []);
       const now = new Date().toISOString();
       const sale = {
@@ -1897,9 +1995,11 @@ app.post("/api/sales", (req, res) => {
       };
 
       sales.push(sale);
+      calculateCashSessionSummary(activeCashSession, sales);
       const inventoryChanged = updateInventoryAfterSale(items, products);
       writeJson(salesPath, sales);
       if (inventoryChanged) writeJson(productsPath, products);
+      database.saveDocument('checkout-intents', intentKey, { saleId:sale.id, fingerprint, operatorId:operator.id });
       recordAuditEvent("sale_completed", "sale", sale.id, operator, {
         itemCount: items.length,
         subtotal,
@@ -1907,15 +2007,18 @@ app.post("/api/sales", (req, res) => {
         discountReason: sale.discountReason,
         total,
         paymentMethod,
-        cashSessionId: activeCashSession.id
+        cashSessionId: activeCashSession.id,
+        manualAuthorizations: items.filter(item => item.manualAuthorizedBy).map(item => ({productId:item.productId,authorizedBy:item.manualAuthorizedBy,quantity:item.quantity}))
       });
       return sale;
     });
 
-    res.status(201).json(serializeSaleForUser(sale, operator));
+    if (!replayed) for (const token of consumedAuthorizations) manualWeightAuthorizations.delete(token);
+    res.set('Idempotent-Replayed', String(replayed));
+    res.status(replayed ? 200 : 201).json(serializeSaleForUser(sale, operator));
   } catch (error) {
     return res.status(error.statusCode || 400).json({
-      message: error.message || "No se pudo guardar la venta."
+      message: error.message || "No se pudo guardar la venta.", ...(error.code ? {code:error.code} : {})
     });
   }
 });
@@ -1933,12 +2036,16 @@ app.patch("/api/sales/:id/invoice", (req, res) => {
     });
   }
 
-  const rfc = sanitizeText(req.body?.rfc, 13).toUpperCase();
-  const businessName = sanitizeText(req.body?.businessName, 160);
-  const fiscalZip = sanitizeText(req.body?.fiscalZip, 5);
-  const fiscalRegime = sanitizeText(req.body?.fiscalRegime, 10);
-  const cfdiUse = sanitizeText(req.body?.cfdiUse, 10);
-  const email = sanitizeText(req.body?.email, 120);
+  if (sales[saleIndex].status === 'cancelada') return res.status(409).json({message:'No se puede solicitar factura de una venta cancelada.'});
+  if (sales[saleIndex].invoice?.status === 'solicitada') return res.status(409).json({message:'Esta venta ya tiene una solicitud registrada.'});
+
+  const rfc = validate.text(req.body.rfc, 'RFC', 13).toUpperCase();
+  const businessName = validate.text(req.body.businessName, 'Nombre fiscal', 160);
+  const fiscalZip = validate.text(req.body.fiscalZip, 'Código postal fiscal', 5);
+  const fiscalRegime = validate.text(req.body.fiscalRegime, 'Régimen fiscal', 10);
+  const cfdiUse = validate.text(req.body.cfdiUse, 'Uso de CFDI', 10);
+  const email = validate.text(req.body.email, 'Correo', 120, { optional:true });
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) validate.invalid('El correo electrónico no es válido.');
 
   if (!rfc || !businessName || !fiscalZip || !fiscalRegime || !cfdiUse) {
     return res.status(400).json({
@@ -2006,7 +2113,7 @@ app.patch("/api/sales/:id/cancel", (req, res) => {
     canceledSale.items.forEach((item) => {
       const product = products.find((candidate) => candidate.id === item.productId);
       if (!product || typeof product.stockQuantity !== "number") return;
-      product.stockQuantity = roundQuantity(product.stockQuantity + item.quantity);
+      product.stockQuantity = validate.number(product.stockQuantity + item.quantity, 'Existencia repuesta', {decimals:3});
       product.updatedAt = new Date().toISOString();
       inventoryChanged = true;
     });
@@ -2055,11 +2162,22 @@ app.get("/api/scale/status", (req, res) => {
   });
 });
 
-app.listen(PORT, HOST, () => {
+const configuration = require('./configuration').registerConfiguration({app,database,requireAdminUser,requireSessionUser,encryptSensitivePayload,decryptSensitivePayload,recordAuditEvent});
+
+app.use((error, _req, res, _next) => {
+  res.status(error.statusCode || (error.type === 'entity.parse.failed' ? 400 : 500)).json({ message:error.statusCode ? error.message : 'No se pudo completar la operación.' });
+});
+
+const httpServer = app.listen(PORT, HOST, () => {
   console.log("");
   console.log("=======================================");
   console.log(" El Muelle POS iniciado correctamente");
   console.log(` Abre: ${REQUIRE_HTTPS ? "https" : "http"}://${HOST}:${PORT}`);
   console.log("=======================================");
   console.log("");
+});
+require('./lifecycle').registerShutdown({server:httpServer,database,storage});
+httpServer.on('error', () => {
+  console.error('No se pudo iniciar el servidor local. Revisa el puerto y los permisos.');
+  try { database.close(); } finally { process.exit(1); }
 });

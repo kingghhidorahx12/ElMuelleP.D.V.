@@ -1,0 +1,145 @@
+/* Tres referencias EM-003. Reglas limitadas a Configuración y Solicitudes. */
+@media screen {
+body.atelier-shell #settingsView .settings-center { grid-template-columns:240px minmax(0,1fr); gap:16px; }
+body.atelier-shell #settingsView .settings-navigation { max-height:calc(100dvh - 112px); overflow:auto; padding:12px; background:linear-gradient(145deg,#f9fdffed,#e0f2ffd9); }
+body.atelier-shell #settingsView .settings-subview-tabs { gap:4px; }
+body.atelier-shell #settingsView .settings-subview-tabs > button { min-height:44px; padding:5px 8px; border-color:#cae4f6; background:#f8fcffb3; align-items:center; }
+body.atelier-shell #settingsView .settings-subview-tabs > button > span { gap:2px; }
+body.atelier-shell #settingsView .settings-subview-tabs svg { width:20px; height:20px; color:#0879d3; }
+body.atelier-shell #settingsView .settings-subview-tabs [aria-selected=true] svg { color:white; }
+body.atelier-shell #settingsView .settings-navigation > p { display:none; }
+body.atelier-shell #settingsView .settings-section-head { position:relative; isolation:isolate; min-height:80px; padding:10px 12px; border:1px solid #b9dcef; border-radius:13px; background:linear-gradient(110deg,#f7fcff,#d8edff); overflow:hidden; }
+body.atelier-shell #settingsView .settings-section-head::before { content:''; position:absolute; z-index:-1; inset:0 0 0 35%; background:url('./assets/pos/atelier-login-panorama.webp') 12% 64% / cover; mask-image:linear-gradient(90deg,transparent,#000 70%); opacity:.82; }
+body.atelier-shell #settingsView [data-settings-mode=users] .settings-section-head::before { background-image:url('./assets/pos/atelier-summary-coast-v1.webp'); background-position:right center; }
+body.atelier-shell #settingsView .settings-section-head h3 { font-size:21px; margin:0 0 3px; }
+body.atelier-shell #settingsView .settings-section-head > div:first-of-type { flex:1; }
+body.atelier-shell #settingsView #settingsSectionEyebrow { display:none; }
+body.atelier-shell #settingsView #configurationSectionDescription { margin:0; font-size:12px; line-height:1.4; color:#315e88; }
+body.atelier-shell #settingsView .configuration-hero-icon { display:grid; place-items:center; flex:none; width:44px; height:44px; border:1px solid #c6e3f6; border-radius:12px; background:#f5fbffc7; color:#0873c0; }
+.configuration-hero-icon svg { width:27px; height:27px; }
+#configurationSaveArea { display:grid; grid-template-columns:auto auto; align-items:center; gap:4px 8px; margin-left:auto; flex:none; text-align:right; }
+#configurationSaveBtn { grid-column:1; grid-row:1; }
+#configurationRecoverBtn { grid-column:2; grid-row:1; }
+#configurationPending { grid-column:1/-1; grid-row:2; }
+body.atelier-shell #settingsView #configurationSaveBtn { display:flex; align-items:center; gap:8px; background:var(--atelier-button-blue); color:white; border-color:var(--atelier-button-blue-border); }
+#configurationSaveBtn svg { width:19px; height:19px; }
+#configurationPending { max-width:220px; font-size:10px; color:#173f62; }
+#configurationUsersIndicator { flex:none; display:grid; grid-template-columns:1fr 1fr; gap:2px 8px; padding:8px 10px; border:1px solid #b8d8ee; border-radius:10px; background:#eff9ffdb; }
+#configurationUsersIndicator > span { grid-column:1/-1; font-size:11px; }
+#configurationUsersIndicator > strong { font-size:25px; }
+#configurationUsersIndicator > small { align-self:center; max-width:90px; font-size:9px; color:#1e705c; }
+#settingsView [hidden],#configurationDialog [hidden] { display:none !important; }
+.configuration-general-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; align-items:start; }
+.configuration-column { display:grid; gap:10px; min-width:0; align-content:start; }
+.configuration-card { min-width:0; padding:10px; border:1px solid #c4e1f4; border-radius:12px; background:linear-gradient(130deg,#fcfefff0,#edf8ffeb); box-shadow:0 3px 9px #18547708; }
+.configuration-card > h4 { display:flex; align-items:center; gap:8px; margin:0 0 8px; padding-bottom:6px; border-bottom:1px solid #d5e8f5; font-size:16px; color:#082b50; }
+.configuration-card > h4 svg { flex:none; width:22px; height:22px; padding:4px; box-sizing:content-box; border:1px solid #d8ebf8; border-radius:9px; color:#0878d4; background:#e8f5ff; }
+.configuration-card p { margin:6px 0; color:#4f7090; font-size:12px; line-height:1.4; }
+.configuration-system-options { grid-row:auto; }
+.configuration-option { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:43px; margin:0; }
+.configuration-option > span { display:grid; gap:2px; min-width:0; }
+.configuration-option strong { font-size:12px; font-weight:600; color:#12395d; }
+.configuration-option small { font-size:10px; font-weight:400; line-height:1.4; color:#5d7fa0; }
+body.atelier-shell #settingsView .configuration-option input[type=checkbox],.configuration-switch,body.atelier-shell #settingsView .configuration-switch-slot #posMotionToggle { appearance:none; flex:0 0 42px; position:relative; min-width:42px; width:42px; height:25px; min-height:25px; padding:0; border:1px solid #b4c9df; border-radius:20px; background:#bac8dd; box-shadow:none; font-size:0; color:transparent; cursor:pointer; }
+body.atelier-shell #settingsView .configuration-option input[type=checkbox]::after,.configuration-switch::after,body.atelier-shell #settingsView .configuration-switch-slot #posMotionToggle::after { content:''; position:absolute; width:19px; height:19px; left:2px; top:2px; border-radius:50%; background:#fff; transition:transform 150ms ease; }
+body.atelier-shell #settingsView .configuration-option input:checked,.configuration-switch[aria-pressed=true],body.atelier-shell #settingsView .configuration-switch-slot #posMotionToggle[aria-pressed=true] { background:#0879d5; border-color:#0879d5; }
+body.atelier-shell #settingsView .configuration-option input:checked::after,.configuration-switch[aria-pressed=true]::after,body.atelier-shell #settingsView .configuration-switch-slot #posMotionToggle[aria-pressed=true]::after { transform:translateX(17px); }
+.configuration-switch-slot { display:flex; flex:none; }
+.configuration-field { display:grid; grid-template-columns:minmax(90px,1fr) minmax(0,1.35fr); gap:5px 8px; align-items:center; margin:6px 0; }
+.configuration-field > span { color:#24557f; font-size:11px; }
+.configuration-field small { grid-column:1/-1; font-size:10px; color:#6687a3; }
+body.atelier-shell #settingsView .configuration-field select { min-width:0; width:100%; min-height:32px; height:32px; font-size:11px; }
+.configuration-appearance-card { background:linear-gradient(110deg,#f8fcfff5,#e3f4ffe8); }
+#configurationQuickAppearance { display:grid; grid-template-columns:minmax(0,1fr) 85px; gap:12px; align-items:stretch; }
+.configuration-theme-preview { width:85px; height:100%; max-height:165px; object-fit:cover; object-position:12% center; border-radius:10px; }
+.configuration-data { margin:0; display:grid; gap:0; }
+.configuration-data > div { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid #d6e7f2; font-size:11px; line-height:1.35; }
+.configuration-data dt { color:#527799; }.configuration-data dd { margin:0; min-width:0; color:#153f66; overflow-wrap:anywhere; }
+.configuration-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.configuration-form label { display:grid; gap:4px; min-width:0; }.configuration-form input { width:100%; min-width:0; }
+.configuration-form p { grid-column:1/-1; }.configuration-logo-preview { width:80px; height:80px; object-fit:contain; border:1px solid #c4def0; border-radius:10px; }
+body.atelier-shell #settingsView .configuration-users { display:block; border:0; background:none; box-shadow:none; padding:0; }
+.configuration-user-tabs { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; padding:4px; border-radius:10px; margin-bottom:8px; }
+.configuration-user-tabs button { display:flex; align-items:center; justify-content:center; gap:7px; min-width:0; min-height:36px; padding:5px 7px; border:1px solid #c9e1f2; border-radius:7px; color:#123f65; background:#f8fcff; font-size:11px; cursor:pointer; }
+.configuration-user-tabs svg { flex:none; width:20px; height:20px; }
+.configuration-user-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; align-items:start; }
+.configuration-user-grid > div { min-width:0; display:grid; gap:10px; }
+body.atelier-shell #settingsView .configuration-user-grid .users-settings-card { padding:10px; background:#f6fbffe8; }
+.configuration-user-grid .users-settings-actions { width:100%; }.configuration-user-grid .users-settings-actions button:first-child { flex:1; }
+.configuration-user-grid .users-settings-actions { flex-wrap:wrap; }#configurationUserStatus { flex-basis:100%; margin:0; color:#315e83; font-size:11px; line-height:1.4; }
+body.atelier-shell #settingsView #configurationRecoverBtn { min-height:26px; padding:3px 8px; font-size:10px; }
+.configuration-pin-summary { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px; color:#365f82; }.configuration-pin-summary > span { display:flex; align-items:center; gap:6px; }.configuration-pin-summary svg { width:17px; height:17px; flex:none; }
+.configuration-account-card { background:linear-gradient(120deg,#0867a7,#064274); color:white; }.configuration-account-card > h4 { color:white; border-color:#d7edff38; }.configuration-account-card .configuration-data { background:#eff9ffed; padding:12px; border-radius:10px; }
+body.atelier-shell #settingsView .configuration-account-card > h4 { color:white; }
+.configuration-account-card { position:relative; isolation:isolate; overflow:hidden; }
+.configuration-account-card::before { content:''; position:absolute; z-index:-1; inset:0 0 50% 45%; background:url('./assets/pos/atelier-summary-coast-v1.webp') right center / cover; mask-image:linear-gradient(90deg,transparent,#000); opacity:.45; }
+body.atelier-shell #settingsView .user-row { grid-template-columns:minmax(0,1fr) minmax(100px,.65fr) auto; }.user-row-identity label { min-width:0; }.user-row-identity input { width:100%; }
+.configuration-dialog-card { width:min(760px,calc(100vw - 28px)); max-height:calc(100dvh - 32px); overflow:auto; }
+.configuration-dialog-card table { width:100%; font-size:12px; }.configuration-dialog-card td,.configuration-dialog-card th { padding:9px; }
+/* Densidad de Configuración: cada tarjeta conserva su altura natural. */
+body.atelier-shell #settingsView .settings-content { gap:10px; }
+body.atelier-shell #settingsView .settings-navigation { padding:10px; }
+body.atelier-shell #settingsView .work-panel { padding:10px; gap:8px; }
+body.atelier-shell #settingsView .settings-scale-grid { gap:10px; align-items:start; }
+body.atelier-shell #settingsView .settings-grid { gap:8px 10px; }
+body.atelier-shell #settingsView :is(.settings-grid,.users-settings-card,.employee-add-row) label { gap:4px; }
+body.atelier-shell #settingsView .users-settings-card { gap:8px; }
+body.atelier-shell #settingsView .users-card-head p { margin-top:3px; }
+body.atelier-shell #settingsView .user-row { padding:7px 9px; gap:8px; }
+body.atelier-shell #settingsView .audit-event-row { padding:8px 10px; gap:10px; }
+body.atelier-shell #settingsView .audit-events-list { gap:6px; }
+body.atelier-shell #settingsView .settings-monitor { min-height:180px; padding:12px; gap:8px; }
+body.atelier-shell #settingsView #settingsScaleWeight { margin:0; font-size:clamp(30px,3.2vw,40px); }
+body.atelier-shell #settingsView .settings-raw { padding:9px; }
+body.atelier-shell #settingsView #settingsScaleRaw { margin-top:6px; }
+body.atelier-shell #settingsView .scale-protocol-card { margin-top:10px; padding:8px 10px; gap:3px; }
+#settingsView :is(#businessSaveStatus,#fiscalSaveStatus,#configurationUserStatus,#configurationIntegrityStatus):empty { display:none; }
+@media (max-width:760px) {
+ body.atelier-shell #settingsView .configuration-option { min-height:50px; }
+ body.atelier-shell #settingsView #configurationUsersIndicator { width:100%; flex-basis:100%; }
+ body.atelier-shell #settingsView #configurationSaveArea { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+ body.atelier-shell #settingsView #configurationSaveBtn { min-width:0; padding:6px; font-size:11px; white-space:normal; justify-content:center; }
+}
+@media (min-width:761px) {
+ body.atelier-shell #settingsView :is(.configuration-form,.users-settings-card,.settings-grid) :is(input,select) { height:32px; min-height:32px; padding:5px 9px; font-size:12px; }
+ body.atelier-shell #settingsView :is(.configuration-card,.users-settings-card,.form-actions,.configuration-user-tabs,#configurationSaveArea) button:not(.configuration-switch):not(#posMotionToggle) { min-height:32px; padding:5px 9px; }
+}
+body.atelier-shell #billingView .billing-complete { grid-template-columns:minmax(0,1.6fr) minmax(340px,1fr); grid-template-rows:auto auto; gap:14px; align-items:start; }
+body.atelier-shell #billingView .billing-complete .billing-form-panel { grid-row:1/span 2; padding:0; border:0; background:none; box-shadow:none; }
+.invoice-right-column { grid-column:2; display:flex; flex-direction:column; gap:14px; min-width:0; }
+body.atelier-shell #billingView .billing-complete .billing-form-panel { grid-row:auto; }
+.invoice-filter-field { display:grid; gap:6px; min-width:0; }
+body.atelier-shell #billingView .billing-complete .panel-head h3 { display:flex; align-items:center; gap:9px; }
+body.atelier-shell #billingView .billing-complete .panel-head h3 svg { width:26px; height:26px; color:#0879cf; flex:none; }
+body.atelier-shell #billingView .invoice-complete-form { display:flex; flex-direction:column; gap:12px; }
+.invoice-stage-card { min-width:0; padding:14px; border:1px solid #c6e1f3; border-radius:12px; background:linear-gradient(120deg,#fcfefff5,#f0f8fff0); }
+.invoice-stage-card > h4,.invoice-selected-title h4 { display:flex; align-items:center; gap:10px; margin:0 0 12px; font-size:16px; color:#0a3256; }.invoice-stage-card h4 svg { width:26px; height:26px; flex:none; color:#0877cf; }
+.invoice-marine-head { position:relative; isolation:isolate; display:flex; align-items:center; gap:14px; min-height:94px; margin:-14px -14px 0; padding:16px; border-radius:12px 12px 0 0; border-bottom:2px solid #edc45c; background:linear-gradient(100deg,#075591,#06335c); color:white; overflow:hidden; }
+.invoice-marine-head::after { content:''; position:absolute; z-index:-1; inset:0 0 0 42%; background:url('./assets/pos/atelier-login-panorama.webp') 12% 65% / cover; mask-image:linear-gradient(90deg,transparent,#000b); opacity:.65; }
+.invoice-marine-head > svg { flex:none; width:40px; height:40px; padding:8px; border:1px solid #d5efff77; border-radius:10px; background:#d5efff30; }
+body.atelier-shell #billingView .invoice-marine-head h3 { color:white; font-size:19px; }.invoice-marine-head p { margin:5px 0 0; font-size:12px; line-height:1.4; color:#e0f3ff; }
+.invoice-steps { display:flex; justify-content:flex-end; gap:10px; padding:10px 0; margin:0; list-style:none; }.invoice-steps li { display:flex; align-items:center; gap:5px; color:#557b9e; font-size:10px; }.invoice-steps b { display:grid; place-items:center; width:21px; height:21px; background:#ddebfa; color:#1c5f91; border-radius:50%; }.invoice-steps [aria-current] { color:#925c05; font-weight:700; }.invoice-steps [aria-current] b { color:#fff; background:#0a5a93; }
+.invoice-fiscal-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }.invoice-fiscal-grid label { display:grid; min-width:0; }
+.invoice-selected-title { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }.invoice-selected-title h4 { margin:0; }.invoice-selected-title button { font-size:11px; }
+body.atelier-shell #billingView .billing-sale-summary { min-height:0; padding:10px; margin-bottom:10px; }
+.invoice-empty { display:flex; justify-content:center; align-items:center; gap:14px; min-height:112px; padding:12px; margin:0; border:1px solid #d9eaf7; border-radius:9px; color:#5b7b99; font-size:12px; }.invoice-empty svg { width:40px; height:40px; color:#8da8c2; flex:none; }.invoice-empty small { display:block; margin-top:6px; }
+#invoiceSelectedItems table,.invoice-sales-table table { width:100%; border-collapse:collapse; font-size:11px; }#invoiceSelectedItems :is(th,td),.invoice-sales-table :is(th,td) { padding:9px; border-bottom:1px solid #d9e8f5; text-align:left; }#invoiceSelectedItems td:last-child,.invoice-sales-table td:nth-child(3) { white-space:nowrap; font-weight:650; }
+body.atelier-shell #billingView .billing-complete .billing-recent-panel { grid-column:2; grid-row:1; padding:14px; }
+body.atelier-shell #billingView .billing-complete .toolbar { display:grid; grid-template-columns:minmax(85px,1fr) minmax(120px,1.3fr) auto; align-items:end; gap:7px; }
+body.atelier-shell #billingView .billing-complete .toolbar :is(input,select) { width:100%; min-width:0; min-height:36px; height:36px; padding:6px; }
+body.atelier-shell #billingView .billing-complete .toolbar button { min-height:36px; }
+.invoice-status-filters { display:flex; flex-wrap:wrap; gap:5px; }.invoice-status-filters button { flex:1 1 auto; padding:6px; min-height:32px; font-size:10px; }
+.invoice-sales-table { min-width:0; overflow:auto; max-height:330px; }.invoice-sales-table button svg { width:17px; height:17px; display:block; }.invoice-sales-table td:first-child { font-size:10px; }
+.invoice-sales-table td:nth-child(2) { white-space:nowrap; }
+.invoice-sales-table { position:relative; }
+body.atelier-shell #billingView .invoice-action-buttons button { min-height:44px; }
+.invoice-actions-card { grid-column:2; grid-row:2; }.invoice-action-buttons { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.2fr); gap:10px; margin:14px 0; }.invoice-action-buttons button { display:flex; justify-content:center; align-items:center; gap:8px; min-height:44px; font-size:12px; white-space:normal; }.invoice-action-buttons svg { width:23px; height:23px; flex:none; }
+.invoice-scope-note,#invoiceEligibility { font-size:11px; line-height:1.5; color:#426c90; }#invoiceEligibility { color:#a15620; }
+body[data-ui-accent=sky] :is(#settingsView,#billingView) .solid-btn { background:linear-gradient(135deg,#a3e4ff,#57c3ed); border-color:#50acd4; color:#083355; }
+body.pos-motion-reduced .configuration-option *,body.pos-motion-reduced .configuration-switch::after { transition:none; }
+@media (prefers-reduced-motion:reduce) { .configuration-option *, .configuration-switch::after { transition:none !important; } }
+@media (max-width:760px) { body.atelier-shell #settingsView :is(button,input,select),body.atelier-shell #settingsView #configurationRecoverBtn { min-height:44px; }body.atelier-shell #settingsView .configuration-option input[type=checkbox],body.atelier-shell #settingsView .configuration-switch,body.atelier-shell #settingsView .configuration-switch-slot #posMotionToggle { flex-basis:44px; min-width:44px; }#configurationQuickAppearance { grid-template-columns:minmax(0,1fr); }.configuration-theme-preview { display:none; } }
+@media (max-width:1150px) { body.atelier-shell #settingsView .settings-center { grid-template-columns:210px minmax(0,1fr); }.configuration-general-grid,.configuration-user-grid { grid-template-columns:minmax(0,1fr); }.configuration-system-options { grid-row:auto; } }
+@media (max-width:1099px) { body.atelier-shell #billingView .billing-complete { grid-template-columns:minmax(0,1fr); }.invoice-right-column { grid-column:1; }body.atelier-shell #billingView .billing-complete .billing-form-panel { grid-row:auto; }body.atelier-shell #billingView .billing-complete .billing-recent-panel,.invoice-actions-card { grid-column:1; grid-row:auto; } }
+@media (max-width:760px) { body.atelier-shell #settingsView .settings-center { grid-template-columns:minmax(0,1fr); }body.atelier-shell #settingsView .settings-navigation { position:static; max-height:none; padding:8px; }body.atelier-shell #settingsView .settings-subview-tabs { grid-template-columns:repeat(2,minmax(0,1fr)); }body.atelier-shell #settingsView .settings-subview-tabs > button { min-height:48px; padding:5px 7px; }body.atelier-shell #settingsView .settings-subview-tabs svg { width:19px; height:19px; }body.atelier-shell #settingsView .settings-section-head { flex-wrap:wrap; padding:12px; }body.atelier-shell #settingsView .settings-section-head > div:first-of-type { flex:1; }body.atelier-shell #settingsView .settings-section-head h3 { font-size:20px; }#configurationSaveArea { width:100%; text-align:left; }#configurationPending { max-width:none; }.configuration-form,.configuration-user-grid { grid-template-columns:minmax(0,1fr); }.configuration-user-tabs { grid-template-columns:repeat(2,minmax(0,1fr)); }body.atelier-shell #settingsView .configuration-field select { height:44px; min-height:44px; font-size:14px; }.configuration-option { min-height:60px; }body.atelier-shell #settingsView .configuration-option input[type=checkbox],.configuration-switch,body.atelier-shell #settingsView .configuration-switch-slot #posMotionToggle { height:44px; min-height:44px; width:44px; border:0; background:linear-gradient(#bac8dd,#bac8dd) center / 42px 25px no-repeat; }body.atelier-shell #settingsView .configuration-option input:checked,.configuration-switch[aria-pressed=true],body.atelier-shell #settingsView .configuration-switch-slot #posMotionToggle[aria-pressed=true] { background:linear-gradient(#0879d5,#0879d5) center / 42px 25px no-repeat; }body.atelier-shell #settingsView .configuration-option input[type=checkbox]::after,.configuration-switch::after,body.atelier-shell #settingsView .configuration-switch-slot #posMotionToggle::after { top:12px; }body.atelier-shell #settingsView .user-row { grid-template-columns:minmax(0,1fr); }.configuration-pin-summary { flex-wrap:wrap; }.invoice-fiscal-grid { grid-template-columns:minmax(0,1fr); }.invoice-marine-head { gap:9px; }.invoice-marine-head > svg { width:28px; height:28px; }.invoice-steps { justify-content:center; gap:7px; }.invoice-stage-card { padding:12px; }.invoice-marine-head { margin:-12px -12px 0; }.invoice-action-buttons { grid-template-columns:minmax(0,1fr); }.invoice-selected-title { flex-wrap:wrap; }body.atelier-shell #billingView .billing-complete .toolbar { grid-template-columns:minmax(0,1fr); }body.atelier-shell #billingView .billing-complete .toolbar :is(input,select,button) { height:44px; min-height:44px; font-size:14px; }.invoice-status-filters button { min-height:44px; } }
+}
