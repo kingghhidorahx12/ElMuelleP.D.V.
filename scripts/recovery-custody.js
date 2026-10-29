@@ -55,7 +55,8 @@ function exportCustody({databaseFile,keyFile,configuredKey,destination,password,
     };
     collect(snapshot);
     if(envFile){p.rejectLinks(envFile);files['configuration.env']=fs.readFileSync(envFile).toString('base64');}
-    const payload=Buffer.from(JSON.stringify({format:MAGIC,files}));
+    const photoManifest=Object.fromEntries(Object.entries(files).filter(([name])=>name.startsWith('product-photos/')).map(([name,value])=>[name,crypto.createHash('sha256').update(Buffer.from(value,'base64')).digest('hex')]));
+    const payload=Buffer.from(JSON.stringify({format:MAGIC,files,photoManifest}));
     if(payload.length>MAX_BYTES/2)throw Error('El respaldo excede el límite de esta herramienta.');
     const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',derived,iv);
     cipher.setAAD(Buffer.from(MAGIC));
@@ -83,12 +84,17 @@ function restoreCustody({archive,destination,password}) {
     payload=JSON.parse(Buffer.concat([decipher.update(decode(envelope.ciphertext)),decipher.final()]).toString('utf8'));
   } finally {derived.fill(0);}
   if(payload.format!==MAGIC||!payload.files||Array.isArray(payload.files)||typeof payload.files!=='object')throw Error('Respaldo inválido.');
+  const photos=Object.keys(payload.files).filter(name=>name.startsWith('product-photos/'));
+  if(photos.length){
+    if(!payload.photoManifest||typeof payload.photoManifest!=='object'||Array.isArray(payload.photoManifest)||Object.keys(payload.photoManifest).length!==photos.length)throw Error('Manifiesto de fotografías inválido.');
+    for(const name of photos)if(!/^product-photos\/[a-f0-9]{64}\.(jpg|png|webp)$/.test(name)||!/^[a-f0-9]{64}$/.test(payload.photoManifest[name]||'')||crypto.createHash('sha256').update(decode(payload.files[name])).digest('hex')!==payload.photoManifest[name])throw Error('Fotografía alterada.');
+  }
   const stage=privateStage();
   try {
     for(const [name,value] of Object.entries(payload.files)) {
-      if(![p.DATABASE_NAME,'.secrets.json','configuration.env'].includes(name)&&!/^backups\/el-muelle-pos-\d{4}-\d{2}-\d{2}\.sqlite$/.test(name))throw Error('Archivo no permitido.');
+      if(![p.DATABASE_NAME,'.secrets.json','configuration.env'].includes(name)&&!/^backups\/el-muelle-pos-\d{4}-\d{2}-\d{2}\.sqlite$/.test(name)&&!/^product-photos\/[a-f0-9]{64}\.(jpg|png|webp)$/.test(name))throw Error('Archivo no permitido.');
       const file=path.join(stage,name);
-      if(name.startsWith('backups/')&&!fs.existsSync(path.dirname(file)))p.privateDirectory(path.dirname(file));
+      if((name.startsWith('backups/')||name.startsWith('product-photos/'))&&!fs.existsSync(path.dirname(file)))p.privateDirectory(path.dirname(file));
       fs.writeFileSync(file,decode(value),{flag:'wx',mode:0o600});
     }
     const backups=path.join(stage,'backups');

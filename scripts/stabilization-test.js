@@ -16,7 +16,7 @@ async function start(){
   child=spawn(process.execPath,['--require',path.join(area,'clock-hook.js'),'src/server.js'],{cwd:root,windowsHide:true,env:{...process.env,NODE_OPTIONS:'',NODE_ENV:'test',EL_MUELLE_STORAGE_MODE:'',HOST:'127.0.0.1',PORT:String(port),DATA_DIR:data,ENV_FILE:path.join(area,'absent.env'),ADMIN_PIN:'',EMPLOYEE_PIN:'',DATA_ENCRYPTION_KEY:'',REQUIRE_HTTPS:'false',CORS_ORIGIN:''},stdio:'ignore'});
   for(let i=0;i<200;i++){if(child.exitCode!==null)throw Error('Falló el servidor aislado.');try{if((await fetch(base+'/api/health')).ok)return;}catch{}await pause(100);}throw Error('Timeout del servidor sintético.');
 }
-async function api(route,method='GET',body,cookie=admin){const response=await fetch(base+route,{method,headers:{'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});return {status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie')?.split(';')[0],backup:response.headers.get('X-ElMuelle-Backup')};}
+async function api(route,method='GET',body,cookie=admin){const response=await fetch(base+route,{method,headers:{'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},...(body===undefined?{}:{body:JSON.stringify(require('./checkout-test-client').completeCatalogOperation(route,method,body))})});return {status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie')?.split(';')[0],backup:response.headers.get('X-ElMuelle-Backup')};}
 const intent=()=>crypto.randomUUID();
 function sale(extra={}){return {checkoutIntentId:intent(),cashSessionId:cashId,items:[{productId:'piece',quantity:1,source:'manual'}],paymentMethod:'efectivo',...extra};}
 function snapshot(){const db=new DatabaseSync(path.join(data,p.DATABASE_NAME),{readOnly:true});try{return {documents:db.prepare('SELECT * FROM documents ORDER BY collection,document_id').all(),audit:db.prepare('SELECT * FROM audit_events ORDER BY id').all()};}finally{db.close();}}
@@ -34,7 +34,7 @@ test('Primer inicio: sólo propietario, PIN, colaborador nominal y rechazo de se
 });
 
 test('Productos: rechaza números no finitos, negativos, vacíos, fracciones por pieza y estructuras inválidas',async()=>{
-  const valid={name:'Alta sintética',category:'Pruebas',unit:'pieza',price:10,costPrice:0,stockQuantity:4,minStock:1};
+  const valid={name:'Alta sintética',category:'Pruebas',unit:'pieza',price:10,costPrice:0,minStock:1};
   const before=snapshot();
   for(const patch of [{price:1e308},{price:null},{price:''},{price:'abc'},{costPrice:-1},{stockQuantity:-5},{minStock:-1},{stockQuantity:1.5},{unit:'otro'},{active:'false'},{name:{}},{category:[]},{price:true}])assert.equal((await api('/api/products','POST',{...valid,...patch})).status,400,JSON.stringify(patch));
   assert.equal((await api('/api/products','POST',[])).status,400);
@@ -86,7 +86,7 @@ test('Dos compras legítimas idénticas con intenciones distintas generan ventas
 test('Peso manual: autorización vinculada a usuario, sesión, intención, producto, cantidad y caja',async()=>{
   const body=sale({items:[{productId:'kg',quantity:1,source:'manual'}]});
   assert.equal((await api('/api/sales','POST',body,worker)).status,403);
-  const request={pin:'864209',productId:'kg',quantity:1,checkoutIntentId:body.checkoutIntentId,cashSessionId:cashId};
+  const request={reason:'otro',explanation:'Detalle sintético autorizado',pin:'864209',productId:'kg',quantity:1,checkoutIntentId:body.checkoutIntentId,cashSessionId:cashId};
   assert.equal((await api('/api/authorizations/manual-weight','POST',{...request,pin:'999999'},worker)).status,401);
   assert.equal((await api('/api/authorizations/manual-weight','POST',{...request,quantity:-1},worker)).status,400);
   assert.equal((await api('/api/authorizations/manual-weight','POST',{...request,cashSessionId:'otro'},worker)).status,409);
@@ -103,7 +103,8 @@ test('Peso manual: autorización vinculada a usuario, sesión, intención, produ
 
 test('Administrador, tarjeta, transferencia, descuentos existentes y cancelación conservan totales',async()=>{
   for(const paymentMethod of ['tarjeta','transferencia']){const result=await api('/api/sales','POST',sale({paymentMethod,paymentDetails:{reference:'SINTETICO'}}));assert.equal(result.status,201);assert.equal(result.body.total,100);}
-  const manual=await api('/api/sales','POST',sale({items:[{productId:'kg',quantity:1,source:'manual'}],discount:10,discountReason:'Prueba sintética'}));assert.equal(manual.status,201);assert.equal(manual.body.total,190);
+  const manualBody=sale({items:[{productId:'kg',quantity:1,source:'manual'}],discount:10,discountReason:'Prueba sintética'});const adminGrant=await api('/api/authorizations/manual-weight','POST',{pin:'864209',productId:'kg',quantity:1,checkoutIntentId:manualBody.checkoutIntentId,cashSessionId:cashId,reason:'falla_bascula'});assert.equal(adminGrant.status,200);manualBody.items[0].manualAuthorization=adminGrant.body.token;
+  const manual=await api('/api/sales','POST',manualBody);assert.equal(manual.status,201);assert.equal(manual.body.total,190);
   const stock=(await api('/api/products')).body.find(p=>p.id==='kg').stockQuantity;
   assert.equal((await api('/api/sales/'+manual.body.id+'/cancel','PATCH',{reason:'Cancelación sintética'})).status,200);
   assert.equal((await api('/api/sales/'+manual.body.id+'/cancel','PATCH',{reason:'Cancelación duplicada'})).status,400);
@@ -112,7 +113,7 @@ test('Administrador, tarjeta, transferencia, descuentos existentes y cancelació
 
 test('La autorización manual vencida o duplicada en dos partidas no puede reutilizarse',async()=>{
   const body=sale({items:[{productId:'kg',quantity:1,source:'manual'}]});
-  const grant=await api('/api/authorizations/manual-weight','POST',{pin:'864209',productId:'kg',quantity:1,checkoutIntentId:body.checkoutIntentId,cashSessionId:cashId},worker);assert.equal(grant.status,200);body.items[0].manualAuthorization=grant.body.token;
+  const grant=await api('/api/authorizations/manual-weight','POST',{reason:'otro',explanation:'Detalle sintético autorizado',pin:'864209',productId:'kg',quantity:1,checkoutIntentId:body.checkoutIntentId,cashSessionId:cashId},worker);assert.equal(grant.status,200);body.items[0].manualAuthorization=grant.body.token;
   const before=snapshot();
   assert.equal((await api('/api/sales','POST',{...body,items:[body.items[0],body.items[0]]},worker)).status,403);
   fs.writeFileSync(path.join(area,'clock-offset'),'300001');
@@ -125,7 +126,7 @@ test('Inventario: unidades, fechas, ajustes y costo ponderado válidos sin cambi
   assert.equal((await api('/api/products/piece/inventory','PATCH',{stockQuantity:2,minStock:1,reason:''})).status,400);
   assert.equal((await api('/api/products/piece/inventory','PATCH',{stockQuantity:-1,minStock:1,reason:'Prueba'})).status,400);
   assert.deepEqual(snapshot(),before);
-  assert.equal((await api('/api/inventory/entries','POST',{productId:'piece',quantity:2,unitCost:40,receivedAt:'2024-02-29'})).status,201);
+  assert.equal((await api('/api/inventory/entries','POST',{productId:'piece',quantity:2,unitCost:40,receivedAt:'2024-02-29',reason:'Recepción sintética'})).status,201);
   assert.equal((await api('/api/products/piece/inventory','PATCH',{stockQuantity:40,minStock:2,reason:'Merma sintética'})).status,200);
 });
 

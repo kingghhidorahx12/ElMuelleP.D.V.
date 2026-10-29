@@ -658,6 +658,7 @@ function maximizeApplicationWindow() {
 }
 
 function logoutToAccess({ preservePendingCheckout = false } = {}) {
+  state.pendingProductPhoto=null;state.productPhotoVersion=(state.productPhotoVersion||0)+1;if($('catalogPendingOperations'))$('catalogPendingOperations').textContent='';if($('productEditorDialog')?.open)$('productEditorDialog').close();
   const preservedCheckout = preservePendingCheckout ? state.checkoutPending : null;
   state.checkoutGeneration = (state.checkoutGeneration || 0) + 1;
   state.checkoutIntentId = null;
@@ -1146,6 +1147,7 @@ function setProductMode(mode = "list") {
     button.setAttribute("aria-selected", isActive ? "true" : "false");
   });
 
+  const dialog=$('productEditorDialog');if(dialog){if(validMode==='form'&&!dialog.open)dialog.showModal();else if(validMode==='list'&&dialog.open)dialog.close();}
   syncTopbarContext();
   if (changed) animatePosFeedback(root.querySelector(validMode === "list" ? ".product-catalog-panel" : ".product-form-panel"), "navigation");
 }
@@ -1230,6 +1232,11 @@ const auditEventLabels = {
   product_updated: "Producto actualizado",
   inventory_adjusted: "Inventario ajustado",
   inventory_received: "Entrada de mercancía",
+  inventory_initial_receipt: "Alta con entrada inicial",
+  inventory_initial_count: "Conteo inicial",
+  inventory_waste: "Merma registrada",
+  inventory_restitution: "Restitución de existencias",
+  inventory_restitution_reconciled: "Restitución conciliada",
   sale_completed: "Venta registrada",
   sale_canceled: "Venta cancelada",
   invoice_request_saved: "Solicitud de factura guardada",
@@ -1244,7 +1251,7 @@ const auditEventLabels = {
 function getAuditDetailText(event) {
   const details = event?.details || {};
   if(event.event_type==='screen_permission_changed')return `Empleado ${event.entity_id} · ${details.module} · ${details.previous?'Permitido':'Bloqueado'} → ${details.next?'Permitido':'Bloqueado'}`;
-  if (event.event_type === "inventory_adjusted") {
+  if (["inventory_adjusted", "inventory_initial_count", "inventory_waste", "inventory_restitution", "inventory_initial_receipt"].includes(event.event_type)) {
     return `${details.reason || "Ajuste"} · ${details.previousStock ?? "-"} → ${details.newStock ?? "-"}`;
   }
   if (event.event_type === "sale_completed") {
@@ -1312,11 +1319,13 @@ function getEffectiveQuantity(product) {
 }
 
 function showToast(message, kind = 'notice') {
+  if(kind==='notice')kind=/no se|error|rechaz|inválid|incorrect|requiere|debe|revisa|falta/i.test(message)?'error':/pendiente|autorización|sin verificar/i.test(message)?'warning':/confirmad|guardad|registrad|actualizad|conciliad/i.test(message)?'success':'notice';
   if (state.backupWarningShown && !/respaldo/i.test(message)) message += ' · Respaldo automático pendiente; solicita revisión técnica.';
   if (typeof noticePreference === 'function' && !noticePreference(kind)) return;
   const toast = $("toast");
   if (!toast) return;
 
+  toast.dataset.kind=kind;toast.setAttribute('role',kind==='error'?'alert':'status');
   toast.textContent = message;
   toast.classList.add("show");
 
@@ -1360,6 +1369,7 @@ function getProductIcon(product) {
 }
 
 function getProductImagePath(product, extension = "png") {
+  if (product.photoFile) return `/api/product-photos/${encodeURIComponent(product.photoFile)}`;
   return `${PRODUCT_IMAGE_BASE}/${encodeURIComponent(product.id)}.${extension}`;
 }
 
@@ -2193,6 +2203,7 @@ async function loadProducts() {
   if (typeof canReadProductData === 'function' && !canReadProductData()) {state.products=[];return;}
   try {
     state.products = await fetchJson("/api/products");
+    if(typeof refreshCatalogPending==='function')refreshCatalogPending();
     pruneMissingFavorites();
 
     renderCategories();
@@ -2365,7 +2376,7 @@ function renderProducts() {
       <tbody>${visibleProducts.map((product) => {
         const favorite = state.favoriteProductIds.has(String(product.id));
         const stock = typeof product.stockQuantity === "number"
-          ? (product.unit === "pieza" ? pieceStockText(product.stockQuantity) : quantityText(product.stockQuantity, product.unit, 2)) : "Sin conteo";
+          ? (product.unit === "pieza" ? pieceStockText(product.stockQuantity) : quantityText(product.stockQuantity, product.unit, 2)) : "Sin verificar";
         return `<tr><th scope="row">${escapeHtml(product.name)}</th><td data-label="Categoría">${escapeHtml(product.category)}</td><td data-label="Precio"><b>${money(product.price)}</b> / ${escapeHtml(getUnitLabel(product.unit))}</td><td data-label="Disponible">${escapeHtml(stock)}</td><td class="pos-list-actions"><button class="pos-list-favorite" type="button" data-favorite-id="${escapeHtml(product.id)}" aria-pressed="${favorite}" aria-label="${favorite ? "Quitar de favoritos: " : "Añadir a favoritos: "}${escapeHtml(product.name)}">${FAVORITE_STAR}</button><button class="pos-list-add" type="button" data-id="${escapeHtml(product.id)}" aria-label="Agregar: ${escapeHtml(product.name)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></td></tr>`;
       }).join("")}</tbody>
     </table>` : visibleProducts
@@ -2374,8 +2385,8 @@ function renderProducts() {
       const stock =
         typeof product.stockQuantity === "number"
           ? (product.unit === "pieza" ? pieceStockText(product.stockQuantity) : quantityText(product.stockQuantity, product.unit, 2))
-          : "Sin conteo";
-      const stockLabel = stock === "Sin conteo" ? stock : `Disp. ${stock}`;
+          : "Sin verificar";
+      const stockLabel = stock === "Sin verificar" ? stock : `Disp. ${stock}`;
       const iconKey = getProductIconKey(product);
       const heatClass = getProductHeatClass(product, productSalesMap);
       const imagePath = getPosProductImagePath(product);
@@ -2464,6 +2475,7 @@ function setFilter(filter) {
 function selectProduct(product) {
   if (state.checkoutPending || state.checkoutProcessing) { showToast('Resuelve el cobro pendiente antes de cambiar la venta.'); return; }
   if (!product) return;
+  if(typeof product.stockQuantity!=='number'){showToast('Existencias sin verificar. Registra primero el conteo inicial.');return;}
   const deselect = product.unit === "kg" && state.selectedProduct?.id === product.id;
   // Un único punto de entrada descarta el borrador anterior antes de abrir el siguiente.
   closePieceQuantityModal(false, true);
@@ -2641,7 +2653,7 @@ function renderWeighPanel() {
     delete photo.dataset.fallbackTried;
     photo.src = imagePath;
   }
-  $("weighAvailableStock").textContent = `Disponible: ${quantityText(product.stockQuantity, product.unit)}`;
+  $("weighAvailableStock").textContent = typeof product.stockQuantity==='number'?`Disponible: ${quantityText(product.stockQuantity, product.unit)}`:'Existencias sin verificar';
   $("weighDescription").textContent = isKg
     ? invalidKgWeight
       ? `Peso máximo permitido: ${MAX_SCALE_WEIGHT_KG.toFixed(0)} kg.`
@@ -2802,6 +2814,7 @@ function openManualModal() {
     return;
   }
 
+  if(typeof updateManualProductContext==='function')updateManualProductContext();
   const quantityInput = $("manualQuantityInput");
   state.quantityCaptureVersion += 1;
   state.manualCapturePending = false;
@@ -2842,11 +2855,12 @@ async function saveManualQuantity() {
   if (!Number.isFinite(quantity) || quantity <= 0 || (product.unit === 'kg' && (quantity < MIN_SCALE_WEIGHT_KG || quantity > MAX_SCALE_WEIGHT_KG))) {
     showToast(`Peso permitido: ${MIN_SCALE_WEIGHT_KG.toFixed(3)} a ${MAX_SCALE_WEIGHT_KG.toFixed(0)} kg.`); return;
   }
+  if($('manualReasonInput')?.value==='otro'&&String($('manualExplanationInput')?.value||'').trim().length<4){showToast('Explica el motivo del peso manual.','error');return;}
   state.manualCapturePending = true;
   $("saveManualWeightBtn").disabled = true;
 
   try {
-    const authorization = await verifyAdminPin(pin, { productId:product.id, quantity, checkoutIntentId:getCheckoutIntentId(), cashSessionId:getSalesCashShift()?.id || null });
+    const authorization = await verifyAdminPin(pin, { productId:product.id, quantity, checkoutIntentId:getCheckoutIntentId(), cashSessionId:getSalesCashShift()?.id || null, reason:$('manualReasonInput')?.value, explanation:$('manualExplanationInput')?.value.trim() });
     if (isCurrent()) state.manualAuthorization = authorization?.token || null;
   } catch (error) {
     if (!isCurrent()) return;
@@ -3096,6 +3110,7 @@ function openProductConfirm({ title, message, summary, confirmLabel = "Confirmar
   $("productConfirmModal").classList.remove("hidden");
   $("productConfirmModal").inert = false;
   $("productConfirmModal").setAttribute("aria-hidden", "false");
+  if($("productConfirmModal").showModal&&!$("productConfirmModal").open)$("productConfirmModal").showModal();
   $("productConfirmYesBtn")?.focus();
 
   return new Promise((resolve) => {
@@ -3104,6 +3119,7 @@ function openProductConfirm({ title, message, summary, confirmLabel = "Confirmar
 }
 
 function closeProductConfirm(value = false) {
+  if($("productConfirmModal").open&&$("productConfirmModal").close)$("productConfirmModal").close();
   $("productConfirmModal").inert = true;
   $("productConfirmModal").setAttribute("aria-hidden", "true");
   $("productConfirmModal").classList.add("hidden");
@@ -3142,7 +3158,7 @@ function updateProductProjection() {
   if (!$('productInvestmentTotal')) return;
 
   const projection = calculateFinancialProjection(
-    $('productStockInput')?.value,
+    state.products.find(p=>p.id===state.editingProductId)?.stockQuantity,
     $('productCostInput')?.value,
     $('productPriceInput')?.value
   );
@@ -3164,9 +3180,11 @@ function updateProductProjection() {
 function resetProductForm() {
   state.editingProductId = null;
   $("productForm").reset();
+  state.pendingProductPhoto=null;state.productPhotoVersion=(state.productPhotoVersion||0)+1;
+  if(typeof syncProductPhotoPreview==='function')syncProductPhotoPreview();
   $("productCategoryInput").value = "Pescados y mariscos";
   $("productUnitInput").value = "kg";
-  $("productFormStatusTitle").textContent = "Agregar producto";
+  $("productFormStatusTitle").textContent = "Nuevo producto";
   $("productFormStatusText").textContent = "";
   $("saveProductBtn").textContent = "Guardar";
   updateProductProjection();
@@ -3175,12 +3193,11 @@ function resetProductForm() {
 function fillProductForm(product) {
   state.editingProductId = product.id;
   $("productNameInput").value = product.name;
+  $("productDescriptionInput").value=product.description||'';$("productActiveInput").checked=product.active!==false;state.pendingProductPhoto=null;state.productPhotoVersion=(state.productPhotoVersion||0)+1;syncProductPhotoPreview();
   $("productCategoryInput").value = product.category;
   $("productUnitInput").value = product.unit;
   $("productPriceInput").value = product.price;
   $("productCostInput").value = product.costPrice || "";
-  $("productStockInput").value =
-    typeof product.stockQuantity === "number" ? product.stockQuantity : "";
   $("productMinStockInput").value =
     typeof product.minStock === "number" ? product.minStock : "";
   $("productFormStatusTitle").textContent = "Editar producto";
@@ -3191,58 +3208,7 @@ function fillProductForm(product) {
   $("productNameInput").focus();
 }
 
-async function saveProductFromAdmin(event) {
-  event.preventDefault();
-
-  const payload = {
-    name: $("productNameInput").value.trim(),
-    category: $("productCategoryInput").value,
-    unit: $("productUnitInput").value,
-    price: Number($("productPriceInput").value || 0),
-    costPrice: Number($("productCostInput").value || 0),
-    stockQuantity: $("productStockInput").value === "" ? null : Number($("productStockInput").value),
-    minStock: $("productMinStockInput").value === "" ? null : Number($("productMinStockInput").value)
-  };
-
-  if (!payload.name || !payload.category || !['kg','pieza'].includes(payload.unit) || payload.price <= 0 || [payload.price, payload.costPrice].some(value => !Number.isFinite(value) || value < 0 || !Number.isSafeInteger(Math.round(value * 100))) || [payload.stockQuantity, payload.minStock].some(value => value !== null && (!Number.isFinite(value) || value < 0 || !Number.isSafeInteger(Math.round(value * 1000)))) || (payload.unit === 'pieza' && [payload.stockQuantity, payload.minStock].some(value => value !== null && !Number.isInteger(value)))) {
-    showToast('Revisa nombre, precio, costo y existencias. Usa valores finitos no negativos y cantidades enteras para piezas.');
-    return;
-  }
-
-  const isEditing = Boolean(state.editingProductId);
-  const currentProduct = state.products.find((product) => product.id === state.editingProductId);
-
-  if (currentProduct) {
-    payload.active = currentProduct.active !== false;
-  }
-
-  const confirmed = await openProductConfirm({
-    title: isEditing ? "Actualizar producto" : "Agregar producto",
-    message: "Confirma el movimiento de catálogo.",
-    summary: `${payload.name} · ${money(payload.price)} / ${getUnitLabel(payload.unit)}`,
-    confirmLabel: isEditing ? "Actualizar" : "Agregar"
-  });
-
-  if (!confirmed) return;
-
-  try {
-    await fetchJson(isEditing ? `/api/products/${state.editingProductId}` : "/api/products", {
-      method: isEditing ? "PUT" : "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-
-    await loadProducts();
-    resetProductForm();
-    setProductMode("list");
-    showToast(isEditing ? "Producto actualizado." : "Producto agregado.");
-  } catch (error) {
-    console.error(error);
-    showToast(error.message || "No se pudo guardar.");
-  }
-}
+async function saveProductFromAdmin(event) { return saveCommercialProduct(event); }
 
 function catalogPhoto(product) {
   return `<span class="management-photo"><img data-catalog-image src="${escapeHtml(getProductImagePath(product, "jpg"))}" data-fallback="${escapeHtml(getProductImagePath(product))}" alt="" loading="lazy" decoding="async" /></span>`;
@@ -3278,16 +3244,17 @@ function renderAdminProducts() {
     list.innerHTML = '<p class="empty-state">No hay productos con esos filtros.</p>';
     return;
   }
-  list.innerHTML = `<div class="management-table-scroll"><table class="management-table"><caption class="sr-only">Catálogo de productos</caption><thead><tr><th>Producto</th><th>Categoría</th><th>Unidad</th><th>Precio</th><th>Estado</th><th>Acción</th></tr></thead><tbody>` + filteredProducts.map((product) => {
+  list.innerHTML = `<div class="management-table-scroll"><table class="management-table"><caption class="sr-only">Catálogo de productos</caption><thead><tr><th>Producto</th><th>Categoría</th><th>Existencias</th><th>Precio</th><th>Estado</th><th>Acción</th></tr></thead><tbody>` + filteredProducts.map((product) => {
     const stock = typeof product.stockQuantity === "number" ? product.stockQuantity : 0;
     const projection = calculateFinancialProjection(stock, product.costPrice, product.price);
     const isActive = product.active !== false;
+    const [stockState,stockKind]=getStockStatus(product);
     return `<tr>
       <td data-label="Producto"><div class="management-product-cell">${catalogPhoto(product)}<div><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.id)}</small></div></div></td>
-      <td data-label="Categoría">${escapeHtml(product.category)}</td><td data-label="Unidad">${escapeHtml(getUnitLabel(product.unit))}</td>
-      <td data-label="Precio"><strong>${money(product.price)}</strong></td><td data-label="Estado"><span class="status-badge ${isActive ? "ok" : "off"}">${isActive ? "Activo" : "Inactivo"}</span></td>
+      <td data-label="Categoría">${escapeHtml(product.category)}</td><td data-label="Existencias">${typeof product.stockQuantity==='number'?escapeHtml(quantityText(product.stockQuantity,product.unit)):'—'}</td>
+      <td data-label="Precio"><strong>${money(product.price)}</strong></td><td data-label="Estado"><span class="status-badge ${stockKind}">${escapeHtml(stockState)}</span>${isActive?'':'<small>Inactivo</small>'}</td>
       <td data-label="Acción"><div class="management-row-actions"><button class="quiet-btn" type="button" data-edit-product="${escapeHtml(product.id)}">Editar ›</button>
-      <details class="management-product-options"><summary>Más</summary><div><p>Existencia: ${typeof product.stockQuantity === "number" ? escapeHtml(quantityText(stock, product.unit)) : "Sin conteo"}</p>${Number(product.costPrice || 0) > 0 && typeof product.stockQuantity === "number" ? `<p>Costo: ${money(product.costPrice)}</p><p>Margen: ${projection.margin.toFixed(2)}% · Ganancia inventario: ${money(projection.profit)}</p>` : "<p>Costo o existencia pendiente de capturar</p>"}<button class="quiet-btn" type="button" data-toggle-product="${escapeHtml(product.id)}">${isActive ? "Pausar" : "Activar"}</button></div></details></div></td>
+      <details class="management-product-options"><summary>Más</summary><div><p>Existencia: ${typeof product.stockQuantity === "number" ? escapeHtml(quantityText(stock, product.unit)) : "Sin verificar"}</p>${Number(product.costPrice || 0) > 0 && typeof product.stockQuantity === "number" ? `<p>Costo: ${money(product.costPrice)}</p><p>Margen: ${projection.margin.toFixed(2)}% · Ganancia inventario: ${money(projection.profit)}</p>` : "<p>Costo o existencia pendiente de capturar</p>"}<button class="quiet-btn" type="button" data-toggle-product="${escapeHtml(product.id)}">${isActive ? "Pausar" : "Activar"}</button></div></details></div></td>
     </tr>`;
   }).join("") + '</tbody></table></div>';
   bindCatalogPhotos(list);
@@ -3318,16 +3285,7 @@ async function toggleProductStatus(productId) {
   if (!confirmed) return;
 
   try {
-    await fetchJson(`/api/products/${product.id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        ...product,
-        active: !isActive
-      })
-    });
+    await runCatalogOperation('product-status:'+product.id, '/api/products/'+product.id, 'PUT', {active:!isActive});
 
     await loadProducts();
     showToast(isActive ? "Producto pausado." : "Producto activo.");
@@ -3338,11 +3296,12 @@ async function toggleProductStatus(productId) {
 }
 
 function getStockStatus(product) {
-  if (typeof product.stockQuantity !== "number") return ["Sin conteo", "neutral"];
+  if (typeof product.stockQuantity !== "number") return ["Sin verificar", "neutral"];
+  if(product.stockQuantity===0)return ["Agotado","danger"];
   if (typeof product.minStock === "number" && product.stockQuantity <= product.minStock) {
-    return ["Bajo", "warn"];
+    return ["Bajo mínimo", "warn"];
   }
-  return ["Ok", "ok"];
+  return ["Disponible", "ok"];
 }
 
 function renderInventoryEntryProductOptions() {
@@ -3400,7 +3359,6 @@ function getInventoryNewProductDraft() {
     unit: unitValue,
     price: Number($("inventoryEntrySalePriceInput")?.value || 0),
     costPrice: Number($("inventoryEntryUnitCostInput")?.value || 0),
-    stockQuantity: 0,
     minStock: minStockValue === "" ? null : Number(minStockValue)
   };
 }
@@ -3445,7 +3403,7 @@ function updateInventoryEntryProjection() {
   const unit = product?.unit || "kg";
   const currentStock = !isNewProduct && product && typeof product.stockQuantity === "number"
     ? Number(product.stockQuantity)
-    : 0;
+    : null;
   const currentCost = !isNewProduct && product ? Number(product.costPrice || 0) : 0;
   const newStock = currentStock + Math.max(quantity, 0);
   const currentValue = currentStock * currentCost;
@@ -3464,13 +3422,13 @@ function updateInventoryEntryProjection() {
     inventoryEntryProductMeta.textContent = metaText;
     inventoryEntryProductMeta.hidden = !metaText;
   }
-  $("entryCurrentStock").textContent = quantityText(currentStock, unit);
+  $("entryCurrentStock").textContent = currentStock===null?'Sin verificar':quantityText(currentStock, unit);
   $("entryCurrentCost").textContent = `${money(currentCost)} / ${getUnitLabel(unit)}`;
   $("entryPurchaseTotal").textContent = money(projection.investment);
   $("entryProjectedRevenue").textContent = money(projection.revenue);
   $("entryProjectedProfit").textContent = money(projection.profit);
   $("entryMargin").textContent = `${projection.margin.toFixed(2)}%`;
-  $("entryNewStock").textContent = quantityText(newStock, unit);
+  $("entryNewStock").textContent = !isNewProduct&&currentStock===null?'Requiere conteo inicial':quantityText(newStock, unit);
   $("entryWeightedCost").textContent = `${money(weightedCost)} / ${getUnitLabel(unit)}`;
   $("entryProjectedProfit").classList.toggle("negative-value", projection.profit < 0);
 }
@@ -3497,118 +3455,14 @@ async function loadInventoryEntries() {
     renderInventorySummary();
     renderInventoryEntries();
     updateInventoryEntryProjection();
+    if(typeof renderPendingRestitutions==='function')await renderPendingRestitutions();
   } catch (error) {
     console.error(error);
     showToast(error.message || "No se pudieron cargar las entradas de inventario.");
   }
 }
 
-async function saveInventoryEntry(event) {
-  event.preventDefault();
-
-  const isNewProduct = getInventoryEntryMode() === "new";
-  let product = isNewProduct ? null : getSelectedInventoryEntryProduct();
-  const newProductDraft = getInventoryNewProductDraft();
-  const quantity = Number($("inventoryEntryQuantityInput")?.value || 0);
-  const unitCost = Number($("inventoryEntryUnitCostInput")?.value || 0);
-  const salePrice = Number($("inventoryEntrySalePriceInput")?.value || 0);
-  const minStockValue = $("inventoryNewProductMinStockInput")?.value ?? "";
-  const payload = {
-    productId: product?.id || "",
-    quantity,
-    unitCost,
-    salePrice,
-    supplier: "",
-    receivedAt: $("inventoryEntryDateInput")?.value || getLocalDateString(),
-    notes: $("inventoryEntryNotesInput")?.value.trim() || ""
-  };
-
-  if (isNewProduct) {
-    const duplicateProduct = state.products.some((item) => {
-      return item.name.trim().toLowerCase() === newProductDraft.name.trim().toLowerCase();
-    });
-
-    if (!newProductDraft.name || !newProductDraft.category || !newProductDraft.unit) {
-      showToast("Captura nombre, categoría y tipo de venta del producto nuevo.");
-      return;
-    }
-
-    if (duplicateProduct) {
-      showToast("Ese producto ya existe. Usa Producto existente para registrar la compra.");
-      return;
-    }
-
-    if (quantity <= 0 || unitCost <= 0 || salePrice <= 0) {
-      showToast("Captura cantidad, costo y precio de venta mayores a cero.");
-      return;
-    }
-
-    if (minStockValue !== "" && Number(minStockValue) < 0) {
-      showToast("El mínimo sugerido no puede ser negativo.");
-      return;
-    }
-  } else if (!payload.productId || payload.quantity <= 0 || payload.unitCost <= 0) {
-    showToast("Selecciona producto, cantidad y costo de compra.");
-    return;
-  }
-
-  const unit = isNewProduct ? newProductDraft.unit : product.unit;
-  if (![quantity,unitCost,salePrice].every(Number.isFinite) || !Number.isSafeInteger(Math.round(quantity*1000)) || !Number.isSafeInteger(Math.round(unitCost*100)) || !Number.isSafeInteger(Math.round(salePrice*100)) || salePrice < 0 || (unit === 'pieza' && !Number.isInteger(quantity)) || (isNewProduct && newProductDraft.minStock !== null && (!Number.isFinite(newProductDraft.minStock) || newProductDraft.minStock < 0 || (unit === 'pieza' && !Number.isInteger(newProductDraft.minStock))))) {
-    showToast('Revisa cantidades, costos y mínimos. Las piezas requieren cantidades enteras y los importes deben ser finitos.'); return;
-  }
-  const productName = isNewProduct ? newProductDraft.name : product.name;
-  const projection = calculateFinancialProjection(payload.quantity, payload.unitCost, payload.salePrice || product?.price || 0);
-  const confirmed = await openProductConfirm({
-    title: isNewProduct ? "Agregar producto y entrada" : "Registrar entrada",
-    message: isNewProduct
-      ? "Se creará el producto en catálogo y después se sumará esta mercancía al inventario."
-      : "La existencia y el costo promedio del producto se actualizarán.",
-    summary: `${productName} · ${quantityText(payload.quantity, unit)} · Inversión ${money(projection.investment)} · Ganancia proyectada ${money(projection.profit)}`,
-    confirmLabel: isNewProduct ? "Crear y registrar" : "Registrar"
-  });
-
-  if (!confirmed) return;
-
-  const button = $("saveInventoryEntryBtn");
-  if (button) button.disabled = true;
-
-  try {
-    if (isNewProduct) {
-      const createdProduct = await fetchJson("/api/products", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newProductDraft.name,
-          category: newProductDraft.category,
-          unit: newProductDraft.unit,
-          price: salePrice,
-          costPrice: unitCost,
-          stockQuantity: 0,
-          minStock: minStockValue === "" ? null : Number(minStockValue),
-          active: true
-        })
-      });
-      product = createdProduct;
-      payload.productId = createdProduct.id;
-    }
-
-    await fetchJson("/api/inventory/entries", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-
-    await loadProducts();
-    await loadInventoryEntries();
-    resetInventoryEntryForm();
-    showToast(isNewProduct ? "Producto y entrada registrados." : "Entrada registrada y costo promedio actualizado.");
-  } catch (error) {
-    console.error(error);
-    showToast(error.message || "No se pudo registrar la entrada.");
-  } finally {
-    if (button) button.disabled = false;
-  }
-}
+async function saveInventoryEntry(event) { return saveInventoryReceipt(event); }
 
 function renderInventorySummary() {
   if (!$("inventoryInvestmentValue")) return;
@@ -3637,16 +3491,21 @@ function renderInventoryEntries() {
 
   const query = $("inventoryEntrySearchInput")?.value.trim().toLowerCase() || "";
   const entries = state.inventoryEntries.filter((entry) => {
-    const haystack = `${entry.id || ""} ${entry.productName || ""} ${entry.notes || ""}`.toLowerCase();
+    const haystack = `${entry.id || ""} ${entry.productName || ""} ${entry.reason || entry.notes || ""}`.toLowerCase();
     return haystack.includes(query);
   });
 
   if (entries.length === 0) {
-    list.innerHTML = `<p class="empty-state">No hay entradas con esos criterios.</p>`;
+    list.innerHTML = `<p class="empty-state">No hay movimientos con esos criterios.</p>`;
     return;
   }
 
   list.innerHTML = entries.map((entry) => {
+    const labels = { initial_count: "Conteo inicial", adjustment: "Ajuste", waste: "Merma", restitution: "Restitución", initial_receipt: "Alta con entrada inicial", received: "Entrada de mercancía" };
+    const label = labels[entry.type] || "Entrada de mercancía";
+    const receipt = !entry.type || ["received", "initial_receipt"].includes(entry.type);
+    const stock = value => typeof value === "number" ? quantityText(value, entry.unit) : "Sin verificar";
+    const margin = Number(entry.projectedRevenue) > 0 ? Number(entry.projectedProfit) / Number(entry.projectedRevenue) * 100 : 0;
     const date = entry.receivedAt
       ? new Date(`${entry.receivedAt}T12:00:00`).toLocaleDateString("es-MX")
       : new Date(entry.createdAt).toLocaleDateString("es-MX");
@@ -3655,13 +3514,13 @@ function renderInventoryEntries() {
       <article class="inventory-entry-row">
         <div class="inventory-entry-main">
           <strong>${escapeHtml(entry.productName)}</strong>
-          <span>${escapeHtml(entry.id)} · ${escapeHtml(date)}${entry.notes ? ` · ${escapeHtml(entry.notes)}` : ""}</span>
-          <small>${quantityText(entry.quantity, entry.unit)} a ${money(entry.unitCost)} · Costo promedio ${money(entry.weightedAverageCost)}</small>
+          <span>${escapeHtml(label)} · ${escapeHtml(entry.id)} · ${escapeHtml(date)}${entry.reason || entry.notes ? ` · ${escapeHtml(entry.reason || entry.notes)}` : ""}</span>
+          <small>${receipt ? `${quantityText(entry.quantity, entry.unit)} a ${money(entry.unitCost)} · Costo promedio ${money(entry.weightedAverageCost)}` : `${stock(entry.previousStock)} → ${stock(entry.newStock)}`}</small>
         </div>
-        <div class="inventory-entry-value"><span>Inversión</span><strong>${money(entry.totalCost)}</strong></div>
+        ${receipt ? `<div class="inventory-entry-value"><span>Inversión</span><strong>${money(entry.totalCost)}</strong></div>
         <div class="inventory-entry-value"><span>Venta proyectada</span><strong>${money(entry.projectedRevenue)}</strong></div>
         <div class="inventory-entry-value profit"><span>Ganancia</span><strong>${money(entry.projectedProfit)}</strong></div>
-        <span class="status-badge ${Number(entry.projectedProfit) >= 0 ? "ok" : "warn"}">${Number(entry.marginPercent || 0).toFixed(2)}%</span>
+        <span class="status-badge ${Number(entry.projectedProfit) >= 0 ? "ok" : "warn"}">${margin.toFixed(2)}%</span>` : `<div class="inventory-entry-value"><span>Existencias finales</span><strong>${stock(entry.newStock)}</strong></div>`}
       </article>
     `;
   }).join("");
@@ -3869,7 +3728,7 @@ function renderInventory() {
       const stock = typeof product.stockQuantity === "number" ? Number(product.stockQuantity) : 0;
       const stockText = typeof product.stockQuantity === "number"
         ? quantityText(product.stockQuantity, product.unit)
-        : "Sin conteo";
+        : "Sin verificar";
       const minText = typeof product.minStock === "number"
         ? quantityText(product.minStock, product.unit)
         : "Sin mínimo";
@@ -3938,6 +3797,7 @@ const lastPurchaseText = lastPurchase
               Motivo del ajuste
               <input type="text" maxlength="180" placeholder="Ej. Conteo físico o merma" data-inventory-reason="${escapeHtml(product.id)}" />
             </label>
+            ${typeof product.stockQuantity==='number'?`<label>Movimiento<select data-inventory-kind="${escapeHtml(product.id)}"><option value="adjustment">Ajuste</option><option value="waste">Merma</option></select></label>`:'<p>Conteo inicial: establece la existencia física verificada.</p>'}
             <span class="status-badge ${statusKind}">${statusLabel}</span>
             <div class="inventory-actions">
               <button class="solid-btn" type="button" data-save-inventory="${escapeHtml(product.id)}">Guardar</button>
@@ -3950,7 +3810,7 @@ const lastPurchaseText = lastPurchase
       return `<tr>
         <td data-label="Producto"><div class="management-product-cell">${catalogPhoto(product)}<div><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.category)}${product.active === false ? " · Inactivo" : ""}</small></div></div></td>
         <td data-label="Unidad">${escapeHtml(getUnitLabel(product.unit))}</td><td data-label="Existencias"><strong>${escapeHtml(stockText)}</strong></td>
-        <td data-label="Estado"><span class="status-badge ${statusKind}">${statusKind === "ok" ? "Disponible" : statusKind === "warn" ? "Stock bajo" : escapeHtml(statusLabel)}</span></td>
+        <td data-label="Estado"><span class="status-badge ${statusKind}">${statusKind === "ok" ? "Disponible" : statusKind === "warn" ? "Bajo mínimo" : escapeHtml(statusLabel)}</span></td>
         <td data-label="Última entrada">${lastPurchase ? escapeHtml(lastPurchaseText) : "—"}</td>
         <td data-label="Acción"><button class="quiet-btn" type="button" data-inventory-details="${index}" aria-expanded="false" aria-controls="inventory-detail-${index}">Ver detalle ›</button></td>
       </tr><tr id="inventory-detail-${index}" class="management-detail-row" hidden><td colspan="6">
@@ -3989,40 +3849,7 @@ const lastPurchaseText = lastPurchase
   });
 }
 
-async function saveInventory(productId) {
-  const escapedId = window.CSS && CSS.escape
-    ? CSS.escape(productId)
-    : String(productId).replace(/"/g, '\"');
-  const stockInput = document.querySelector(`[data-stock-product="${escapedId}"]`);
-  const minInput = document.querySelector(`[data-min-product="${escapedId}"]`);
-  const reasonInput = document.querySelector(`[data-inventory-reason="${escapedId}"]`);
-  const reason = String(reasonInput?.value || "").trim();
-
-  if (reason.length < 3) {
-    showToast("Indica el motivo del ajuste de inventario.");
-    reasonInput?.focus();
-    return;
-  }
-
-  try {
-    await fetchJson(`/api/products/${productId}/inventory`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        stockQuantity: stockInput.value === "" ? null : Number(stockInput.value),
-        minStock: minInput.value === "" ? null : Number(minInput.value),
-        reason
-      })
-    });
-
-    await loadProducts();
-    state.inventoryEditingId = null;
-    showToast("Inventario actualizado.");
-  } catch (error) {
-    console.error(error);
-    showToast("No se pudo actualizar inventario.");
-  }
-}
+async function saveInventory(productId) { return saveInventoryMovement(productId); }
 
 function getSaleStatus(sale) {
   return sale.status || "completada";
@@ -6046,7 +5873,7 @@ function getGeneratedReport() {
       0
     );
     const lowStock = activeProducts.filter((product) => {
-      return Number(product.stockQuantity || 0) <= Number(product.minStock || 0);
+      return typeof product.stockQuantity==='number' && product.stockQuantity <= Number(product.minStock || 0);
     });
     return {
       ...base,
@@ -6824,7 +6651,7 @@ function bindEvents() {
 
   on($("productForm"), "submit", saveProductFromAdmin);
   on($("resetProductFormBtn"), "click", resetProductForm);
-  ["productPriceInput", "productCostInput", "productStockInput", "productUnitInput"].forEach((id) => {
+  ["productPriceInput", "productCostInput", "productUnitInput"].forEach((id) => {
     on($(id), "input", updateProductProjection);
     on($(id), "change", updateProductProjection);
   });
@@ -7012,6 +6839,7 @@ async function init() {
   updateCashGateUi();
   if (sessionRestored) setAccessLocked(false);
   init.ready = true;
+  if(typeof initCatalogWorkflows==='function')initCatalogWorkflows();
   if (typeof initSettingsCenter === 'function') initSettingsCenter();
   if (typeof initAccessControl === 'function') initAccessControl();
   if (!state.setupRequired) window.setTimeout(maximizeApplicationWindow, 0);

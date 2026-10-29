@@ -119,8 +119,9 @@ test('Contraseña incorrecta y copia truncada se rechazan; el respaldo original 
   assert.equal(fs.existsSync(incomplete),false);assert.equal(hash(archive),savedHash);
   assert.deepEqual(protectedState(source),before);
 });
-const packagedPath=path.join(project,'dist','ElMuellePOS-Portable','app','scripts','recovery-custody.js');
-test('Paquete preparado: mismo helper y recuperación cruzada con mínimo de 6 caracteres',{skip:!fs.existsSync(packagedPath)},()=>{
+
+test('Herramientas actuales en copia aislada: identidad y recuperación cruzada con mínimo de 6 caracteres',()=>{
+  const app=folder('current-tools'),scriptDir=path.join(app,'scripts');fs.mkdirSync(scriptDir);fs.cpSync(path.join(project,'src'),path.join(app,'src'),{recursive:true});for(const file of ['recovery-custody.js','restore-data.js'])fs.copyFileSync(path.join(project,'scripts',file),path.join(scriptDir,file));const packagedPath=path.join(scriptDir,'recovery-custody.js');
   assert.equal(hash(packagedPath),hash(path.join(__dirname,'recovery-custody.js')));
   const packaged=require(packagedPath);assert.equal(packaged.MIN_PASSWORD_LENGTH,6);
   const source=fixture('packaged-source'),before=protectedState(source),archive=path.join(temporary,'packaged.emrecovery'),password='syn6ok';

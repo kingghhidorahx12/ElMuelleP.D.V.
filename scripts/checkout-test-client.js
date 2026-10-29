@@ -8,6 +8,10 @@ async function completeCheckout(base, body, headers) {
     const current = await response.json();
     next.cashSessionId = current.session?.id || 'synthetic-closed-cash';
   }
+  const products=await (await fetch(base+'/api/products',{headers})).json();
+  if(!Array.isArray(products))return next;
+  next.items=next.items.map(item=>item.source===undefined&&products.find(p=>p.id===item.productId)?.unit==='kg'?{...item,source:'scale'}:item); // lectura sintética declarada, sin simular una autorización manual
   return next;
 }
-module.exports = { completeCheckout };
+function completeCatalogOperation(route,method,body){if(!body||Array.isArray(body)||typeof body!=='object'||!['POST','PUT','PATCH'].includes(method)||!/^\/api\/(products(?:\/|$)|inventory\/)/.test(route))return body;return {operationId:randomUUID(),...body};}
+module.exports = { completeCheckout, completeCatalogOperation };

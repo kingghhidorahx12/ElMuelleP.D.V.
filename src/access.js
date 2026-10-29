@@ -48,7 +48,8 @@ function registerAccess({app,database,getSessionUser,requireAdminUser,recordAudi
   app.use('/api',(req,res,next)=>{
     const p=req.path.toLowerCase().replace(/\/+$/,''),method=req.method;
     let modules=null;
-    if(p==='/products')modules=method==='GET'?['pos','products','inventory','dashboard','reports']:['products'];
+    if(p.startsWith('/product-photos/'))modules=['pos','products','inventory','dashboard','reports'];
+    else if(p==='/products')modules=method==='GET'?['pos','products','inventory','dashboard','reports']:['products'];
     else if(/^\/products\/[^/]+\/inventory$/.test(p))modules=['inventory'];
     else if(/^\/products\/[^/]+$/.test(p))modules=['products'];
     else if(p.startsWith('/inventory/'))modules=['inventory'];

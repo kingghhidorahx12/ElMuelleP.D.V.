@@ -18,7 +18,7 @@ async function start(directory){isolated(directory);const port=await new Promise
   child=spawn(process.execPath,['src/server.js'],{cwd:root,windowsHide:true,env:{...process.env,NODE_OPTIONS:'',NODE_ENV:'test',HOST:'127.0.0.1',PORT:String(port),DATA_DIR:directory,ENV_FILE:path.join(directory,'absent.env'),ADMIN_PIN:pin,EMPLOYEE_PIN:'',DATA_ENCRYPTION_KEY:'',REQUIRE_HTTPS:'false',CORS_ORIGIN:''},stdio:'ignore'});
   let failure='';for(let i=0;i<150;i++){if(child.exitCode!==null)throw Error('No inició la copia aislada');try{const response=await fetch(base+'/api/health');if(response.ok)return;failure='HTTP '+response.status;}catch(error){failure=error.cause?.code||error.message;}await pause(100);}throw Error('Tiempo de inicio agotado: '+failure);
 }
-async function api(route,method='GET',body){const headers={'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})};if(route==='/api/sales'&&method==='POST')body=await require('./checkout-test-client').completeCheckout(base,body,headers);const response=await fetch(base+route,{method,headers,...(body===undefined?{}:{body:JSON.stringify(body)})});return {status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie')?.split(';')[0]};}
+async function api(route,method='GET',body){const headers={'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})};if(route==='/api/sales'&&method==='POST')body=await require('./checkout-test-client').completeCheckout(base,body,headers);const response=await fetch(base+route,{method,headers,...(body===undefined?{}:{body:JSON.stringify(require('./checkout-test-client').completeCatalogOperation(route,method,body))})});return {status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie')?.split(';')[0]};}
 async function login(){const result=await api('/api/auth/admin','POST',{pin});assert.equal(result.status,200);cookie=result.cookie;}
 function snapshot(file){const db=new DatabaseSync(file,{readOnly:true});try{assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');return {documents:db.prepare('SELECT * FROM documents ORDER BY collection,document_id').all(),audit:db.prepare('SELECT * FROM audit_events ORDER BY id').all()};}finally{db.close();}}
 before(async()=>{fs.mkdirSync(dev,{recursive:true});temporary=fs.mkdtempSync(path.join(dev,'em003-consolidation-'));original=path.join(temporary,'source');restored=path.join(temporary,'restored');fs.mkdirSync(original);fs.writeFileSync(path.join(original,'products.json'),JSON.stringify([{id:'test-piece',name:'Producto sintético, "especial"',category:'Pruebas',unit:'pieza',price:100,costPrice:40,stockQuantity:10,minStock:2,active:true}]));await start(original);await login();});
@@ -41,7 +41,7 @@ test('Venta, caja, entradas, retiros, cancelación y stock conservan totales y a
   assert.equal((await api('/api/cash-sessions')).body.length,1);
 });
 test('Entradas y merma con motivo: existencias, costo ponderado, historial y rechazo sin motivo',async()=>{
-  const entry=await api('/api/inventory/entries','POST',{productId:'test-piece',quantity:2,unitCost:40,salePrice:100,supplier:'Proveedor sintético'});assert.equal(entry.status,201);
+  const entry=await api('/api/inventory/entries','POST',{productId:'test-piece',quantity:2,unitCost:40,salePrice:100,supplier:'Proveedor sintético',reason:'Recepción sintética'});assert.equal(entry.status,201);
   assert.equal((await api('/api/products')).body[0].stockQuantity,10);assert.equal((await api('/api/inventory/entries')).body.length,1);
   assert.equal((await api('/api/products/test-piece/inventory','PATCH',{stockQuantity:1,minStock:2,reason:''})).status,400);
   assert.equal((await api('/api/products/test-piece/inventory','PATCH',{stockQuantity:1,minStock:2,reason:'Merma sintética'})).status,200);
@@ -71,7 +71,7 @@ test('Restauración completa: respaldo SQLite + clave recuperan documentos, audi
   const config=(await api('/api/configuration')).body;assert.equal(config.business.commercialName,'Restauración sintética');assert.equal(config.profile.email,'admin@example.com');
   assert.equal((await api('/api/preferences')).body.accent,'sky');assert.equal((await api('/api/preferences')).body.notifications,false);
   assert.deepEqual((await api('/api/users/test-worker/permissions')).body.permissions,permissions);
-  assert.equal((await api('/api/inventory/entries')).body.length,1);assert.equal((await api('/api/products')).body[0].stockQuantity,1);assert.equal((await api('/api/cash-sessions')).body[0].status,'closed');
+  assert.equal((await api('/api/inventory/entries')).body.length,2);assert.equal((await api('/api/products')).body[0].stockQuantity,1);assert.equal((await api('/api/cash-sessions')).body[0].status,'closed');
   assert.ok((await api('/api/audit-events')).body.length>=saved.audit.length);
   const worker=await api('/api/auth/employee','POST',{userId:'test-worker',pin:'135790'});assert.equal(worker.status,200);assert.deepEqual(worker.body.user.permissions,permissions);
 });

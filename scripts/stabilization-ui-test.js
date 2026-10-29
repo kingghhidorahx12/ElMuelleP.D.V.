@@ -1,7 +1,7 @@
 // Interacciones del código real en DOM simulado, sin navegador ni datos del dueño.
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto');
-const source=fs.readFileSync(path.join(__dirname,'../public/app.js'),'utf8');
+const source=fs.readFileSync(path.join(__dirname,'../public/app.js'),'utf8')+'\n'+fs.readFileSync(path.join(__dirname,'../public/catalog-workflows.js'),'utf8');
 function load(context,names){vm.createContext(context);for(const name of names){const match=source.match(new RegExp('^(?:async )?function '+name+'\\([^]*?^}','m'));assert.ok(match,name);vm.runInContext(match[0],context);}return context;}
 function checkoutHarness(storage=new Map()){
   const nodes=new Map(),calls=[],node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',disabled:false,textContent:'',attributes:new Map(),setAttribute(k,v){this.attributes.set(k,v);},focus(){}});return nodes.get(id);};
@@ -63,15 +63,23 @@ test('Impresión: 0, 1, 59, 60, 61 y 1000 registros sin truncamiento y con alcan
 });
 
 function productHarness(){
-  const nodes=new Map(),calls=[],node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',focus(){}});return nodes.get(id);};
-  const state={products:[],editingProductId:null};const c=load({state,$:node,console:{error(){}},showToast:message=>calls.push(['toast',message]),money:value=>String(value),getUnitLabel:value=>value,openProductConfirm:async()=>true,fetchJson:async(url,options)=>{calls.push([url,JSON.parse(options.body)]);},loadProducts:async()=>{},resetProductForm:()=>calls.push(['reset']),setProductMode:mode=>calls.push(['mode',mode])},['saveProductFromAdmin']);
+  const nodes=new Map(),calls=[],node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',checked:true,focus(){}});return nodes.get(id);};
+  const state={products:[],editingProductId:null};const c=load({state,$:node,console:{error(){}},showToast:message=>calls.push(['toast',message]),money:value=>String(value),getUnitLabel:value=>value,openProductConfirm:async()=>true,runCatalogOperation:async(key,url,method,payload)=>{calls.push([url,payload]);},loadProducts:async()=>{},resetProductForm:()=>calls.push(['reset']),setProductMode:mode=>calls.push(['mode',mode])},['saveCommercialProduct','saveProductFromAdmin']);
   for(const [id,value]of Object.entries({productNameInput:'Producto sintético',productCategoryInput:'Pruebas',productUnitInput:'pieza',productPriceInput:'100',productCostInput:'40',productStockInput:'5',productMinStockInput:'1'}))node(id).value=value;
   return {c,s:state,n:node,calls};
 }
 test('Agregar producto: formulario completo, confirmación, cancelar, editar y errores',async()=>{
-  const h=productHarness();await h.c.saveProductFromAdmin({preventDefault(){}});assert.equal(h.calls[0][0],'/api/products');assert.equal(h.calls[0][1].stockQuantity,5);
+  const h=productHarness();await h.c.saveProductFromAdmin({preventDefault(){}});assert.equal(h.calls[0][0],'/api/products');assert.equal(Object.hasOwn(h.calls[0][1],'stockQuantity'),false);
   h.calls.length=0;h.c.openProductConfirm=async()=>false;await h.c.saveProductFromAdmin({preventDefault(){}});assert.equal(h.calls.length,0);
-  h.c.openProductConfirm=async()=>true;h.s.editingProductId='piece';h.s.products=[{id:'piece',active:false}];await h.c.saveProductFromAdmin({preventDefault(){}});assert.equal(h.calls[0][0],'/api/products/piece');assert.equal(h.calls[0][1].active,false);
-  h.calls.length=0;h.n('productStockInput').value='-1';await h.c.saveProductFromAdmin({preventDefault(){}});assert.equal(h.calls.some(call=>call[0].startsWith('/api')),false);
-  h.n('productStockInput').value='1';h.c.fetchJson=async()=>{throw Error('Error sintético');};await h.c.saveProductFromAdmin({preventDefault(){}});assert.ok(h.calls.some(call=>call[0]==='toast'&&call[1]==='Error sintético'));
+  h.c.openProductConfirm=async()=>true;h.s.editingProductId='piece';h.s.products=[{id:'piece',active:false}];h.n('productActiveInput').checked=false;await h.c.saveProductFromAdmin({preventDefault(){}});assert.equal(h.calls[0][0],'/api/products/piece');assert.equal(h.calls[0][1].active,false);
+  h.calls.length=0;h.n('productCostInput').value='-1';await h.c.saveProductFromAdmin({preventDefault(){}});assert.equal(h.calls.some(call=>call[0].startsWith('/api')),false);
+  h.n('productCostInput').value='1';h.c.runCatalogOperation=async()=>{throw Error('Error sintético');};await h.c.saveProductFromAdmin({preventDefault(){}});assert.ok(h.calls.some(call=>call[0]==='toast'&&call[1]==='Error sintético'));
+});
+
+test('Existencias: null, cero, bajo mínimo y disponible conservan cuatro estados diferentes',()=>{const c=load({},['getStockStatus']);for(const [stock,min,label]of [[null,2,'Sin verificar'],[0,2,'Agotado'],[1,2,'Bajo mínimo'],[3,2,'Disponible']])assert.equal(c.getStockStatus({stockQuantity:stock,minStock:min})[0],label);});
+
+test('Historial: conteos y mermas muestran existencias y motivo sin simular compras',()=>{
+  const list={innerHTML:''},entries=[{id:'count',productName:'Sintético',type:'initial_count',unit:'kg',quantity:2,previousStock:null,newStock:2,reason:'Conteo físico',createdAt:'2026-10-28T12:00:00Z'},{id:'waste',productName:'Sintético',type:'waste',unit:'kg',quantity:-1,previousStock:2,newStock:1,reason:'Deterioro',createdAt:'2026-10-28T13:00:00Z'}];
+  const c=load({state:{inventoryEntries:entries},$:id=>id==='inventoryEntriesList'?list:{value:''},escapeHtml:String,quantityText:(v,u)=>`${v} ${u}`,money:()=>{throw Error('Un movimiento no comercial no tiene importes de compra');}},['renderInventoryEntries']);
+  c.renderInventoryEntries();for(const text of ['Conteo inicial','Merma','Sin verificar → 2 kg','2 kg → 1 kg','Conteo físico','Deterioro'])assert.ok(list.innerHTML.includes(text),text);assert.ok(!list.innerHTML.includes('Inversión'));
 });

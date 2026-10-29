@@ -5,7 +5,7 @@ const path=require('node:path');
 const {DatabaseSync}=require('node:sqlite');
 const p=require('../src/persistence');
 
-function restoreData({databaseFile,keyFile,destination,backupDirectory}) {
+function restoreData({databaseFile,keyFile,destination,backupDirectory,photoDirectory}) {
   if(!databaseFile||!keyFile||!destination)throw Error('Indica base, archivo de clave y destino nuevo.');
   const source=path.resolve(databaseFile),target=path.resolve(destination),secret=path.resolve(keyFile);
   [source,target,secret].forEach(p.rejectLinks);
@@ -39,13 +39,14 @@ function restoreData({databaseFile,keyFile,destination,backupDirectory}) {
       const folder=path.join(stage,'backups');p.privateDirectory(folder);
       for(const [file,name] of backups){const copied=path.join(folder,name);fs.copyFileSync(file,copied,fs.constants.COPYFILE_EXCL);p.validateKey(copiedKey,p.inspectDatabase(copied));}
     }
+    const photos=require('../src/product-media').copyPhotos(output,photoDirectory||path.join(path.dirname(source),'product-photos'),stage);
     // Reservar el destino impide reemplazar incluso un directorio vacío creado mientras se copiaba.
     p.privateDirectory(target);
     fs.writeFileSync(path.join(target,'.recovery-incomplete'),'Recovery in progress',{flag:'wx',mode:0o600});
     for(const name of fs.readdirSync(stage))fs.renameSync(path.join(stage,name),path.join(target,name));
     fs.unlinkSync(path.join(target,'.recovery-incomplete'));
     fs.rmdirSync(stage);
-    return {restored:true,backups:backups.length,activationRequired:true};
+    return {restored:true,backups:backups.length,photos,activationRequired:true};
   } catch(error) {
     // Sólo el área temporal creada aquí; un destino parcial se conserva para revisión.
     if(p.inside(stage,path.dirname(target))&&path.basename(stage).startsWith('.el-muelle-restore-'))fs.rmSync(stage,{recursive:true,force:true});

@@ -359,10 +359,10 @@
           <button class="active" type="button" role="tab" aria-selected="true" data-products-mode-btn="list">Catálogo</button>
           <button type="button" role="tab" aria-selected="false" data-products-mode-btn="form">Agregar producto</button>
         </div>
-          <section class="work-panel product-form-panel">
+          <dialog id="productEditorDialog" class="catalog-product-dialog" aria-labelledby="productFormStatusTitle"><section class="work-panel product-form-panel">
             <form id="productForm" class="product-form">
               <div class="form-title premium-module-head premium-module-head--products balanced-module-head">
-                <h3 id="productFormStatusTitle">Agregar producto</h3>
+                <h3 id="productFormStatusTitle">Nuevo producto</h3><button id="closeProductEditorBtn" class="icon-btn" type="button" aria-label="Cerrar formulario de producto">×</button>
                 <p id="productFormStatusText"></p>
               </div>
 
@@ -371,6 +371,7 @@
                 <input id="productNameInput" type="text" placeholder="Ej. Camarón coctelero" />
               </label>
 
+              <label class="wide">Descripción<textarea id="productDescriptionInput" maxlength="1000" rows="2"></textarea></label>
               <label>
                 Categoría
                 <select id="productCategoryInput">
@@ -390,33 +391,31 @@
               </label>
 
               <label>
-                Precio
+                Precio de venta (MXN)
                 <input id="productPriceInput" type="number" min="0" step="0.01" placeholder="0.00" />
               </label>
 
               <label>
-                Costo
+                Costo (MXN)
                 <input id="productCostInput" type="number" min="0" step="0.01" placeholder="0.00" />
               </label>
 
-              <label>
-                Existencia
-                <input id="productStockInput" type="number" min="0" step="0.001" placeholder="0.000" />
-              </label>
+              <p class="field-hint wide">Las existencias se registran desde Inventario mediante conteo y movimientos con motivo.</p>
 
               <label>
                 Mínimo
                 <input id="productMinStockInput" type="number" min="0" step="0.001" placeholder="0.000" />
               </label>
 
+              <label class="wide">Fotografía (JPEG, PNG o WebP, hasta 5 MiB)<input id="productPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" /></label><div class="product-photo-preview" aria-label="Fotografía: también puedes arrastrar un archivo aquí"><span id="productPhotoPlaceholder">Selecciona una fotografía</span><img id="productPhotoPreview" alt="Vista previa de la fotografía" hidden /><button id="cancelProductPhotoBtn" class="quiet-btn" type="button">Cancelar selección de fotografía</button></div><label class="wide"><input id="productActiveInput" type="checkbox" checked /> Producto activo</label><details class="context-help wide"><summary aria-label="Ayuda sobre productos">?</summary><p>Productos edita la información comercial y la fotografía. Registra el conteo inicial y los movimientos con motivo desde Inventario.</p></details><div id="catalogPendingOperations" class="wide" aria-live="polite" hidden></div>
               <div class="form-actions wide">
                 <button id="saveProductBtn" class="solid-btn" type="submit">Guardar</button>
-                <button id="resetProductFormBtn" class="quiet-btn" type="button">Nuevo</button>
+                <button id="resetProductFormBtn" class="quiet-btn" type="button">Limpiar</button><button id="cancelProductFormBtn" class="quiet-btn" type="button">Cancelar</button>
               </div>
             </form>
           </section>
 
-          <section class="work-panel product-projection-panel">
+          </dialog><section class="work-panel product-projection-panel">
             <div class="product-projection-shell" aria-live="polite">
               <div class="form-title premium-module-head premium-module-head--products product-projection-head balanced-module-head">
                 <span class="eyebrow">Proyección</span>
@@ -467,12 +466,12 @@
             <button type="button" role="tab" aria-selected="false" data-inventory-mode-btn="history">Historial</button>
           </div>
           <section class="work-panel inventory-entry-panel">
-            <form id="inventoryEntryForm" class="inventory-entry-form">
+            <div id="pendingRestitutions" class="pending-restitutions" aria-live="polite" hidden></div><details class="context-help"><summary aria-label="Ayuda sobre existencias">?</summary><p>Sin verificar requiere conteo inicial. Cero significa agotado. Cada entrada, ajuste, merma o conciliación conserva su motivo en el historial.</p></details><form id="inventoryEntryForm" class="inventory-entry-form">
               <div class="form-title wide inventory-entry-title premium-module-head premium-module-head--inventory balanced-module-head">
-                <h3>Entrada de mercancía</h3>
+                <h3>Movimiento de inventario</h3>
               </div>
 
-              <div class="entry-mode-toggle wide" role="tablist" aria-label="Tipo de entrada de mercancía">
+              <div id="inventoryOperationTabs" class="atelier-tabs wide" role="tablist" aria-label="Movimiento de inventario"><button type="button" class="active" aria-selected="true" role="tab" data-inventory-operation="receipt">Entrada de mercancía</button><button type="button" aria-selected="false" role="tab" data-inventory-operation="adjustment">Ajuste</button><button type="button" aria-selected="false" role="tab" data-inventory-operation="waste">Merma</button></div><div class="entry-mode-toggle wide" role="tablist" aria-label="Tipo de entrada de mercancía">
                 <button class="active" type="button" role="tab" aria-selected="true" data-entry-product-mode="existing">Producto existente</button>
                 <button type="button" role="tab" aria-selected="false" data-entry-product-mode="new">Producto nuevo</button>
               </div>
@@ -515,7 +514,7 @@
               </div>
 
               <label>
-                Cantidad recibida
+                <span id="inventoryQuantityLabel">Cantidad recibida</span>
                 <input id="inventoryEntryQuantityInput" type="number" min="0" step="0.001" placeholder="0.000" />
               </label>
 
@@ -534,9 +533,10 @@
                 <input id="inventoryEntryDateInput" type="date" />
               </label>
 
+              <label class="wide">Proveedor (opcional)<input id="inventorySupplierInput" type="text" maxlength="120" /></label>
               <label class="wide">
-                Nota
-                <input id="inventoryEntryNotesInput" type="text" maxlength="180" placeholder="Factura, lote o detalle opcional" />
+                Motivo de recepción
+                <input id="inventoryEntryNotesInput" type="text" maxlength="180" required placeholder="Motivo de la recepción" />
               </label>
 
               <div class="form-actions wide">
@@ -581,7 +581,7 @@
                 <option value="Para el antojo">Para el antojo</option>
                 <option value="Condimentos y salsas">Condimentos y salsas</option>
               </select>
-              <select id="inventoryStatusFilter" aria-label="Estado de existencias"><option value="all">Todos los estados</option><option value="ok">Disponible</option><option value="warn">Stock bajo</option><option value="neutral">Sin conteo</option></select>
+              <select id="inventoryStatusFilter" aria-label="Estado de existencias"><option value="all">Todos los estados</option><option value="ok">Disponible</option><option value="warn">Bajo mínimo</option><option value="danger">Agotado</option><option value="neutral">Sin verificar</option></select>
               <button id="inventoryEntryShortcutBtn" class="solid-btn management-toolbar-action" type="button">+ Entrada de mercancía</button>
             </div>
             <div class="management-inventory-grid">
@@ -595,7 +595,7 @@
                     <article><span>Valor invertido</span><strong id="inventoryInvestmentValue">$0.00</strong></article>
                     <article><span>Venta proyectada</span><strong id="inventoryProjectedValue">$0.00</strong></article>
                     <article><span>Ganancia proyectada</span><strong id="inventoryProjectedProfit">$0.00</strong></article>
-                    <article><span>Entradas registradas</span><strong id="inventoryEntriesCount">0</strong></article>
+                    <article><span>Movimientos registrados</span><strong id="inventoryEntriesCount">0</strong></article>
                   </div>
                   <h4>Producto destacado</h4><div id="inventoryTopProducts"></div>
                   <h4>Menor rotación</h4><div id="inventorySlowProducts"></div>
@@ -608,7 +608,7 @@
             <div class="panel-head premium-module-head premium-module-head--inventory balanced-module-head">
               <div>
 
-                <h3>Historial de entradas</h3>
+                <h3>Historial de movimientos</h3>
               </div>
               <input id="inventoryEntrySearchInput" type="search" placeholder="Buscar producto, nota o folio..." />
             </div>
@@ -1024,6 +1024,7 @@
           </div>
         <button id="closeManualModalBtn" class="icon-btn" type="button" aria-label="Cerrar">x</button>
       </div>
+      <div class="manual-product-context"><img id="manualProductPhoto" alt="" /><div><strong id="manualProductName"></strong><span id="manualProductUnit"></span><small id="manualProductPrice"></small></div></div>
       <label>
         PIN administrador
         <input id="adminPinInput" type="password" inputmode="numeric" minlength="6" maxlength="12" placeholder="PIN" />
@@ -1033,6 +1034,7 @@
         <input id="manualQuantityInput" type="text" inputmode="numeric" autocomplete="off" placeholder="0.000" />
         <small id="manualQuantityHint" class="field-hint">Escribe gramos: 1250 = 1.250 kg.</small>
       </label>
+      <label>Motivo<select id="manualReasonInput"><option value="sin_conexion">Báscula sin conexión</option><option value="lectura_inestable">Lectura inestable</option><option value="falla_bascula">Falla de báscula</option><option value="otro">Otro</option></select></label><label>Detalle (obligatorio para Otro)<textarea id="manualExplanationInput" minlength="4" maxlength="300" rows="2"></textarea></label><details class="context-help"><summary aria-label="Ayuda sobre peso manual">?</summary><p>Captura kg, explica el motivo y solicita el PIN del administrador. La autorización corresponde a esta cantidad y se utiliza una sola vez.</p></details>
       <div class="modal-actions">
         <button id="saveManualWeightBtn" class="solid-btn" type="button">Aplicar</button>
         <button id="cancelManualWeightBtn" class="quiet-btn" type="button">Cancelar</button>
@@ -1056,7 +1058,7 @@
     </div>
   </div>
 
-  <div id="productConfirmModal" class="modal hidden" aria-hidden="true" inert role="dialog" aria-modal="true" aria-labelledby="productConfirmTitle">
+  <dialog id="productConfirmModal" class="modal hidden" aria-hidden="true" inert role="dialog" aria-modal="true" aria-labelledby="productConfirmTitle">
     <div class="modal-card">
       <div class="modal-head">
         <div>
@@ -1071,7 +1073,7 @@
         <button id="productConfirmNoBtn" class="quiet-btn" type="button">Cancelar</button>
       </div>
     </div>
-  </div>
+  </dialog>
   <div id="authModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
     <div class="modal-card auth-card">
       <div class="modal-head">
@@ -1095,6 +1097,7 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="./app.js"></script>
+  <script src="./catalog-workflows.js"></script>
   <script src="./settings-center.js"></script>
   <script src="./access-control.js"></script>
 </body>

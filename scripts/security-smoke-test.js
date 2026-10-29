@@ -7,6 +7,8 @@ const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
 const rootDir = path.resolve(__dirname, "..");
+// Sólo catálogo ficticio: ninguna prueba copia precios o existencias del negocio.
+function syntheticCatalog(){return Array.from({length:28},(_,i)=>({id:'synthetic-smoke-'+i,name:'Producto sintético '+i,category:'Pruebas',unit:i%2?'pieza':'kg',price:100,costPrice:40,stockQuantity:10,minStock:2,active:true}));}
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -43,6 +45,7 @@ async function waitForServer(baseUrl, processHandle) {
 }
 
 async function request(baseUrl, pathname, options = {}) {
+  if(options.body)options={...options,body:JSON.stringify(require('./checkout-test-client').completeCatalogOperation(pathname,options.method,JSON.parse(options.body)))};
   if (pathname === '/api/sales' && options.method === 'POST' && options.body) options = {...options, body:JSON.stringify(await require('./checkout-test-client').completeCheckout(baseUrl, JSON.parse(options.body), options.headers))};
   const response = await fetch(`${baseUrl}${pathname}`, options);
   const body = await response.json().catch(() => null);
@@ -59,7 +62,7 @@ async function verifyInitialOwnerSetup() {
   let setupServer;
 
   try {
-    fs.copyFileSync(path.join(rootDir, "data", "products.json"), path.join(setupDataDir, "products.json"));
+    fs.writeFileSync(path.join(setupDataDir, "products.json"),JSON.stringify(syntheticCatalog()));
     const port = await getAvailablePort();
     const baseUrl = `http://127.0.0.1:${port}`;
     setupServer = spawn(process.execPath, ["src/server.js"], {
@@ -132,14 +135,13 @@ async function verifyInitialOwnerSetup() {
 
 async function main() {
   const tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "el-muelle-pos-test-"));
-  const sourceDataDir = path.join(rootDir, "data");
   const output = [];
   let server;
 
   try {
     await verifyInitialOwnerSetup();
     // Copy only the public catalog, never operational SQLite, secrets or records.
-    fs.copyFileSync(path.join(sourceDataDir, "products.json"), path.join(tempDataDir, "products.json"));
+    fs.writeFileSync(path.join(tempDataDir, "products.json"),JSON.stringify(syntheticCatalog()));
     fs.writeFileSync(
       path.join(tempDataDir, "settings.json"),
       JSON.stringify(
@@ -240,12 +242,12 @@ async function main() {
         unit: "pieza",
         price: 12.5,
         costPrice: 5,
-        stockQuantity: 10,
         minStock: 2,
         active: true
       })
     });
     assert.equal(adminProductCreate.response.status, 201);
+    assert.equal((await request(baseUrl,'/api/inventory/counts',{method:'POST',headers:adminHeaders,body:JSON.stringify({productId:adminProductCreate.body.id,quantity:10,reason:'Conteo sintético inicial'})})).response.status,201);
 
     const employeeLogin = await request(baseUrl, "/api/auth/employee", {
       method: "POST",
@@ -291,7 +293,7 @@ async function main() {
     });
     assert.equal(headerOnlyRequest.response.status, 401);
 
-    const protectedProduct = adminProductRead.body.find((product) => product.id === "camaron-chiapaneco");
+    const protectedProduct = adminProductRead.body.find((product) => product.id === "synthetic-smoke-0");
     assert.ok(protectedProduct);
 
     const openCash = await request(baseUrl, "/api/cash-sessions/open", {
@@ -303,7 +305,7 @@ async function main() {
     const manualIntent = require('node:crypto').randomUUID();
     const manualGrant = await request(baseUrl, '/api/authorizations/manual-weight', {
       method:'POST', headers:employeeHeaders,
-      body:JSON.stringify({pin:'246810',productId:protectedProduct.id,quantity:1,checkoutIntentId:manualIntent,cashSessionId:openCash.body.id})
+      body:JSON.stringify({reason:'falla_bascula',pin:'246810',productId:protectedProduct.id,quantity:1,checkoutIntentId:manualIntent,cashSessionId:openCash.body.id})
     });
     assert.equal(manualGrant.response.status,200);
 

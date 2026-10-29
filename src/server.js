@@ -92,6 +92,7 @@ app.use((req, res, next) => {
   return res.status(403).json({ message: "Origen no autorizado." });
 });
 
+app.use(["/api/products", "/api/products/:id", "/api/inventory/entries"], express.json({limit:"7mb"}));
 app.use(express.json({ limit: "1mb" }));
 app.use('/api', (req, _res, next) => {
   if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
@@ -642,18 +643,12 @@ function normalizeProductPayload(body, existingProduct = {}) {
   validate.object(body, 'Producto');
   const unit = body.unit === undefined ? existingProduct.unit || 'kg' : body.unit;
   if (!['kg', 'pieza'].includes(unit)) validate.invalid('La unidad del producto no es válida.');
-  const stockValue =
-    body.stockQuantity === null
-      ? null
-      : validate.number(body.stockQuantity === undefined ? existingProduct.stockQuantity ?? 0 : body.stockQuantity, 'Existencia', { decimals: 3, integer: unit === 'pieza' });
-
-  const minStockValue =
-    body.minStock === null
-      ? null
-      : validate.number(body.minStock === undefined ? existingProduct.minStock ?? 0 : body.minStock, 'Mínimo', { decimals: 3, integer: unit === 'pieza' });
+  const stockValue = existingProduct.stockQuantity ?? null;
+  const minStockValue=validate.number(body.minStock===undefined?existingProduct.minStock??null:body.minStock,'Mínimo',{nullable:true,decimals:3,integer:unit==='pieza'});
 
   return {
     name: validate.text(body.name === undefined ? existingProduct.name : body.name, 'Nombre', 120),
+    description: validate.text(body.description === undefined ? existingProduct.description || '' : body.description, 'Descripción', 1000, {optional:true}),
     category: validate.text(body.category === undefined ? existingProduct.category : body.category, 'Categoría', 80),
     unit,
     price: validate.number(body.price === undefined ? existingProduct.price ?? 0 : body.price, 'Precio'),
@@ -703,6 +698,7 @@ function buildSaleItems(items, products) {
       throw error;
     }
 
+    if (typeof product.stockQuantity !== 'number') { const error = new Error('Existencias sin verificar. Registra el conteo inicial desde Inventario.'); error.statusCode=409; throw error; }
     const requestedQuantity = roundQuantity((quantitiesByProduct.get(product.id) || 0) + quantity);
     quantitiesByProduct.set(product.id, requestedQuantity);
 
@@ -1322,261 +1318,7 @@ app.get("/api/products", (req, res) => {
   res.json(readJson(productsPath, []));
 });
 
-app.post("/api/products", (req, res) => {
-  const user = requireAdminUser(req, res);
-  if (!user) return;
-
-  const products = readJson(productsPath, []);
-  const payload = normalizeProductPayload(req.body);
-
-  if (!payload.name || !payload.category || payload.price <= 0) {
-    return res.status(400).json({
-      message: "Faltan datos del producto."
-    });
-  }
-
-  const idBase = slugify(payload.name) || "producto";
-  const newProduct = {
-    id: `${idBase}-${Date.now()}`,
-    ...payload,
-    createdAt: new Date().toISOString()
-  };
-
-  withDataTransaction(() => {
-    products.push(newProduct);
-    writeJson(productsPath, products);
-    recordAuditEvent("product_created", "product", newProduct.id, user, {
-      name: newProduct.name,
-      category: newProduct.category,
-      price: newProduct.price,
-      stockQuantity: newProduct.stockQuantity
-    });
-  });
-
-  res.status(201).json(newProduct);
-});
-
-app.put("/api/products/:id", (req, res) => {
-  const user = requireAdminUser(req, res);
-  if (!user) return;
-
-  const products = readJson(productsPath, []);
-  const productIndex = products.findIndex((product) => {
-    return product.id === req.params.id;
-  });
-
-  if (productIndex === -1) {
-    return res.status(404).json({
-      message: "Producto no encontrado."
-    });
-  }
-
-  const updatedProduct = {
-    ...products[productIndex],
-    ...normalizeProductPayload(req.body, products[productIndex])
-  };
-
-  if (!updatedProduct.name || !updatedProduct.category || updatedProduct.price <= 0) {
-    return res.status(400).json({
-      message: "Faltan datos del producto."
-    });
-  }
-
-  const previousProduct = products[productIndex];
-  withDataTransaction(() => {
-    products[productIndex] = updatedProduct;
-    writeJson(productsPath, products);
-    recordAuditEvent("product_updated", "product", updatedProduct.id, user, {
-      before: {
-        name: previousProduct.name,
-        category: previousProduct.category,
-        price: previousProduct.price,
-        costPrice: previousProduct.costPrice,
-        stockQuantity: previousProduct.stockQuantity,
-        minStock: previousProduct.minStock
-      },
-      after: {
-        name: updatedProduct.name,
-        category: updatedProduct.category,
-        price: updatedProduct.price,
-        costPrice: updatedProduct.costPrice,
-        stockQuantity: updatedProduct.stockQuantity,
-        minStock: updatedProduct.minStock
-      }
-    });
-  });
-
-  res.json(updatedProduct);
-});
-
-app.patch("/api/products/:id/inventory", (req, res) => {
-  const user = requireAdminUser(req, res);
-  if (!user) return;
-
-  const products = readJson(productsPath, []);
-  const productIndex = products.findIndex((product) => {
-    return product.id === req.params.id;
-  });
-
-  if (productIndex === -1) {
-    return res.status(404).json({
-      message: "Producto no encontrado."
-    });
-  }
-
-  const stockQuantity = validate.number(req.body.stockQuantity, 'Existencia', { nullable: true, decimals: 3, integer: products[productIndex].unit === 'pieza' });
-  const minStock = validate.number(req.body.minStock, 'Mínimo', { nullable: true, decimals: 3, integer: products[productIndex].unit === 'pieza' });
-  const reason = sanitizeText(req.body.reason, 180);
-
-  if (
-    (stockQuantity !== null && (!Number.isFinite(stockQuantity) || stockQuantity < 0)) ||
-    (minStock !== null && (!Number.isFinite(minStock) || minStock < 0))
-  ) {
-    return res.status(400).json({ message: "La existencia y el mínimo deben ser valores no negativos." });
-  }
-  if (reason.length < 3) {
-    return res.status(400).json({ message: "Indica el motivo del ajuste de inventario." });
-  }
-
-  const previousProduct = products[productIndex];
-  products[productIndex] = {
-    ...products[productIndex],
-    stockQuantity: stockQuantity === null ? null : roundQuantity(stockQuantity),
-    minStock: minStock === null ? null : roundQuantity(minStock),
-    updatedAt: new Date().toISOString()
-  };
-
-  withDataTransaction(() => {
-    writeJson(productsPath, products);
-    recordAuditEvent("inventory_adjusted", "product", products[productIndex].id, user, {
-      reason,
-      previousStock: previousProduct.stockQuantity,
-      newStock: products[productIndex].stockQuantity,
-      previousMinStock: previousProduct.minStock,
-      newMinStock: products[productIndex].minStock
-    });
-  });
-  res.json(products[productIndex]);
-});
-
-app.get("/api/inventory/entries", (req, res) => {
-  const adminUser = requireSessionUser(req, res);
-  if (!adminUser) return;
-
-  const entries = readJson(inventoryEntriesPath, [])
-    .sort((a, b) => {
-      return new Date(b.createdAt || b.receivedAt || 0) - new Date(a.createdAt || a.receivedAt || 0);
-    });
-
-  res.json(entries);
-});
-
-app.post("/api/inventory/entries", (req, res) => {
-  const adminUser = requireAdminUser(req, res);
-  if (!adminUser) return;
-
-  const productId = sanitizeText(req.body?.productId, 80);
-  const quantity = validate.number(req.body.quantity, 'Cantidad de entrada', { decimals: 3 });
-  const unitCost = validate.number(req.body.unitCost, 'Costo de entrada');
-  const requestedSalePrice = validate.number(req.body.salePrice === undefined ? 0 : req.body.salePrice, 'Precio de venta');
-  const supplier = sanitizeText(req.body?.supplier, 120);
-  const notes = sanitizeText(req.body?.notes, 180);
-  const receivedAt = validate.date(req.body.receivedAt === undefined ? new Date().toISOString().slice(0, 10) : req.body.receivedAt, 'Fecha de recepción');
-
-  if (!productId || quantity <= 0 || unitCost <= 0) {
-    return res.status(400).json({
-      message: "Selecciona un producto y captura cantidad y costo mayores a cero."
-    });
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(receivedAt)) {
-    return res.status(400).json({ message: "La fecha de recepción no es válida." });
-  }
-  if (requestedSalePrice < 0) {
-    return res.status(400).json({ message: "El precio de venta no es válido." });
-  }
-
-  const products = readJson(productsPath, []);
-  const productIndex = products.findIndex((product) => product.id === productId);
-
-  if (productIndex === -1) {
-    return res.status(404).json({
-      message: "Producto no encontrado."
-    });
-  }
-
-  const product = products[productIndex];
-  if (product.unit === 'pieza' && !Number.isInteger(quantity)) validate.invalid('Las entradas por pieza requieren cantidades enteras.');
-  const currentStock = typeof product.stockQuantity === "number"
-    ? Math.max(roundQuantity(product.stockQuantity), 0)
-    : 0;
-  const currentCost = Math.max(roundMoney(product.costPrice || 0), 0);
-  const salePrice = requestedSalePrice > 0
-    ? requestedSalePrice
-    : Math.max(roundMoney(product.price || 0), 0);
-  const newStock = validate.number(currentStock + quantity, 'Existencia resultante', { decimals: 3 });
-  const currentInventoryValue = validate.number(currentStock * currentCost, 'Valor de inventario');
-  const newPurchaseValue = validate.number(quantity * unitCost, 'Importe de compra');
-  const weightedAverageCost = newStock > 0
-    ? roundMoney((currentInventoryValue + newPurchaseValue) / newStock)
-    : unitCost;
-  const projection = calculatePurchaseProjection(quantity, unitCost, salePrice);
-  const entries = readJson(inventoryEntriesPath, []);
-  const now = new Date().toISOString();
-
-  const entry = {
-    id: getNextInventoryEntryId(entries),
-    productId: product.id,
-    productName: product.name,
-    category: product.category,
-    unit: product.unit,
-    quantity,
-    unitCost,
-    totalCost: projection.totalCost,
-    salePrice,
-    projectedRevenue: projection.projectedRevenue,
-    projectedProfit: projection.projectedProfit,
-    marginPercent: projection.marginPercent,
-    previousStock: currentStock,
-    newStock,
-    previousAverageCost: currentCost,
-    weightedAverageCost,
-    supplier,
-    receivedAt,
-    notes,
-    createdBy: toPublicUser(adminUser),
-    createdAt: now
-  };
-
-  products[productIndex] = {
-    ...product,
-    stockQuantity: newStock,
-    costPrice: weightedAverageCost,
-    price: salePrice > 0 ? salePrice : product.price,
-    lastPurchaseAt: receivedAt,
-    lastSupplier: supplier || product.lastSupplier || "",
-    updatedAt: now
-  };
-
-  withDataTransaction(() => {
-    entries.push(entry);
-    writeJson(productsPath, products);
-    writeJson(inventoryEntriesPath, entries);
-    recordAuditEvent("inventory_received", "inventory_entry", entry.id, adminUser, {
-      productId: product.id,
-      quantity,
-      unit: product.unit,
-      unitCost,
-      previousStock: currentStock,
-      newStock,
-      supplier
-    });
-  });
-
-  res.status(201).json({
-    entry,
-    product: products[productIndex]
-  });
-});
+require('./catalog-operations').registerCatalog({app,database,dataDir,requireAdminUser,requireSessionUser,normalizeProductPayload,readJson,writeJson,productsPath,inventoryEntriesPath,withDataTransaction,recordAuditEvent});
 
 app.get("/api/sales", (req, res) => {
   const user = requireSessionUser(req, res);
@@ -1812,6 +1554,7 @@ app.post("/api/cash-sessions/:id/close", (req, res) => {
 app.get("/api/cash-shifts", (req, res) => {
   const user = requireSessionUser(req, res);
   if (!user) return;
+  if (!access.allows(user,['cash'])) return res.status(403).json({message:'No tienes autorización para consultar caja.'});
   res.json(readCashSessions().map((session) => serializeCashSession(session)));
 });
 
@@ -1844,6 +1587,9 @@ app.post('/api/authorizations/manual-weight', limitAuthenticationAttempts, (req,
     recordAuthenticationFailure(req);
     return res.status(401).json({ message: 'PIN de administrador incorrecto.' });
   }
+  const reason=validate.text(req.body.reason,'Motivo del pesaje manual',80);
+  const explanation=validate.text(req.body.explanation??'','Explicación del pesaje',300,{optional:true});
+  if(!['sin_conexion','lectura_inestable','falla_bascula','otro'].includes(reason)||reason==='otro'&&explanation.length<4)validate.invalid('Otro requiere explicación de al menos 4 caracteres.');
   const intentId = checkoutIdentity(req.body);
   const product = readJson(productsPath, []).find(item => item.id === req.body.productId && item.active !== false);
   if (!product || product.unit !== 'kg') validate.invalid('Selecciona un producto por kilogramo válido.');
@@ -1851,15 +1597,16 @@ app.post('/api/authorizations/manual-weight', limitAuthenticationAttempts, (req,
   if (quantity < 0.1 || quantity > 40) validate.invalid('Peso permitido: 0.100 a 40 kg.');
   const current = getOpenCashSession();
   if (req.body.cashSessionId !== undefined && req.body.cashSessionId !== null && req.body.cashSessionId !== current?.id) return res.status(409).json({message:'La caja cambió. Recupera su estado antes de autorizar.'});
+  if(!current)return res.status(409).json({message:'Abre caja antes de autorizar una captura manual.'});
   const now = Date.now();
   for (const [token, grant] of manualWeightAuthorizations) if (grant.expiresAt <= now) manualWeightAuthorizations.delete(token);
   if (manualWeightAuthorizations.size >= 1000) return res.status(429).json({message:'Demasiadas autorizaciones pendientes. Intenta más tarde.'});
   const administrator = readSettings().users.find(user => user.role === 'admin' && user.active !== false);
   const token = crypto.randomBytes(32).toString('base64url');
   const grant = { operatorId:operator.id, sessionToken:getCookies(req).el_muelle_session, administratorId:administrator.id,
-    intentId, productId:product.id, quantity, cashSessionId:current?.id || null, expiresAt:now + 5 * 60 * 1000 };
+    intentId, productId:product.id, quantity, reason, explanation, cashSessionId:current?.id || null, expiresAt:now + 5 * 60 * 1000 };
   withDataTransaction(() => recordAuditEvent('manual_weight_authorized', 'checkout', intentId, administrator, {
-    operatorId:operator.id, productId:product.id, quantity
+    operatorId:operator.id, productId:product.id, quantity, reason, explanation
   }));
   manualWeightAuthorizations.set(token, grant);
   clearAuthenticationFailures(req);
@@ -1912,13 +1659,14 @@ app.post("/api/sales", (req, res) => {
         if (item.unit !== 'kg' || item.source !== 'manual') continue;
         const token = submitted.manualAuthorization;
         const grant = typeof token === 'string' ? manualWeightAuthorizations.get(token) : null;
-        if (operator.role !== 'admin' || token !== undefined) {
-          if (!grant || grant.operatorId !== operator.id || grant.sessionToken !== getCookies(req).el_muelle_session || grant.intentId !== intentId || grant.productId !== item.productId || grant.quantity !== item.quantity || grant.expiresAt <= Date.now() || (grant.cashSessionId && grant.cashSessionId !== activeCashSession.id) || consumedAuthorizations.has(token)) {
+        if (true) {
+          if (!grant || grant.operatorId !== operator.id || grant.sessionToken !== getCookies(req).el_muelle_session || grant.intentId !== intentId || grant.productId !== item.productId || grant.quantity !== item.quantity || grant.expiresAt <= Date.now() || grant.cashSessionId !== activeCashSession.id || consumedAuthorizations.has(token)) {
             const error = new Error('El peso manual requiere una autorización administrativa vigente para esta captura.'); error.statusCode = 403; throw error;
           }
           consumedAuthorizations.add(token);
           item.manualAuthorizedBy = grant.administratorId;
-        } else item.manualAuthorizedBy = operator.id;
+          item.manualReason = grant.reason; item.manualExplanation = grant.explanation;
+        }
       }
 
       const subtotal = validate.number(items.reduce((sum, item) => sum + item.total, 0), 'Subtotal');
@@ -2110,9 +1858,13 @@ app.patch("/api/sales/:id/cancel", (req, res) => {
     const products = readJson(productsPath, []);
     let inventoryChanged = false;
 
-    canceledSale.items.forEach((item) => {
+    canceledSale.items.forEach((item, index) => {
       const product = products.find((candidate) => candidate.id === item.productId);
-      if (!product || typeof product.stockQuantity !== "number") return;
+      if (!product || typeof product.stockQuantity !== 'number') {
+        const id=canceledSale.id+':'+item.productId+':'+index;
+        if(!database.readDocument('inventory-restitutions',id)){database.saveDocument('inventory-restitutions',id,{id,saleId:canceledSale.id,productId:item.productId,quantity:item.quantity,unit:item.unit,status:'pending',createdAt:new Date().toISOString(),reason:cancelReason});recordAuditEvent('inventory_restitution_pending','product',item.productId,cancelUser,{saleId:canceledSale.id,quantity:item.quantity,reason:cancelReason});}
+        return;
+      }
       product.stockQuantity = validate.number(product.stockQuantity + item.quantity, 'Existencia repuesta', {decimals:3});
       product.updatedAt = new Date().toISOString();
       inventoryChanged = true;

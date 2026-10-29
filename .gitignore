@@ -24,6 +24,7 @@ data/*.sqlite-shm
 data/*.sqlite-wal
 data/backups/
 data/.secrets.json
+data/product-photos/
 dist/
 *.zip
 *.log
