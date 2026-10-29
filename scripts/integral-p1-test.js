@@ -113,12 +113,92 @@ test('Navegador administrador: carrito, bloqueo fiscal, corrección, etiqueta de
 }));
 test('Navegador empleado: reportes, CSV, impresión, inventario y estado no conservan costos internos',async()=>browser(employee,async page=>{
  const leaks=await page.evaluate(async()=>{setView('reports');await loadReports();const reports=[];for(const type of ['sales','products','inventory']){$('reportTypeFilter').value=type;reports.push(getGeneratedReport());}return reports;});for(const report of leaks){assert.deepEqual(privateFields(report),[]);assert.ok(!JSON.stringify(report).includes('41.73'));assert.ok(!report.headers.some(h=>/Costo|Margen|Ganancia|Valor/.test(h)));}
- await page.evaluate(()=>{const original=URL.createObjectURL;URL.createObjectURL=blob=>{window.syntheticCSV=blob;return original(blob);};renderReports();exportGeneratedReport();printGeneratedReport();});const csv=await page.evaluate(()=>window.syntheticCSV.text());assert.ok(!/Costo|Ganancia|Margen|41\.73/.test(csv));assert.ok(!/Costo|Ganancia|Margen|41\.73/.test(await page.locator('#printArea').textContent()));
+ await page.evaluate(()=>{const original=URL.createObjectURL;URL.createObjectURL=blob=>{window.syntheticCSV=blob;return original(blob);};renderReports();exportGeneratedReport();printGeneratedReport();});const csv=await page.evaluate(()=>window.syntheticCSV.text());assert.ok(!/Costo|Ganancia|Margen|41\.73/.test(csv));const printed=await page.locator('#printArea').textContent();assert.ok(!/41\.73|58\.27|125\.19|174\.81/.test(printed));assert.match(printed,/Valor invertido/);assert.match(printed,/Venta proyectada/);assert.match(printed,/Restringido/);
  await page.evaluate(async()=>{setView('inventory');await loadInventoryEntries();});assert.deepEqual(await page.evaluate(()=>Object.keys(state.products[0]).filter(k=>/cost|profit|margin/i.test(k))),[]);
  const privateVisible=await page.locator('[data-admin-finance]').evaluateAll(nodes=>nodes.some(n=>getComputedStyle(n).display!=='none'));assert.equal(privateVisible,false);
  const intent=crypto.randomUUID();await page.evaluate(id=>sessionStorage.setItem('elmuelle.pending-checkout',JSON.stringify({ownerId:state.currentUser.id,payload:{checkoutIntentId:id,cashSessionId:'open',paymentMethod:'efectivo',items:[{productId:'piece',name:'Legado sintético',unit:'pieza',quantity:1,price:100,total:100,costPrice:41.73,lineCost:41.73,grossProfit:58.27,source:'manual'}]}})),intent);
  await page.reload();await page.waitForFunction(()=>state.sessionAuthenticated&&init.ready);const restored=await page.evaluate(()=>({ticket:state.ticket,pending:state.checkoutPending,stored:sessionStorage.getItem('elmuelle.pending-checkout')}));assert.deepEqual(privateFields(restored.ticket),[]);assert.deepEqual(privateFields(restored.pending),[]);assert.ok(!restored.stored.includes('41.73'));assert.equal(restored.pending.payload.checkoutIntentId,intent);
 }));
+test('KPI por rol: identidad, valores, filtros, cuatro resoluciones y navegación financiera sin cálculos privados',async()=>{
+ const identities={};
+ const reportLabels={sales:['Total vendido','Ventas','Ticket promedio','Margen'],products:['Ingreso acumulado','Productos con venta','Ventas','Margen'],inventory:['Valor invertido','Productos activos','Inventario bajo','Venta proyectada']};
+ for(const [role,cookie] of [['admin',admin],['employee',employee]])await browser(cookie,async page=>{
+  // These tripwires reject any employee invocation of private financial calculations.
+  if(role==='employee')await page.evaluate(()=>{getSaleProfit=()=>{throw Error('Employee profitability calculation');};calculateFinancialProjection=()=>{throw Error('Employee projection calculation');};});
+  for(const [width,height] of [[1366,768],[1024,600],[768,1024],[390,844]]){
+   await page.setViewportSize({width,height});
+   for(const view of ['dashboard','products','inventory','cash','sales','products-report','inventory-report']){
+    const reportType=view.endsWith('-report')?view.replace('-report',''):view==='sales'?'sales':null;
+    await page.evaluate(async({view,reportType})=>{
+     state.sidebarCollapsed=innerWidth<600;updateShellState();
+     if(reportType){setReportsMode('reports');setView('reports');await loadReports();$('reportTypeFilter').value=reportType;$('reportPeriodFilter').value='all';renderReports();}
+     else if(view==='cash'){setReportsMode('cash');setView('reports');await loadCashCut();setCashTab('history');}
+     else {setView(view);if(view==='dashboard'){$('dashboardPeriodFilter').value='all';await loadDashboard();}if(view==='products')await loadProducts();if(view==='inventory'){await loadProducts();await loadInventoryEntries();document.querySelector('.management-valuation').open=true;}}
+     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    },{view,reportType});
+    const selector=reportType?'#reportsView .report-kpis > article':{dashboard:'#dashboardView .business-kpis > article',products:'#productsView .management-indicators > article',inventory:'#inventoryView .inventory-catalog-board .management-indicators > article',cash:'#reportsView .cashdesk-period-kpis > article'}[view];
+    const cards=await page.locator(selector).evaluateAll(nodes=>nodes.map(el=>{const b=el.getBoundingClientRect(),p=el.parentElement.getBoundingClientRect(),note=el.querySelector('small')?.cloneNode(true);note?.querySelectorAll('[id]').forEach(n=>n.textContent='#');return {label:(el.querySelector('div > span')||el.querySelector(':scope > span'))?.textContent.trim(),icon:el.querySelector('svg')?.outerHTML,note:note?.textContent.trim(),position:[b.x-p.x,b.y-p.y,b.width,b.height].map(n=>Math.round(n*10)/10),visible:getComputedStyle(el).display!=='none'};}));
+    assert.equal(cards.length,view==='dashboard'?5:4,view);assert.ok(cards.every(c=>c.visible));
+    assert.ok(cards.every(c=>c.position[2]>0),JSON.stringify(await page.evaluate(()=>({active:state.activeView,mode:state.reportsMode,user:state.currentUser,reportClass:$('reportsView').className,ancestors:[...document.querySelectorAll('#reportsView, .report-generator-panel, #reportContent, .report-kpis')].map(n=>({id:n.id,cls:n.className,hidden:n.hidden,display:getComputedStyle(n).display}))}))));
+    const key=width+'-'+view;if(role==='admin')identities[key]=cards;else assert.deepEqual(cards,identities[key],key+' identity');
+    const clipped=await page.locator(selector+' strong').evaluateAll(nodes=>nodes.filter(el=>el.clientWidth>0&&el.scrollWidth>el.clientWidth+1).map(el=>({id:el.id,text:el.textContent,width:el.clientWidth,scroll:el.scrollWidth})));
+    assert.deepEqual(clipped,[],role+' '+key+' clipped values');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2),false,role+' '+key+' document overflow');
+    if(reportType){
+     const report=await page.evaluate(()=>state.generatedReport);assert.deepEqual(report.kpis.map(k=>k[0]),reportLabels[reportType]);
+     const operational=await page.evaluate(type=>{const sales=getCompletedSalesForPeriod('all',getLocalDateString()),total=sales.reduce((n,s)=>n+Number(s.total||0),0);return type==='inventory'?[String(state.products.filter(p=>p.active!==false).length),String(state.products.filter(p=>p.active!==false&&typeof p.stockQuantity==='number'&&p.stockQuantity<=Number(p.minStock||0)).length)]:[money(total),String(sales.length)];},reportType);
+     assert.equal(report.kpis[reportType==='inventory'?1:0][1],operational[0]);assert.equal(report.kpis[reportType==='inventory'?2:reportType==='products'?2:1][1],operational[1]);
+     if(role==='employee'){assert.deepEqual(privateFields(report),[]);for(const i of reportType==='inventory'?[0,3]:[3])assert.equal(report.kpis[i][1],'Restringido');}
+     else if(reportType==='inventory')assert.equal(report.kpis[0][1],'Pendiente'); // Stock without a count remains unknown.
+     else {const expected=await page.evaluate(()=>{const sales=getCompletedSalesForPeriod('all',getLocalDateString());const total=sales.reduce((n,s)=>n+s.total,0),profit=sales.reduce((n,s)=>n+s.grossProfit,0);return(total?100*profit/total:0).toFixed(2)+'%';});assert.equal(report.kpis[3][1],expected);}
+    }
+    if(role==='employee'){
+     const ids=view==='dashboard'?['dashboardProfit','dashboardReinvest','dashboardMargin']:view==='products'?['catalogInventoryValue']:view==='inventory'?['inventoryInvestmentValue','inventoryProjectedValue','inventoryProjectedProfit']:view==='cash'?['cutGrossProfit','cutMargin']:[];
+     for(const id of ids){assert.equal(await page.locator('#'+id).textContent(),'Restringido');assert.equal(await page.locator('#'+id).isVisible(),true);}
+     if(view==='cash')assert.deepEqual(privateFields(await page.evaluate(()=>state.currentCutTotals)),[]);
+     if(reportType&&width===1366){await page.evaluate(()=>{window.print=()=>{};const original=URL.createObjectURL;URL.createObjectURL=blob=>{window.syntheticCSV=blob;return original(blob);};exportGeneratedReport();printGeneratedReport();});assert.ok(!/41\.73|58\.27|125\.19|174\.81/.test(await page.evaluate(()=>window.syntheticCSV.text())));assert.ok(!/41\.73|58\.27|125\.19|174\.81/.test(await page.locator('#printArea').textContent()));assert.match(await page.locator('#printArea').textContent(),/Restringido/);}
+    }
+    if(role==='employee'&&[1366,390].includes(width))await page.screenshot({path:path.join(dev,'em003-kpi-'+role+'-'+view+'-'+width+'.png')});
+   }
+   await page.evaluate(()=>{setView('dashboard');selectDashboardMetric('sales');$('dashboardView').dataset.trendMetric='profit';renderDashboard();});
+   const metrics=[];for(let i=0;i<5;i++){
+    await page.locator('[data-dashboard-cycle="1"]').press('Enter');
+    const metric=await page.evaluate(()=>$('dashboardView').dataset.metric);metrics.push(metric);
+    if(role==='employee'&&['profit','margin'].includes(metric)){assert.equal((await page.locator('#dashboardSalesChart').textContent()).trim(),'Restringido');assert.equal(await page.locator('#dashboardSalesChart svg').count(),0);await page.evaluate(()=>renderDashboard());assert.equal(await page.evaluate(()=>$('dashboardView').dataset.metric),metric);}
+   }assert.deepEqual(metrics,['profit','average','count','margin','sales']);
+   const trends=[];for(let i=0;i<3;i++){await page.locator('[data-dashboard-trend-cycle="1"]').press('Enter');trends.push(await page.evaluate(()=>$('dashboardView').dataset.trendMetric));}assert.deepEqual(trends,['average','count','profit']);
+   if(role==='employee'){assert.equal((await page.locator('#dashboardTrendChart').textContent()).trim(),'Restringido');assert.equal(await page.locator('#dashboardTrendChart svg').count(),0);}
+   await page.screenshot({path:path.join(dev,'em003-kpi-'+role+'-'+width+'.png')});
+  }
+  if(role==='employee'){
+   const leak=await page.evaluate(()=>({products:state.products,sales:state.sales,entries:state.inventoryEntries,report:state.generatedReport,totals:getSalesTotals(state.sales),html:document.body.innerHTML,local:{...localStorage},session:{...sessionStorage},costInputs:[$('productCostInput').value,$('inventoryEntryUnitCostInput').value]}));
+   for(const item of [leak.products,leak.sales,leak.entries,leak.report,leak.totals])assert.deepEqual(privateFields(item),[]);
+   assert.ok(!/41\.73|58\.27|125\.19|174\.81/.test(JSON.stringify(leak)));assert.deepEqual(leak.costInputs,['','']);
+  }
+ });
+ console.log('KPI_ROLE_CHECK '+JSON.stringify({resolutions:4,identityGroups:Object.keys(identities).length,roles:2,metricOptions:5,trendOptions:3}));
+});
+
+test('KPI y sesión: administrador → empleado → recarga → administrador sin caché financiera anterior',async()=>{
+ const freshAdmin=(await api('/api/auth/admin','POST',{pin},null)).cookie;
+ await browser(freshAdmin,async page=>{
+  await page.evaluate(async()=>{setView('products');fillProductForm(state.products.find(p=>p.id==='kg'));setReportsMode('reports');setView('reports');await loadReports();$('reportPeriodFilter').value='all';renderReports();printGeneratedReport();});
+  assert.ok((await page.locator('#printArea').textContent()).includes('58.27'));
+  await Promise.all([page.waitForResponse(r=>r.url().endsWith('/api/auth/logout')),page.evaluate(()=>logoutToAccess())]);
+  assert.equal(await page.locator('#printArea').textContent(),'');assert.equal(await page.evaluate(()=>state.generatedReport),null);
+  await page.locator('[data-access-user="employee"]').click();await page.locator('#accessPinInput').fill('135790');await page.locator('#accessLoginBtn').click();await page.waitForFunction(()=>state.sessionAuthenticated&&state.currentUser.role==='employee');
+  for(const reload of [false,true]){
+   if(reload){await page.reload();await page.waitForFunction(()=>state.sessionAuthenticated&&init.ready);await page.evaluate(()=>window.print=()=>{});}
+   await page.evaluate(async()=>{setView('dashboard');await loadDashboard();setReportsMode('reports');setView('reports');await loadReports();$('reportPeriodFilter').value='all';renderReports();printGeneratedReport();});
+   assert.equal(await page.locator('#reportKpiFourthLabel').textContent(),'Margen');assert.equal(await page.locator('#reportKpiFourth').textContent(),'Restringido');
+   const sensitive=await page.evaluate(()=>({products:state.products,sales:state.sales,report:state.generatedReport,html:document.body.innerHTML,local:{...localStorage},session:{...sessionStorage}}));assert.deepEqual(privateFields(sensitive.products),[]);assert.deepEqual(privateFields(sensitive.sales),[]);assert.deepEqual(privateFields(sensitive.report),[]);assert.ok(!/41\.73|58\.27|125\.19|174\.81/.test(JSON.stringify(sensitive)));
+  }
+  await Promise.all([page.waitForResponse(r=>r.url().endsWith('/api/auth/logout')),page.evaluate(()=>logoutToAccess())]);
+  await page.locator('[data-access-user="admin"]').click();await page.locator('#accessPinInput').fill(pin);await page.locator('#accessLoginBtn').click();await page.waitForFunction(()=>state.sessionAuthenticated&&state.currentUser.role==='admin');
+  await page.evaluate(async()=>{setReportsMode('reports');setView('reports');await loadReports();$('reportPeriodFilter').value='all';renderReports();});assert.notEqual(await page.locator('#reportKpiFourth').textContent(),'Restringido');assert.equal(await page.evaluate(()=>state.products.find(p=>p.id==='kg').costPrice),41.73);
+ });
+});
+
 test('API: lectura corrupta devuelve error controlado y bloquea una escritura de inventario sin perder registros',async()=>{
  const file=path.join(data,p.DATABASE_NAME),db=new DatabaseSync(file);try{
   db.prepare("UPDATE documents SET payload=? WHERE collection='inventory-entries' AND document_id='I-PRIVATE'").run('{CORRUPT-SYNTHETIC');

@@ -4296,7 +4296,7 @@ body:where(:not(.pos-approved):not(.atelier-shell)):not(.sidebar-collapsed) .ses
 }
 /* EMPLOYEE CASH CUT SCOPE */
 .role-employee:where(body:where(:not(.pos-approved))) #reportsView .cut-filter-bar,
-.role-employee:where(body:where(:not(.pos-approved))) #reportsView .kpi-grid,
+.role-employee:where(body:where(:not(.pos-approved))) #reportsView .kpi-grid:not(.report-kpis),
 .role-employee:where(body:where(:not(.pos-approved))) #reportsView .report-grid,
 .role-employee:where(body:where(:not(.pos-approved))) #reportsView .cash-history-panel {
   display: none !important;
@@ -5561,7 +5561,7 @@ textarea {
   min-height: 38px;
 }
 
-.role-employee:where(body:where(:not(.pos-approved))) #reportsView .admin-cash-reporting {
+.role-employee:where(body:where(:not(.pos-approved))) #reportsView .admin-cash-reporting:not(.cashdesk-period-kpis) {
   display: none !important;
 }
 

@@ -3188,6 +3188,7 @@ function closeProductConfirm(value = false) {
 }
 
 function calculateFinancialProjection(quantity, unitCost, salePrice) {
+  if (!isAdminUser()) return { valid:false };
   const normalizedQuantity = Math.max(Number(quantity || 0), 0);
   const normalizedCost = Math.max(Number(unitCost || 0), 0);
   const normalizedPrice = Math.max(Number(salePrice || 0), 0);
@@ -3211,6 +3212,7 @@ function calculateFinancialProjection(quantity, unitCost, salePrice) {
 
 function updateProductProjection() {
   if (!$('productInvestmentTotal')) return;
+  if(!isAdminUser()){for(const id of ['productInvestmentTotal','productProjectedRevenue','productProjectedProfit','productMarginPercent','productUnitProfit'])$(id).textContent='Restringido';$('productProjectedProfit').classList.remove('negative-value');return;}
 
   const projection = calculateFinancialProjection(
     state.products.find(p=>p.id===state.editingProductId)?.stockQuantity,
@@ -3303,7 +3305,7 @@ function renderAdminProducts() {
   }
   list.innerHTML = `<div class="management-table-scroll"><table class="management-table"><caption class="sr-only">Catálogo de productos</caption><thead><tr><th>Producto</th><th>Categoría</th><th>Existencias</th><th>Precio</th><th>Estado</th><th>Acción</th></tr></thead><tbody>` + filteredProducts.map((product) => {
     const stock = typeof product.stockQuantity === "number" ? product.stockQuantity : 0;
-    const projection = calculateFinancialProjection(stock, product.costPrice, product.price);
+    const projection = isAdminUser() ? calculateFinancialProjection(stock, product.costPrice, product.price) : { valid: false };
     const isActive = product.active !== false;
     const [stockState,stockKind]=getStockStatus(product);
     return `<tr>
@@ -3450,6 +3452,15 @@ function populateInventoryEntryDefaults() {
 }
 
 function updateInventoryEntryProjection() {
+  if(!isAdminUser()){
+    if(!$('entryPurchaseTotal'))return;
+    const product=getInventoryEntryProductContext(),unit=product?.unit||'kg',stock=typeof product?.stockQuantity==='number'?product.stockQuantity:null;
+    $('inventoryEntryProductName').textContent=product?.name||'Selecciona un producto';
+    $('entryCurrentStock').textContent=stock===null?'Sin verificar':quantityText(stock,unit);
+    $('entryNewStock').textContent=stock===null?'Requiere conteo inicial':quantityText(stock+Math.max(0,Number($('inventoryEntryQuantityInput')?.value||0)),unit);
+    for(const id of ['entryCurrentCost','entryPurchaseTotal','entryProjectedRevenue','entryProjectedProfit','entryMargin','entryWeightedCost'])$(id).textContent='Restringido';
+    $('entryProjectedProfit').classList.remove('negative-value');return;
+  }
   if (!$("entryPurchaseTotal")) return;
 
   const isNewProduct = getInventoryEntryMode() === "new";
@@ -3523,7 +3534,7 @@ async function saveInventoryEntry(event) { return saveInventoryReceipt(event); }
 
 function renderInventorySummary() {
   if (!$("inventoryInvestmentValue")) return;
-  if(!isAdminUser()){['inventoryInvestmentValue','catalogInventoryValue','inventoryProjectedValue','inventoryProjectedProfit'].forEach(id=>$(id).textContent='—');$('inventoryEntriesCount').textContent=String(state.inventoryEntries.length);return;}
+  if(!isAdminUser()){['inventoryInvestmentValue','catalogInventoryValue','inventoryProjectedValue','inventoryProjectedProfit'].forEach(id=>$(id).textContent='Restringido');$('inventoryEntriesCount').textContent=String(state.inventoryEntries.length);return;}
 
   const totals = state.products.reduce((acc, product) => {
     if (typeof product.stockQuantity !== "number") return acc;
@@ -3790,7 +3801,7 @@ function renderInventory() {
       const minText = typeof product.minStock === "number"
         ? quantityText(product.minStock, product.unit)
         : "Sin mínimo";
-      const projection = calculateFinancialProjection(stock, product.costPrice, product.price);
+      const projection = isAdminUser() ? calculateFinancialProjection(stock, product.costPrice, product.price) : { valid: false };
       const movement = movementMap.get(product.id) || {
         ticketCount: 0,
         quantity: 0,
@@ -4376,14 +4387,13 @@ function getCompletedSalesForPeriod(period, dateString, endDateString) {
 }
 
 function getSalesTotals(sales) {
+  const admin=isAdminUser();
   return sales.reduce(
     (acc, sale) => {
       const total = Number(sale.total || 0);
-      const profit = getSaleProfit(sale);
 
       acc.total += total;
-      acc.cost += profit.totalCost;
-      acc.profit += profit.grossProfit;
+      if(admin){const profit=getSaleProfit(sale);acc.cost+=profit.totalCost;acc.profit+=profit.grossProfit;}
       acc.count += 1;
 
       if (sale.paymentMethod === "tarjeta") acc.card += total;
@@ -4392,7 +4402,7 @@ function getSalesTotals(sales) {
 
       return acc;
     },
-    { total: 0, cost: 0, profit: 0, count: 0, cash: 0, card: 0, transfer: 0 }
+    { total: 0, ...(admin?{cost:0,profit:0}:{}), count: 0, cash: 0, card: 0, transfer: 0 }
   );
 }
 
@@ -4623,6 +4633,7 @@ function getDashboardSalesSeries(sales, period, dateString, endDateString) {
 }
 
 function getDashboardMetricSeries(sales, metric, filter) {
+  if(!isAdminUser()&&['profit','margin'].includes(metric))return null;
   // Reuse the existing temporal buckets and the current sale-profit definition.
   let { period, dateString, endDateString } = filter;
   if (period === "all" && sales.length) {
@@ -4634,6 +4645,7 @@ function getDashboardMetricSeries(sales, metric, filter) {
   if (metric === "sales") return totals;
   const counts = seriesFor(sales.map(sale => ({ ...sale, total: 1 })));
   if (metric === "count") return counts;
+  if(metric==='average')return totals.map((item,index)=>({...item,total:counts[index].total?item.total/counts[index].total:0}));
   const profits = seriesFor(sales.map(sale => ({ ...sale, total: getSaleProfit(sale).grossProfit })));
   if (metric === "profit") return profits;
   return totals.map((item, index) => ({
@@ -4660,6 +4672,7 @@ function renderBusinessChart(targetId, sales, filter, definitions, typeId) {
   const chart = $(targetId);
   const selector = $(typeId);
   if (!chart || !selector) return;
+  if(!isAdminUser()&&definitions.some(def=>['profit','margin'].includes(def.metric))){selector.disabled=false;[...selector.options].forEach(option=>option.disabled=false);chart.innerHTML='<div class="business-empty">Restringido</div>';return;}
   const counts = getDashboardMetricSeries(sales, "count", filter);
   const canConnect = counts.filter(item => item.total > 0).length >= 2;
   if (!canConnect && sales.length) selector.value = "bar";
@@ -4807,7 +4820,6 @@ function moveDashboardCarousel(id, direction) {
 
 function selectDashboardMetric(metric, focus = false) {
   if (!["sales", "profit", "average", "count", "margin"].includes(metric)) return;
-  if(!isAdminUser()&&['profit','margin'].includes(metric))return;
   $("dashboardView").dataset.metric = metric;
   renderDashboard();
   if (focus) $("dashboardSalesChartCaption").focus();
@@ -4819,11 +4831,11 @@ function cycleDashboardView(kind, direction) {
     root.dataset.productMode = root.dataset.productMode === "slow" ? "top" : "slow";
     renderDashboard();
   } else if (kind === "metrics") {
-    const keys = isAdminUser()?["sales", "profit", "average", "count", "margin"]:["sales","average","count"];
+    const keys = ["sales", "profit", "average", "count", "margin"];
     const index = keys.indexOf(root.dataset.metric || "sales");
     selectDashboardMetric(keys[(index + direction + keys.length) % keys.length]);
   } else if (kind === "trends") {
-    const keys = isAdminUser()?["profit", "average", "count"]:["average","count"];
+    const keys = ["profit", "average", "count"];
     const index = keys.indexOf(root.dataset.trendMetric || "profit");
     root.dataset.trendMetric = keys[(index + direction + keys.length) % keys.length];
     renderDashboard();
@@ -5119,16 +5131,15 @@ function getDashboardPeriodTitle(filter, today = getLocalDateString()) {
 function renderDashboard() {
   const root = $("dashboardView");
   if (!root) return;
-  if(!isAdminUser()){if(['profit','margin'].includes(root.dataset.metric))root.dataset.metric='sales';if(!root.dataset.trendMetric||root.dataset.trendMetric==='profit')root.dataset.trendMetric='average';}
   const filter = getDashboardFilter();
   const sales = getCompletedSalesForPeriod(filter.period, filter.dateString, filter.endDateString);
   const totals = getSalesTotals(sales);
-  $("dashboardProfit").textContent = isAdminUser()?money(totals.profit):'—';
-  $("dashboardReinvest").textContent = isAdminUser()?money(totals.cost):'—';
+  $("dashboardProfit").textContent = isAdminUser()?money(totals.profit):'Restringido';
+  $("dashboardReinvest").textContent = isAdminUser()?money(totals.cost):'Restringido';
   $("dashboardTotalSales").textContent = money(totals.total);
   $("dashboardSalesCount").textContent = String(totals.count);
   $("dashboardAverageTicket").textContent = money(totals.count ? totals.total / totals.count : 0);
-  $("dashboardMargin").textContent = isAdminUser()?(totals.total ? totals.profit / totals.total * 100 : 0).toFixed(2) + "%":'—';
+  $("dashboardMargin").textContent = isAdminUser()?(totals.total ? totals.profit / totals.total * 100 : 0).toFixed(2) + "%":'Restringido';
   const periodTitle = getDashboardPeriodTitle(filter);
   $("dashboardPeriodCaption").textContent = periodTitle;
   $("dashboardPeriodDetail").hidden = periodTitle !== "Hoy";
@@ -5184,11 +5195,11 @@ function renderCashCut() {
   const canceledSales = periodSales.length - completedSales.length;
   const totals = completedSales.reduce(
     (acc, sale) => {
-      const profit = getSaleProfit(sale);
+      const profit = isAdminUser()?getSaleProfit(sale):null;
       const total = Number(sale.total || 0);
 
       acc.total += total;
-      acc.profit += profit.grossProfit;
+      if(profit)acc.profit += profit.grossProfit;
       acc.count += 1;
 
       if (sale.paymentMethod === 'tarjeta') acc.card += total;
@@ -5197,17 +5208,17 @@ function renderCashCut() {
 
       return acc;
     },
-    { total: 0, profit: 0, count: 0, cash: 0, card: 0, transfer: 0 }
+    { total: 0, ...(isAdminUser()?{profit:0}:{}), count: 0, cash: 0, card: 0, transfer: 0 }
   );
-  const margin = totals.total > 0 ? (totals.profit / totals.total) * 100 : 0;
+  const margin = isAdminUser() ? (totals.total > 0 ? (totals.profit / totals.total) * 100 : 0) : null;
   state.currentCutTotals = {
     ...totals,
     canceled: canceledSales
   };
 
   $('cutTotalSales').textContent = money(totals.total);
-  $('cutGrossProfit').textContent = isAdminUser()?money(totals.profit):'—';
-  $('cutMargin').textContent = isAdminUser()?`${margin.toFixed(2)}%`:'—';
+  $('cutGrossProfit').textContent = isAdminUser()?money(totals.profit):'Restringido';
+  $('cutMargin').textContent = isAdminUser()?`${margin.toFixed(2)}%`:'Restringido';
   $('cutSalesCount').textContent = String(totals.count);
   $('cutCash').textContent = money(totals.cash);
   $('cutCard').textContent = money(totals.card);
@@ -5894,7 +5905,7 @@ function getGeneratedReport() {
   const { period, dateString, endDateString } = getReportFilter();
   const sales = getCompletedSalesForPeriod(period, dateString, endDateString);
   const totals = getSalesTotals(sales);
-  const margin = totals.total > 0 ? (totals.profit / totals.total) * 100 : 0;
+  const margin = isAdminUser() ? (totals.total > 0 ? (totals.profit / totals.total) * 100 : 0) : null;
   const base = {
     type,
     period,
@@ -5925,21 +5936,21 @@ function getGeneratedReport() {
         ["Ingreso acumulado", money(totals.total)],
         ["Productos con venta", String(products.length)],
         ["Ventas", String(totals.count)],
-        isAdminUser()?["Margen", `${margin.toFixed(2)}%`]:["Productos distintos",String(products.length)]
+        ["Margen", isAdminUser() ? `${margin.toFixed(2)}%` : "Restringido"]
       ]
     };
   }
 
   if (type === "inventory") {
     const activeProducts = state.products.filter((product) => product.active !== false);
-    const inventoryValue = activeProducts.reduce(
+    const inventoryValue = isAdminUser()?activeProducts.reduce(
       (sum, product) => sum + Math.max(0, Number(product.stockQuantity || 0)) * Number(product.costPrice || 0),
       0
-    );
-    const projectedValue = activeProducts.reduce(
+    ):null;
+    const projectedValue = isAdminUser()?activeProducts.reduce(
       (sum, product) => sum + Math.max(0, Number(product.stockQuantity || 0)) * Number(product.price || 0),
       0
-    );
+    ):null;
     const lowStock = activeProducts.filter((product) => {
       return typeof product.stockQuantity==='number' && product.stockQuantity <= Number(product.minStock || 0);
     });
@@ -5962,12 +5973,12 @@ function getGeneratedReport() {
             ...(isAdminUser()?[typeof product.stockQuantity==='number'&&Number(product.costPrice)>0?money(stock*product.costPrice):'Pendiente']:[])
           ];
         }),
-      kpis: isAdminUser()?[
-        ["Valor invertido", activeProducts.every(p=>typeof p.stockQuantity==='number'&&Number(p.costPrice)>0)?money(inventoryValue):'Pendiente'],
+      kpis: [
+        ["Valor invertido", !isAdminUser()?'Restringido':activeProducts.every(p=>typeof p.stockQuantity==='number'&&Number(p.costPrice)>0)?money(inventoryValue):'Pendiente'],
         ["Productos activos", String(activeProducts.length)],
         ["Inventario bajo", String(lowStock.length)],
-        ["Venta proyectada", activeProducts.every(p=>typeof p.stockQuantity==='number'&&Number(p.price)>0)?money(projectedValue):'Pendiente']
-      ]:[["Productos activos",String(activeProducts.length)],["Con conteo",String(activeProducts.filter(p=>typeof p.stockQuantity==='number').length)],["Inventario bajo",String(lowStock.length)],["Sin verificar",String(activeProducts.filter(p=>typeof p.stockQuantity!=='number').length)]]
+        ["Venta proyectada", !isAdminUser()?'Restringido':activeProducts.every(p=>typeof p.stockQuantity==='number'&&Number(p.price)>0)?money(projectedValue):'Pendiente']
+      ]
     };
   }
 
@@ -5990,7 +6001,7 @@ function getGeneratedReport() {
       ["Total vendido", money(totals.total)],
       ["Ventas", String(totals.count)],
       ["Ticket promedio", money(totals.count > 0 ? totals.total / totals.count : 0)],
-      isAdminUser()?["Margen", `${margin.toFixed(2)}%`]:["Productos distintos",String(getProductSalesFromSales(sales).size)]
+      ["Margen", isAdminUser() ? `${margin.toFixed(2)}%` : "Restringido"]
     ]
   };
 }
@@ -6120,7 +6131,7 @@ function syncReportPresentation(report) {
   const notes = report.type === "inventory" ? ["Costo total actual", "Existencias actuales", "En el mínimo o por debajo", "Valor a precio de venta"] : report.type === "products" ? ["Ventas del periodo", "Productos distintos vendidos", "Operaciones completadas", "Utilidad bruta / ventas"] : ["Ventas del periodo", "Operaciones completadas", "Por venta completada", "Utilidad bruta / ventas"];
   ["Primary", "Secondary", "Third", "Fourth"].forEach((id, index) => {
     $("reportKpi" + id + "Icon").innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + paths[icons[index]] + '</svg>';
-    $("reportKpi" + id + "Note").textContent = isAdminUser()?notes[index]:'Información operativa autorizada';
+    $("reportKpi" + id + "Note").textContent = notes[index];
   });
 }
 

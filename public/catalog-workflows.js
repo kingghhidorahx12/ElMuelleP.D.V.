@@ -114,8 +114,9 @@ function syncFinancialVisibility(){
   const admin=isAdminUser();document.body.classList.toggle('financial-private',!admin);
   if(!admin){const sensitive=item=>Object.keys(item).some(key=>/(?:cost|profit|margin|investment|projected)/i.test(key)),clean=item=>Object.fromEntries(Object.entries(item).filter(([key])=>!/(?:cost|profit|margin|investment|projected)/i.test(key)));if(state.ticket.some(sensitive))state.ticket=state.ticket.map(clean);if(state.checkoutPending?.payload?.items?.some(sensitive)){state.checkoutPending.payload.items=state.checkoutPending.payload.items.map(clean);persistPendingCheckout();}}
   if(syncFinancialVisibility.role===admin)return;syncFinancialVisibility.role=admin;
-  for(const id of ['dashboardProfit','dashboardReinvest','dashboardMargin','catalogInventoryValue','cutGrossProfit','cutMargin','inventoryInvestmentValue','inventoryProjectedValue','inventoryProjectedProfit']){const node=$(id);const box=node?.closest('article');if(box)box.dataset.adminFinance='';if(node&&!admin)node.textContent='—';}
-  document.querySelector('.product-projection-panel')?.setAttribute('data-admin-finance','');
+  for(const id of ['dashboardProfit','dashboardReinvest','dashboardMargin','catalogInventoryValue','cutGrossProfit','cutMargin','inventoryInvestmentValue','inventoryProjectedValue','inventoryProjectedProfit','productInvestmentTotal','productProjectedRevenue','productProjectedProfit','productMarginPercent','productUnitProfit','entryCurrentCost','entryPurchaseTotal','entryProjectedRevenue','entryProjectedProfit','entryMargin','entryWeightedCost']){const node=$(id);node?.closest('article')?.removeAttribute('data-admin-finance');if(node&&!admin)node.textContent='Restringido';}
+  document.querySelector('.product-projection-panel')?.removeAttribute('data-admin-finance');
+  for(const id of ['productCostInput','inventoryEntryUnitCostInput']){const field=$(id);field?.closest('label')?.setAttribute('data-admin-finance','');if(field&&!admin)field.value='';}
 }
 
 function resetPinVisibility(root=document){
