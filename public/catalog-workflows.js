@@ -30,6 +30,8 @@ function syncProductPhotoPreview(){
   const existing=state.products.find(p=>p.id===state.editingProductId);
   const src=state.pendingProductPhoto?'data:'+state.pendingProductPhoto.mime+';base64,'+state.pendingProductPhoto.data:existing?getPosProductImagePath(existing):'';
   preview.hidden=!src;preview.src=src||'';if($('productPhotoPlaceholder'))$('productPhotoPlaceholder').hidden=!!src;if($('cancelProductPhotoBtn'))$('cancelProductPhotoBtn').hidden=!state.pendingProductPhoto;
+  if($('productPhotoFileName'))$('productPhotoFileName').textContent=state.pendingProductPhotoName||((existing?.photoFile||src)?'Fotografía actual':'Ningún archivo seleccionado');
+  if($('productPhotoStatus')){$('productPhotoStatus').textContent=state.pendingProductPhoto?'Fotografía válida, lista para guardar.':'JPEG, PNG o WebP · máximo 5 MiB · recomendado 1:1';$('productPhotoStatus').dataset.state=state.pendingProductPhoto?'valid':'idle';}
 }
 async function selectProductPhoto(){
   const file=$('productPhotoInput').files[0];if(!file)return;
@@ -39,14 +41,15 @@ async function selectProductPhoto(){
     if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error('Selecciona una fotografía JPEG, PNG o WebP.');
     const url=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('No se pudo leer la fotografía.'));reader.readAsDataURL(file);});
     const image=new Image();image.src=url;await image.decode();if(!image.naturalWidth||image.naturalWidth>8192||image.naturalHeight>8192||image.naturalWidth*image.naturalHeight>32000000)throw Error('Las dimensiones de la fotografía exceden el límite.');
-    if(state.productPhotoVersion!==version)return;state.pendingProductPhoto={mime:file.type,data:url.slice(url.indexOf(',')+1)};syncProductPhotoPreview();
-  }catch(error){if(state.productPhotoVersion===version){$('productPhotoInput').value='';showToast(error.message);}}
+    if(state.productPhotoVersion!==version)return;state.pendingProductPhoto={mime:file.type,data:url.slice(url.indexOf(',')+1)};state.pendingProductPhotoName=file.name;syncProductPhotoPreview();
+  }catch(error){if(state.productPhotoVersion===version){$('productPhotoInput').value='';if($('productPhotoStatus')){$('productPhotoStatus').textContent=error.message;$('productPhotoStatus').dataset.state='error';}showToast(error.message);}}
 }
 async function saveCommercialProduct(event){
   event.preventDefault();if(state.productSaving)return;state.productSaving=true;const button=$('saveProductBtn');button.disabled=true;
   try{
     const editing=state.editingProductId,payload={name:$('productNameInput').value.trim(),description:$('productDescriptionInput').value.trim(),category:$('productCategoryInput').value,unit:$('productUnitInput').value,price:Number($('productPriceInput').value),costPrice:Number($('productCostInput').value||0),minStock:$('productMinStockInput').value===''?null:Number($('productMinStockInput').value),active:$('productActiveInput').checked};
     if(!payload.name||!payload.category||!Number.isFinite(payload.price)||payload.price<=0||!Number.isFinite(payload.costPrice)||payload.costPrice<0||payload.minStock!==null&&(!Number.isFinite(payload.minStock)||payload.minStock<0||payload.unit==='pieza'&&!Number.isInteger(payload.minStock)))throw Error('Revisa nombre, precio, costo y mínimo.');
+    payload.code=$('productCodeInput')?.value.trim()||'';
     if(state.pendingProductPhoto)payload.photo=state.pendingProductPhoto;
     if(!await openProductConfirm({title:editing?'Actualizar producto':'Agregar producto',message:'Se guardará la información comercial; las existencias se administran en Inventario.',summary:payload.name+' · '+money(payload.price)+' / '+getUnitLabel(payload.unit),confirmLabel:'Guardar'}))return;
     await runCatalogOperation('product',editing?'/api/products/'+editing:'/api/products',editing?'PUT':'POST',payload);
@@ -88,7 +91,8 @@ function initCatalogWorkflows(){
   if(initCatalogWorkflows.ready)return;initCatalogWorkflows.ready=true;
   $('productPhotoInput').addEventListener('change',selectProductPhoto);
   const drop=document.querySelector('.product-photo-preview');drop.addEventListener('dragover',event=>event.preventDefault());drop.addEventListener('drop',event=>{event.preventDefault();if(event.dataTransfer.files.length!==1){showToast('Selecciona una sola fotografía.');return;}$('productPhotoInput').files=event.dataTransfer.files;selectProductPhoto();});
-  $('cancelProductPhotoBtn').addEventListener('click',()=>{state.productPhotoVersion=(state.productPhotoVersion||0)+1;state.pendingProductPhoto=null;$('productPhotoInput').value='';syncProductPhotoPreview();});
+  $('productPhotoChooseBtn')?.addEventListener('click',()=>$('productPhotoInput').click());
+  $('cancelProductPhotoBtn').addEventListener('click',()=>{state.productPhotoVersion=(state.productPhotoVersion||0)+1;state.pendingProductPhoto=null;state.pendingProductPhotoName='';$('productPhotoInput').value='';syncProductPhotoPreview();});
   $('cancelProductFormBtn').addEventListener('click',()=>{resetProductForm();setProductMode('list');});refreshCatalogPending();
   $('closeProductEditorBtn').addEventListener('click',()=>{resetProductForm();setProductMode('list');});
   $('productConfirmModal').addEventListener('cancel',event=>{event.preventDefault();closeProductConfirm(false);});
@@ -99,7 +103,37 @@ function initCatalogWorkflows(){
     for(const name of ['inventoryEntryUnitCostInput','inventoryEntrySalePriceInput','inventoryEntryDateInput','inventorySupplierInput'])$(name).closest('label').hidden=mode!=='receipt';
     document.querySelector('[aria-label="Tipo de entrada de mercancía"]').hidden=mode!=='receipt';if(mode!=='receipt')setInventoryEntryMode('existing');
     $('saveInventoryEntryBtn').textContent=mode==='receipt'?'Registrar entrada':mode==='waste'?'Registrar merma':'Registrar ajuste';
+    const reason=$('inventoryEntryNotesInput').closest('label');reason.firstChild.textContent=mode==='receipt'?'Motivo de recepción':mode==='waste'?'Motivo de merma':'Motivo de ajuste';
   }));
+  initPinVisibility();
 }
 
 function updateManualProductContext(){const product=state.selectedProduct;if(!product)return;$('manualProductName').textContent=product.name;$('manualProductUnit').textContent=product.unit==='kg'?'Por kilogramo':'Por pieza';$('manualProductPrice').textContent='Precio: '+money(product.price)+' / '+getUnitLabel(product.unit);$('manualProductPhoto').src=getPosProductImagePath(product);$('manualProductPhoto').hidden=false;$('manualProductPhoto').onerror=()=>{$('manualProductPhoto').hidden=true;};}
+
+function syncFinancialVisibility(){
+  const admin=isAdminUser();document.body.classList.toggle('financial-private',!admin);
+  if(!admin){const sensitive=item=>Object.keys(item).some(key=>/(?:cost|profit|margin|investment|projected)/i.test(key)),clean=item=>Object.fromEntries(Object.entries(item).filter(([key])=>!/(?:cost|profit|margin|investment|projected)/i.test(key)));if(state.ticket.some(sensitive))state.ticket=state.ticket.map(clean);if(state.checkoutPending?.payload?.items?.some(sensitive)){state.checkoutPending.payload.items=state.checkoutPending.payload.items.map(clean);persistPendingCheckout();}}
+  if(syncFinancialVisibility.role===admin)return;syncFinancialVisibility.role=admin;
+  for(const id of ['dashboardProfit','dashboardReinvest','dashboardMargin','catalogInventoryValue','cutGrossProfit','cutMargin','inventoryInvestmentValue','inventoryProjectedValue','inventoryProjectedProfit']){const node=$(id);const box=node?.closest('article');if(box)box.dataset.adminFinance='';if(node&&!admin)node.textContent='—';}
+  document.querySelector('.product-projection-panel')?.setAttribute('data-admin-finance','');
+}
+
+function resetPinVisibility(root=document){
+  root.querySelectorAll('input[data-pin-protected]').forEach(input=>{if(input.type==='password')return;input.type='password';window.clearTimeout(input.pinVisibilityTimer);const button=input.parentElement.querySelector('.pin-visibility-button');if(button){button.setAttribute('aria-pressed','false');button.setAttribute('aria-label','Mostrar PIN');button.title='Mostrar PIN';}});
+}
+function initPinVisibility(){
+  const enhance=()=>{
+    document.querySelectorAll('input[type="password"]:not([data-pin-protected])').forEach(input=>{
+      input.dataset.pinProtected='';const wrapper=document.createElement('span');wrapper.className='pin-input-control';input.before(wrapper);wrapper.append(input);
+      const button=document.createElement('button');button.type='button';button.className='pin-visibility-button';button.setAttribute('aria-label','Mostrar PIN');button.setAttribute('aria-pressed','false');button.title='Mostrar PIN';button.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>';wrapper.append(button);
+      button.addEventListener('click',()=>{const visible=input.type==='password';input.type=visible?'text':'password';button.setAttribute('aria-pressed',String(visible));button.setAttribute('aria-label',visible?'Ocultar PIN':'Mostrar PIN');button.title=visible?'Ocultar PIN':'Mostrar PIN';window.clearTimeout(input.pinVisibilityTimer);if(visible)input.pinVisibilityTimer=window.setTimeout(()=>resetPinVisibility(wrapper),20000);});
+    });
+    document.querySelectorAll('.hidden input[data-pin-protected], [inert] input[data-pin-protected], dialog:not([open]) input[data-pin-protected]').forEach(input=>resetPinVisibility(input.parentElement));
+  };
+  enhance();document.addEventListener('reset',event=>resetPinVisibility(event.target),true);document.addEventListener('close',event=>resetPinVisibility(event.target),true);
+  initPinVisibility.observer=new MutationObserver(records=>{
+    const selector='input[type="password"]:not([data-pin-protected])';
+    if(records.some(record=>record.type==='childList'&&[...record.addedNodes].some(node=>node.nodeType===1&&(node.matches(selector)||node.querySelector(selector)))))enhance();
+    for(const record of records)if(record.type==='attributes'&&record.target.matches('.modal,dialog,#accessScreen')&&(record.target.classList.contains('hidden')||record.target.inert||record.target.getAttribute('aria-hidden')==='true'||record.target.tagName==='DIALOG'&&!record.target.open))resetPinVisibility(record.target);
+  });initPinVisibility.observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class','aria-hidden','inert','open']});
+}

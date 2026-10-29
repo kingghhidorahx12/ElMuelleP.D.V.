@@ -15,6 +15,14 @@ function sqlString(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
+function readFailure(collection, error) {
+  console.error('Lectura SQLite rechazada', { collection, code: error?.code || error?.name || 'READ_ERROR' });
+  const failure = new Error('No se pudieron leer los datos guardados. La operación se detuvo; solicita revisión técnica.');
+  failure.code = 'STORAGE_READ_FAILED';
+  failure.statusCode = 503;
+  return failure;
+}
+
 class PosDatabase {
   constructor(dataDir) {
     this.dataDir = dataDir;
@@ -68,20 +76,16 @@ class PosDatabase {
 
   read(filePath, fallback) {
     const collection = this.collectionForPath(filePath);
-    const rows = this.db
-      .prepare(
-        "SELECT document_id, payload FROM documents WHERE collection = ? ORDER BY document_id"
-      )
-      .all(collection);
+    try {
+    this.collectionReadStatement ||= this.db.prepare("SELECT document_id, payload FROM documents WHERE collection = ? ORDER BY document_id");
+    const rows = this.collectionReadStatement.all(collection);
 
     if (rows.length === 0) return fallback;
 
-    try {
       if (collection === "settings") return JSON.parse(rows[0].payload);
       return rows.map((row) => JSON.parse(row.payload));
     } catch (error) {
-      console.error("Error leyendo SQLite:", collection, error);
-      return fallback;
+      throw readFailure(collection, error);
     }
   }
 
@@ -91,8 +95,10 @@ class PosDatabase {
   }
 
   readDocument(collection, id, fallback = null) {
+    try {
     const row = this.db.prepare("SELECT payload FROM documents WHERE collection = ? AND document_id = ?").get(collection, id);
     return row ? JSON.parse(row.payload) : fallback;
+    } catch (error) { throw readFailure(collection, error); }
   }
 
   saveDocument(collection, id, value) {

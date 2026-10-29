@@ -85,7 +85,7 @@ function reportHarness(){
   const nodes=new Map(),wrapper={hidden:false};
   function node(id){if(!nodes.has(id))nodes.set(id,{value:'',textContent:'',innerHTML:'',disabled:false,classList:{toggle(){}},closest:()=>wrapper,replaceChildren(){this.innerHTML='';}});return nodes.get(id);}
   const c={console,Intl,Date,Map,Blob,$:node,state:{sales:[],products:[]},getReportFilter:()=>({period:'all',dateString:'2026-10-26',endDateString:'2026-10-26'}),money:x=>'$'+Number(x).toFixed(2),quantityText:x=>String(x),getUnitLabel:x=>x,getStockStatus:()=>['Disponible'],getSaleProfit:s=>({totalCost:s.totalCost||0,grossProfit:s.total-(s.totalCost||0)}),getSaleStatus:s=>s.status||'completada',dashboardSaleMatchesPeriod:()=>true,escapeHtml:s=>String(s).replace(/[&<>"']/g,'_'),getGlassCalendarDateKey:d=>d.toISOString().slice(0,10),parseGlassCalendarDate:key=>new Date(key+'T12:00:00'),showToast(){},window:{print(){}},document:{body:{appendChild(){}},createElement:()=>({click(){},remove(){}})},URL:{createObjectURL(blob){c.blob=blob;return 'blob:test';},revokeObjectURL(){}}};
-  vm.createContext(c);
+  c.isAdminUser=()=>true;vm.createContext(c);
   for(const name of ['getCompletedSalesForPeriod','getSalesTotals','getProductSalesFromSales','getReportPeriodCaption','getGeneratedReport','getReportChartSeries','getReportPaymentSeries','renderReportCharts','safeCsvCell','exportGeneratedReport','printGeneratedReport']){const match=source.match(new RegExp('^function '+name+'\\([^]*?^}','m'));assert.ok(match,name);vm.runInContext(match[0],c);}
   node('reportChartGrouping').value='day';node('reportChartType').value='bar';return {c,node,wrapper};
 }

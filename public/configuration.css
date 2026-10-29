@@ -50,7 +50,9 @@ body.atelier-shell #settingsView .configuration-option input:checked::after,.con
 .configuration-field small { grid-column:1/-1; font-size:10px; color:#6687a3; }
 body.atelier-shell #settingsView .configuration-field select { min-width:0; width:100%; min-height:32px; height:32px; font-size:11px; }
 .configuration-appearance-card { background:linear-gradient(110deg,#f8fcfff5,#e3f4ffe8); }
-#configurationQuickAppearance { display:grid; grid-template-columns:minmax(0,1fr) 85px; gap:12px; align-items:stretch; }
+#configurationQuickAppearance { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:stretch; }
+body.atelier-shell #settingsView :is(.configuration-card,.users-settings-card,#configurationSaveArea) :is(.quiet-btn,.solid-btn,.ghost-btn,.warning-btn) { font-family:var(--font-ui); font-size:12px; font-weight:600; line-height:1.25; letter-spacing:normal; }
+body.atelier-shell #settingsView #configurationQuickAppearanceLink { align-self:start; justify-self:start; white-space:nowrap; }
 .configuration-theme-preview { width:85px; height:100%; max-height:165px; object-fit:cover; object-position:12% center; border-radius:10px; }
 .configuration-data { margin:0; display:grid; gap:0; }
 .configuration-data > div { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid #d6e7f2; font-size:11px; line-height:1.35; }

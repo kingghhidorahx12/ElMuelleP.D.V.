@@ -27,9 +27,7 @@ function animatePosFeedback(element, kind = "catalog") {
   if (!element?.animate || document.hidden || posReducedMotion || posMicroMotion.matches || !state.sessionAuthenticated) return;
   if (kind === "catalog" && state.activeView !== "pos") return;
   posFeedbackByElement.get(element)?.cancel();
-  const frames = kind === "navigation"
-    ? [{ opacity: .94, transform: "translateY(2px)" }, { opacity: 1, transform: "none" }]
-    : [{ opacity: kind === "control" ? .78 : .94 }, { opacity: 1 }];
+  const frames = [{ opacity: kind === "control" ? .78 : .94 }, { opacity: 1 }];
   const animation = element.animate(frames, {
     duration: kind === "navigation" ? 180 : 150, easing: "ease-out"
   });
@@ -658,6 +656,7 @@ function maximizeApplicationWindow() {
 }
 
 function logoutToAccess({ preservePendingCheckout = false } = {}) {
+  if(typeof resetPinVisibility==='function')resetPinVisibility();
   state.pendingProductPhoto=null;state.productPhotoVersion=(state.productPhotoVersion||0)+1;if($('catalogPendingOperations'))$('catalogPendingOperations').textContent='';if($('productEditorDialog')?.open)$('productEditorDialog').close();
   const preservedCheckout = preservePendingCheckout ? state.checkoutPending : null;
   state.checkoutGeneration = (state.checkoutGeneration || 0) + 1;
@@ -1514,6 +1513,7 @@ function setPosStep(step) {
 }
 
 function updateShellState() {
+  if(typeof syncFinancialVisibility==='function')syncFinancialVisibility();
   const sessionBox = document.querySelector(".session-box");
   const sessionSlot = $(state.sessionAuthenticated && !state.employeeLoginRequired ? "topbarSessionSlot" : "sidebarSessionSlot");
   if (sessionBox && sessionSlot && sessionBox.parentElement !== sessionSlot) sessionSlot.appendChild(sessionBox);
@@ -1580,6 +1580,7 @@ function updateShellState() {
     ticketButton.setAttribute("title", ticketLabel);
     ticketButton.setAttribute("aria-expanded", String(isTicketOpen));
     ticketButton.classList.toggle("active", isTicketOpen);
+    updateTicketLabelText();
     if (!isTicketOpen && ticketPanel?.contains(document.activeElement)) {
       ticketButton.focus({ preventScroll: true });
     }
@@ -2185,6 +2186,7 @@ async function loadCashSessions() {
     state.cashSessions = await fetchJson("/api/cash-sessions");
     if ($('cashLoadError')) $('cashLoadError').hidden = true;
     state.currentCashSession = state.cashSessions.find((session) => session.status === "open") || null;
+    state.cashStatus=state.currentCashSession?'open':'none';
     renderCashRegister();
     renderCashHistory();
     updateCashGateUi();
@@ -2192,6 +2194,7 @@ async function loadCashSessions() {
     console.error(error);
     state.cashSessions = [];
     state.currentCashSession = null;
+    state.cashStatus='error';
     updateCashGateUi();
     showToast(error.message || "No se pudo cargar el estado de caja.");
     if ($('cashLoadError')) $('cashLoadError').hidden = false;
@@ -2547,6 +2550,7 @@ function validatePieceQuantity(product, rawQuantity) {
     ? Math.max(0, product.stockQuantity - reserved) : null;
   let error = "";
   if (!product || product.unit !== "pieza" || product.active === false) error = "Este producto ya no está disponible.";
+  else if (available === null) error = "Existencias sin verificar. Registra primero el conteo inicial.";
   else if (!/^\d+$/.test(String(rawQuantity).trim()) || !Number.isSafeInteger(quantity) || quantity <= 0) error = "Ingresa una cantidad entera mayor que cero.";
   else if (available !== null && quantity > available) error = "La cantidad supera la existencia disponible para esta venta.";
   else if (quantity > lineRemaining) error = "El límite vigente es de 100 piezas por renglón de venta.";
@@ -2670,6 +2674,45 @@ function renderWeighPanel() {
   $("confirmWeightBtn").disabled = quantity <= 0 || invalidKgWeight;
 }
 
+function getTicketStockErrors(items = state.ticket) {
+  const totals = new Map(), errors = [];
+  for (const item of items) {
+    const product = state.products.find(p => p.id === item.productId), quantity = Number(item.quantity), scaled = Math.round(quantity * 1000);
+    const name = product?.name || item.name || item.productId;
+    if (!product || product.active === false) { errors.push(`${name}: producto no disponible.`); continue; }
+    if (!['kg','pieza'].includes(item.unit) || item.unit !== product.unit || !Number.isFinite(quantity) || quantity <= 0 || !Number.isSafeInteger(scaled) || Math.abs(quantity * 1000-scaled)>0.000001 || (item.unit==='pieza' && (!Number.isInteger(quantity)||quantity>100)) || (item.unit==='kg' && (quantity<MIN_SCALE_WEIGHT_KG||quantity>MAX_SCALE_WEIGHT_KG))) { errors.push(`${name}: cantidad o unidad inválida.`); continue; }
+    totals.set(product.id, (totals.get(product.id)||0)+scaled);
+  }
+  for (const [id, amount] of totals) {
+    const product = state.products.find(p=>p.id===id);
+    if (typeof product.stockQuantity!=='number'||!Number.isFinite(product.stockQuantity)) errors.push(`${product.name}: existencias sin verificar; registra el conteo inicial.`);
+    else if (amount>Math.round(product.stockQuantity*1000)) errors.push(`${product.name}: solicitado ${quantityText(amount/1000,product.unit)}; disponible ${quantityText(product.stockQuantity,product.unit)}.`);
+  }
+  return errors;
+}
+
+function changeTicketQuantity(index, raw) {
+  if(state.checkoutPending||state.checkoutProcessing||state.checkoutPreparing)return;
+  const item=state.ticket[index];if(!item)return;
+  if(item.unit!=='pieza'){showToast('Para corregir kg, retira la partida y vuelve a pesar o solicita una nueva autorización manual.');return;}
+  const proposed=state.ticket.map((line,i)=>i===index?{...line,quantity:Number(raw)}:line),errors=getTicketStockErrors(proposed);
+  if(errors.length){showToast(errors.join(' '),'error');renderTicket();return;}
+  item.quantity=Number(raw);item.total=roundCurrency(item.quantity*item.price);
+  if(isAdminUser()){item.lineCost=roundCurrency(item.quantity*item.costPrice);item.grossProfit=roundCurrency(item.total-item.lineCost);}
+  renderTicket();
+}
+
+async function prevalidateCheckoutStock() {
+  const owner=state.currentUser?.id,generation=state.checkoutGeneration;
+  try {
+    const products=await fetchJson('/api/products');
+    if(!state.sessionAuthenticated||state.currentUser?.id!==owner||state.checkoutGeneration!==generation)return false;
+    state.products=products;const errors=getTicketStockErrors();
+    if(errors.length){showToast(errors.join(' '),'error');return false;}
+    return true;
+  } catch(error){showToast(error.message||'No se pudieron verificar las existencias. Conserva el ticket y vuelve a intentar.','error');return false;}
+}
+
 function addCurrentProductToTicket({ nextStep = "checkout" } = {}) {
   if (state.checkoutPending || state.checkoutProcessing) return;
   const product = state.selectedProduct;
@@ -2680,6 +2723,12 @@ function addCurrentProductToTicket({ nextStep = "checkout" } = {}) {
   }
 
   const quantity = getEffectiveQuantity(product);
+
+  const preview=state.ticket.map(item=>({...item}));
+  const merge=product.unit==='pieza'?preview.find(item=>item.productId===product.id&&item.unit===product.unit&&Number(item.price)===Number(product.price)):null;
+  if(merge)merge.quantity=Number(merge.quantity)+quantity;else preview.push({productId:product.id,unit:product.unit,quantity});
+  const stockErrors=getTicketStockErrors(preview);
+  if(stockErrors.length){showToast(stockErrors.join(' '),'error');return;}
 
   if (quantity <= 0) {
     showToast("Falta peso o cantidad.");
@@ -2707,8 +2756,7 @@ function addCurrentProductToTicket({ nextStep = "checkout" } = {}) {
     const nextQuantity = Number(existing.quantity || 0) + quantity;
     existing.quantity = nextQuantity;
     existing.total = roundCurrency(nextQuantity * price);
-    existing.lineCost = roundCurrency(nextQuantity * costPrice);
-    existing.grossProfit = roundCurrency(existing.total - existing.lineCost);
+    if(isAdminUser()){existing.lineCost = roundCurrency(nextQuantity * costPrice);existing.grossProfit = roundCurrency(existing.total - existing.lineCost);}
     existing.source = state.quantitySource;
     toastMessage = `${product.name}: ${quantityText(nextQuantity, product.unit)} en venta.`;
   } else {
@@ -2718,11 +2766,9 @@ function addCurrentProductToTicket({ nextStep = "checkout" } = {}) {
       category: product.category,
       unit: product.unit,
       price,
-      costPrice,
       quantity,
       total,
-      lineCost,
-      grossProfit: roundCurrency(total - lineCost),
+      ...(isAdminUser()?{costPrice,lineCost,grossProfit:roundCurrency(total-lineCost)}:{}),
       source: state.quantitySource,
       ...(state.manualAuthorization ? { manualAuthorization:state.manualAuthorization } : {})
     });
@@ -2749,7 +2795,7 @@ function renderTicket() {
           <article class="ticket-item">
             <div class="pos-ticket-copy">
               <div class="pos-ticket-product"><strong>${escapeHtml(item.name)}</strong><span class="pos-ticket-quantity">${escapeHtml(quantityText(item.quantity, item.unit))}</span></div>
-              <div class="pos-ticket-details"><span class="pos-ticket-unit">${money(item.price)} / ${escapeHtml(getUnitLabel(item.unit))}</span><small>${item.source === "scale" ? "Báscula" : "Manual"}</small></div>
+              <div class="pos-ticket-details"><span class="pos-ticket-unit">${money(item.price)} / ${escapeHtml(getUnitLabel(item.unit))}</span><small>${item.unit==='pieza'?'Piezas':item.source === "scale" ? "Báscula" : "Manual autorizado"}</small>${item.unit==='pieza'?`<input class="ticket-quantity-edit" data-ticket-quantity="${index}" aria-label="Cantidad de ${escapeHtml(item.name)}" type="number" min="1" max="100" step="1" value="${item.quantity}" />`:''}</div>
             </div>
             <b>${money(item.total)}</b>
             <button class="icon-btn" type="button" data-remove-item="${index}" aria-label="Quitar producto"><svg class="pos-remove-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg></button>
@@ -2760,6 +2806,7 @@ function renderTicket() {
   }
 
   updateTotals();
+  ticketItems.querySelectorAll('[data-ticket-quantity]').forEach(input=>input.addEventListener('change',()=>changeTicketQuantity(Number(input.dataset.ticketQuantity),input.value)));
   animatePosFeedback(ticketItems, "ticket");
 }
 
@@ -2896,8 +2943,8 @@ async function saveManualQuantity() {
   showToast("Captura aplicada.");
 }
 
-function openInvoiceDecisionModal() {
-  if (state.checkoutProcessing) return;
+async function openInvoiceDecisionModal() {
+  if (state.checkoutProcessing || state.checkoutPreparing) return;
   if (state.checkoutPending) return chargeSale();
   if (state.ticket.length === 0) return;
 
@@ -2907,6 +2954,8 @@ function openInvoiceDecisionModal() {
     return;
   }
 
+  state.checkoutPreparing=true;
+  try { if(!await prevalidateCheckoutStock())return; } finally {state.checkoutPreparing=false;}
   $("invoiceDecisionModal").classList.remove("hidden");
   window.setTimeout(() => $("invoiceYesBtn")?.focus(), 0);
 }
@@ -2940,6 +2989,7 @@ function restorePendingCheckout() {
     state.discount = saved.payload.discount || 0;
     state.paymentMethod = saved.payload.paymentMethod;
     state.paymentReference = saved.payload.paymentDetails?.reference || '';
+    if(typeof syncFinancialVisibility==='function')syncFinancialVisibility();
   } catch { /* Un borrador ilegible no confirma ninguna operación. */ }
 }
 
@@ -2958,7 +3008,7 @@ function syncCheckoutControls() {
 }
 
 async function chargeSale(invoiceRequested = false) {
-  if (state.checkoutProcessing) return;
+  if (state.checkoutProcessing || state.checkoutPreparing) return;
   const ownerId = state.currentUser?.id, generation = state.checkoutGeneration || 0;
   const isCurrent = () => state.sessionAuthenticated && state.currentUser?.id === ownerId && (state.checkoutGeneration || 0) === generation;
   if (!state.checkoutPending) {
@@ -2966,6 +3016,10 @@ async function chargeSale(invoiceRequested = false) {
     showToast("No hay productos en la venta.");
     return;
   }
+
+  state.checkoutPreparing=true;
+  try { if(!await prevalidateCheckoutStock())return; } finally {state.checkoutPreparing=false;}
+  if(!isCurrent())return;
 
   const cashShift = getSalesCashShift();
   if (!cashShift) {
@@ -3143,6 +3197,7 @@ function calculateFinancialProjection(quantity, unitCost, salePrice) {
   const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
 
   return {
+    valid:quantity!==null&&quantity!==''&&unitCost!==null&&unitCost!==''&&[Number(quantity),Number(unitCost),Number(salePrice)].every(Number.isFinite)&&normalizedQuantity>0&&normalizedCost>0&&normalizedPrice>0,
     quantity: normalizedQuantity,
     unitCost: normalizedCost,
     salePrice: normalizedPrice,
@@ -3164,10 +3219,10 @@ function updateProductProjection() {
   );
   const unit = getUnitLabel($('productUnitInput')?.value || 'kg');
 
-  const hasUsefulData = projection.quantity > 0 && projection.unitCost > 0 && projection.salePrice > 0;
+  const hasUsefulData = projection.valid && isAdminUser();
 
-  $('productInvestmentTotal').textContent = money(projection.investment);
-  $('productProjectedRevenue').textContent = money(projection.revenue);
+  $('productInvestmentTotal').textContent = hasUsefulData ? money(projection.investment) : 'Pendiente';
+  $('productProjectedRevenue').textContent = hasUsefulData ? money(projection.revenue) : 'Pendiente';
   $('productProjectedProfit').textContent = hasUsefulData ? money(projection.profit) : 'Pendiente';
   $('productMarginPercent').textContent = hasUsefulData ? `${projection.margin.toFixed(2)}%` : 'Pendiente';
   $('productUnitProfit').textContent = hasUsefulData ? `${money(projection.unitProfit)} / ${unit}` : 'Pendiente';
@@ -3181,6 +3236,7 @@ function resetProductForm() {
   state.editingProductId = null;
   $("productForm").reset();
   state.pendingProductPhoto=null;state.productPhotoVersion=(state.productPhotoVersion||0)+1;
+  state.pendingProductPhotoName='';
   if(typeof syncProductPhotoPreview==='function')syncProductPhotoPreview();
   $("productCategoryInput").value = "Pescados y mariscos";
   $("productUnitInput").value = "kg";
@@ -3193,6 +3249,7 @@ function resetProductForm() {
 function fillProductForm(product) {
   state.editingProductId = product.id;
   $("productNameInput").value = product.name;
+  $('productCodeInput').value=product.code||'';state.pendingProductPhotoName='';
   $("productDescriptionInput").value=product.description||'';$("productActiveInput").checked=product.active!==false;state.pendingProductPhoto=null;state.productPhotoVersion=(state.productPhotoVersion||0)+1;syncProductPhotoPreview();
   $("productCategoryInput").value = product.category;
   $("productUnitInput").value = product.unit;
@@ -3202,7 +3259,7 @@ function fillProductForm(product) {
     typeof product.minStock === "number" ? product.minStock : "";
   $("productFormStatusTitle").textContent = "Editar producto";
   $("productFormStatusText").textContent = "";
-  $("saveProductBtn").textContent = "Actualizar";
+  $("saveProductBtn").textContent = "Guardar";
   updateProductProjection();
   setProductMode("form");
   $("productNameInput").focus();
@@ -3254,7 +3311,7 @@ function renderAdminProducts() {
       <td data-label="Categoría">${escapeHtml(product.category)}</td><td data-label="Existencias">${typeof product.stockQuantity==='number'?escapeHtml(quantityText(product.stockQuantity,product.unit)):'—'}</td>
       <td data-label="Precio"><strong>${money(product.price)}</strong></td><td data-label="Estado"><span class="status-badge ${stockKind}">${escapeHtml(stockState)}</span>${isActive?'':'<small>Inactivo</small>'}</td>
       <td data-label="Acción"><div class="management-row-actions"><button class="quiet-btn" type="button" data-edit-product="${escapeHtml(product.id)}">Editar ›</button>
-      <details class="management-product-options"><summary>Más</summary><div><p>Existencia: ${typeof product.stockQuantity === "number" ? escapeHtml(quantityText(stock, product.unit)) : "Sin verificar"}</p>${Number(product.costPrice || 0) > 0 && typeof product.stockQuantity === "number" ? `<p>Costo: ${money(product.costPrice)}</p><p>Margen: ${projection.margin.toFixed(2)}% · Ganancia inventario: ${money(projection.profit)}</p>` : "<p>Costo o existencia pendiente de capturar</p>"}<button class="quiet-btn" type="button" data-toggle-product="${escapeHtml(product.id)}">${isActive ? "Pausar" : "Activar"}</button></div></details></div></td>
+      <details class="management-product-options"><summary>Más</summary><div><p>Existencia: ${typeof product.stockQuantity === "number" ? escapeHtml(quantityText(stock, product.unit)) : "Sin verificar"}</p>${isAdminUser() ? (Number(product.costPrice || 0) > 0 && typeof product.stockQuantity === "number" ? `<p>Costo: ${money(product.costPrice)}</p><p>Margen: ${projection.margin.toFixed(2)}% · Ganancia inventario: ${money(projection.profit)}</p>` : "<p>Costo o existencia pendiente de capturar</p>") : ''}<button class="quiet-btn" type="button" data-toggle-product="${escapeHtml(product.id)}">${isActive ? "Pausar" : "Activar"}</button></div></details></div></td>
     </tr>`;
   }).join("") + '</tbody></table></div>';
   bindCatalogPhotos(list);
@@ -3424,12 +3481,12 @@ function updateInventoryEntryProjection() {
   }
   $("entryCurrentStock").textContent = currentStock===null?'Sin verificar':quantityText(currentStock, unit);
   $("entryCurrentCost").textContent = `${money(currentCost)} / ${getUnitLabel(unit)}`;
-  $("entryPurchaseTotal").textContent = money(projection.investment);
-  $("entryProjectedRevenue").textContent = money(projection.revenue);
-  $("entryProjectedProfit").textContent = money(projection.profit);
-  $("entryMargin").textContent = `${projection.margin.toFixed(2)}%`;
+  $("entryPurchaseTotal").textContent = projection.valid?money(projection.investment):'Pendiente';
+  $("entryProjectedRevenue").textContent = projection.valid?money(projection.revenue):'Pendiente';
+  $("entryProjectedProfit").textContent = projection.valid?money(projection.profit):'Pendiente';
+  $("entryMargin").textContent = projection.valid?`${projection.margin.toFixed(2)}%`:'Pendiente';
   $("entryNewStock").textContent = !isNewProduct&&currentStock===null?'Requiere conteo inicial':quantityText(newStock, unit);
-  $("entryWeightedCost").textContent = `${money(weightedCost)} / ${getUnitLabel(unit)}`;
+  $("entryWeightedCost").textContent = projection.valid&&(isNewProduct||currentStock!==null)?`${money(weightedCost)} / ${getUnitLabel(unit)}`:'Pendiente';
   $("entryProjectedProfit").classList.toggle("negative-value", projection.profit < 0);
 }
 
@@ -3466,6 +3523,7 @@ async function saveInventoryEntry(event) { return saveInventoryReceipt(event); }
 
 function renderInventorySummary() {
   if (!$("inventoryInvestmentValue")) return;
+  if(!isAdminUser()){['inventoryInvestmentValue','catalogInventoryValue','inventoryProjectedValue','inventoryProjectedProfit'].forEach(id=>$(id).textContent='—');$('inventoryEntriesCount').textContent=String(state.inventoryEntries.length);return;}
 
   const totals = state.products.reduce((acc, product) => {
     if (typeof product.stockQuantity !== "number") return acc;
@@ -3515,9 +3573,9 @@ function renderInventoryEntries() {
         <div class="inventory-entry-main">
           <strong>${escapeHtml(entry.productName)}</strong>
           <span>${escapeHtml(label)} · ${escapeHtml(entry.id)} · ${escapeHtml(date)}${entry.reason || entry.notes ? ` · ${escapeHtml(entry.reason || entry.notes)}` : ""}</span>
-          <small>${receipt ? `${quantityText(entry.quantity, entry.unit)} a ${money(entry.unitCost)} · Costo promedio ${money(entry.weightedAverageCost)}` : `${stock(entry.previousStock)} → ${stock(entry.newStock)}`}</small>
+          <small>${receipt ? `${quantityText(entry.quantity, entry.unit)}${isAdminUser()?` a ${money(entry.unitCost)} · Costo promedio ${money(entry.weightedAverageCost)}`:''}` : `${stock(entry.previousStock)} → ${stock(entry.newStock)}`}</small>
         </div>
-        ${receipt ? `<div class="inventory-entry-value"><span>Inversión</span><strong>${money(entry.totalCost)}</strong></div>
+        ${receipt && isAdminUser() ? `<div class="inventory-entry-value"><span>Inversión</span><strong>${money(entry.totalCost)}</strong></div>
         <div class="inventory-entry-value"><span>Venta proyectada</span><strong>${money(entry.projectedRevenue)}</strong></div>
         <div class="inventory-entry-value profit"><span>Ganancia</span><strong>${money(entry.projectedProfit)}</strong></div>
         <span class="status-badge ${Number(entry.projectedProfit) >= 0 ? "ok" : "warn"}">${margin.toFixed(2)}%</span>` : `<div class="inventory-entry-value"><span>Existencias finales</span><strong>${stock(entry.newStock)}</strong></div>`}
@@ -3814,7 +3872,7 @@ const lastPurchaseText = lastPurchase
         <td data-label="Última entrada">${lastPurchase ? escapeHtml(lastPurchaseText) : "—"}</td>
         <td data-label="Acción"><button class="quiet-btn" type="button" data-inventory-details="${index}" aria-expanded="false" aria-controls="inventory-detail-${index}">Ver detalle ›</button></td>
       </tr><tr id="inventory-detail-${index}" class="management-detail-row" hidden><td colspan="6">
-        <div class="management-stock-detail"><div><strong>${escapeHtml(product.name)}</strong><p>Mínimo: ${escapeHtml(minText)} · Costo promedio: ${money(product.costPrice || 0)} · Precio: ${money(product.price || 0)}</p><p>Inversión: ${money(projection.investment)} · Ganancia: ${money(projection.profit)}</p><p>Última compra: ${escapeHtml(lastPurchaseText)}</p><p>${escapeHtml(movement.label)} · ${escapeHtml(movementSalesText)} · ${money(movement.revenue)}</p></div><button class="quiet-btn" type="button" data-edit-inventory="${escapeHtml(product.id)}">Ajustar</button></div>
+        <div class="management-stock-detail"><div><strong>${escapeHtml(product.name)}</strong><p>Mínimo: ${escapeHtml(minText)} · Precio: ${money(product.price || 0)}</p>${isAdminUser()?`<p>Costo promedio: ${Number(product.costPrice)>0?money(product.costPrice):'Pendiente'} · Inversión: ${projection.valid?money(projection.investment):'Pendiente'} · Ganancia: ${projection.valid?money(projection.profit):'Pendiente'}</p>`:''}<p>Última compra: ${escapeHtml(lastPurchaseText)}</p><p>${escapeHtml(movement.label)} · ${escapeHtml(movementSalesText)} · ${money(movement.revenue)}</p></div><button class="quiet-btn" type="button" data-edit-inventory="${escapeHtml(product.id)}">Ajustar</button></div>
       </td></tr>`;
     })
     .join("") + '</tbody></table></div>';
@@ -4204,6 +4262,7 @@ function syncPeriodInput(periodId, dateId) {
 }
 
 function getSaleProfit(sale) {
+  if(!isAdminUser())return {totalCost:0,grossProfit:0,margin:0};
   const total = Number(sale.total || 0);
 
   if (typeof sale.totalCost === "number" && typeof sale.grossProfit === "number") {
@@ -4748,6 +4807,7 @@ function moveDashboardCarousel(id, direction) {
 
 function selectDashboardMetric(metric, focus = false) {
   if (!["sales", "profit", "average", "count", "margin"].includes(metric)) return;
+  if(!isAdminUser()&&['profit','margin'].includes(metric))return;
   $("dashboardView").dataset.metric = metric;
   renderDashboard();
   if (focus) $("dashboardSalesChartCaption").focus();
@@ -4759,11 +4819,11 @@ function cycleDashboardView(kind, direction) {
     root.dataset.productMode = root.dataset.productMode === "slow" ? "top" : "slow";
     renderDashboard();
   } else if (kind === "metrics") {
-    const keys = ["sales", "profit", "average", "count", "margin"];
+    const keys = isAdminUser()?["sales", "profit", "average", "count", "margin"]:["sales","average","count"];
     const index = keys.indexOf(root.dataset.metric || "sales");
     selectDashboardMetric(keys[(index + direction + keys.length) % keys.length]);
   } else if (kind === "trends") {
-    const keys = ["profit", "average", "count"];
+    const keys = isAdminUser()?["profit", "average", "count"]:["average","count"];
     const index = keys.indexOf(root.dataset.trendMetric || "profit");
     root.dataset.trendMetric = keys[(index + direction + keys.length) % keys.length];
     renderDashboard();
@@ -5059,15 +5119,16 @@ function getDashboardPeriodTitle(filter, today = getLocalDateString()) {
 function renderDashboard() {
   const root = $("dashboardView");
   if (!root) return;
+  if(!isAdminUser()){if(['profit','margin'].includes(root.dataset.metric))root.dataset.metric='sales';if(!root.dataset.trendMetric||root.dataset.trendMetric==='profit')root.dataset.trendMetric='average';}
   const filter = getDashboardFilter();
   const sales = getCompletedSalesForPeriod(filter.period, filter.dateString, filter.endDateString);
   const totals = getSalesTotals(sales);
-  $("dashboardProfit").textContent = money(totals.profit);
-  $("dashboardReinvest").textContent = money(totals.cost);
+  $("dashboardProfit").textContent = isAdminUser()?money(totals.profit):'—';
+  $("dashboardReinvest").textContent = isAdminUser()?money(totals.cost):'—';
   $("dashboardTotalSales").textContent = money(totals.total);
   $("dashboardSalesCount").textContent = String(totals.count);
   $("dashboardAverageTicket").textContent = money(totals.count ? totals.total / totals.count : 0);
-  $("dashboardMargin").textContent = (totals.total ? totals.profit / totals.total * 100 : 0).toFixed(2) + "%";
+  $("dashboardMargin").textContent = isAdminUser()?(totals.total ? totals.profit / totals.total * 100 : 0).toFixed(2) + "%":'—';
   const periodTitle = getDashboardPeriodTitle(filter);
   $("dashboardPeriodCaption").textContent = periodTitle;
   $("dashboardPeriodDetail").hidden = periodTitle !== "Hoy";
@@ -5145,8 +5206,8 @@ function renderCashCut() {
   };
 
   $('cutTotalSales').textContent = money(totals.total);
-  $('cutGrossProfit').textContent = money(totals.profit);
-  $('cutMargin').textContent = `${margin.toFixed(2)}%`;
+  $('cutGrossProfit').textContent = isAdminUser()?money(totals.profit):'—';
+  $('cutMargin').textContent = isAdminUser()?`${margin.toFixed(2)}%`:'—';
   $('cutSalesCount').textContent = String(totals.count);
   $('cutCash').textContent = money(totals.cash);
   $('cutCard').textContent = money(totals.card);
@@ -5260,7 +5321,7 @@ function updateCashGateUi() {
   document.body.classList.toggle('cash-closed', !isOpen);
 
   if (statusButton) {
-    statusButton.textContent = isOpen ? 'Caja abierta' : 'Caja cerrada';
+    statusButton.textContent = {error:'Error de caja',opening:'Apertura pendiente',closing:'Cierre pendiente',closed:'Cierre realizado'}[state.cashStatus] || (isOpen ? 'Caja abierta' : 'Sin caja abierta');
     statusButton.classList.toggle('open', isOpen);
     statusButton.classList.toggle('closed', !isOpen);
     statusButton.setAttribute(
@@ -5575,6 +5636,8 @@ async function openCashShift() {
   });
   if (!confirmed) return;
 
+  state.cashStatus='opening';updateCashGateUi();
+
   const button = $('openCashShiftBtn');
   if (button) button.disabled = true;
 
@@ -5590,6 +5653,7 @@ async function openCashShift() {
 
     state.cashSessions = [session, ...state.cashSessions.filter((item) => item.id !== session.id)];
     state.currentCashSession = session;
+    state.cashStatus='open';
     $('openingCashInput').value = '';
     renderCashRegister();
     renderCashHistory();
@@ -5599,6 +5663,7 @@ async function openCashShift() {
     console.error(error);
     showToast(error.message || 'No se pudo abrir la caja.');
   } finally {
+    if(state.cashStatus==='opening')state.cashStatus='error';updateCashGateUi();
     if (button) button.disabled = false;
   }
 }
@@ -5676,6 +5741,8 @@ async function closeCashShift() {
   });
   if (!confirmed) return;
 
+  state.cashStatus='closing';updateCashGateUi();
+
   const button = $('closeCashShiftBtn');
   if (button) button.disabled = true;
 
@@ -5688,6 +5755,7 @@ async function closeCashShift() {
 
     state.cashSessions = state.cashSessions.map((item) => item.id === closedSession.id ? closedSession : item);
     state.currentCashSession = null;
+    state.cashStatus='closed';
     renderCashRegister();
     renderCashHistory();
     renderTicket();
@@ -5697,6 +5765,7 @@ async function closeCashShift() {
     console.error(error);
     showToast(error.message || 'No se pudo cerrar la caja.');
   } finally {
+    if(state.cashStatus==='closing')state.cashStatus='error';updateCashGateUi();
     if (button) button.disabled = false;
   }
 }
@@ -5756,8 +5825,7 @@ function printCashCut() {
       <p>${escapeHtml(dateString)}</p>
       <div class="line"></div>
       <div class="receipt-row"><span>Total</span><strong>${$('cutTotalSales').textContent}</strong></div>
-      <div class="receipt-row"><span>Ganancia</span><strong>${$('cutGrossProfit').textContent}</strong></div>
-      <div class="receipt-row"><span>Margen</span><strong>${$('cutMargin').textContent}</strong></div>
+      ${isAdminUser()?`<div class="receipt-row"><span>Ganancia</span><strong>${$('cutGrossProfit').textContent}</strong></div><div class="receipt-row"><span>Margen</span><strong>${$('cutMargin').textContent}</strong></div>`:''}
       <div class="receipt-row"><span>Ventas</span><strong>${$('cutSalesCount').textContent}</strong></div>
       <div class="line"></div>
       <div class="receipt-row"><span>Efectivo</span><strong>${$('cutCash').textContent}</strong></div>
@@ -5833,7 +5901,7 @@ function getGeneratedReport() {
     dateString,
     endDateString,
     caption: getReportPeriodCaption(period, dateString, endDateString),
-    totals,
+    totals:isAdminUser()?totals:Object.fromEntries(Object.entries(totals).filter(([key])=>!['profit','cost'].includes(key))),
     headers: [],
     rows: [],
     kpis: []
@@ -5857,7 +5925,7 @@ function getGeneratedReport() {
         ["Ingreso acumulado", money(totals.total)],
         ["Productos con venta", String(products.length)],
         ["Ventas", String(totals.count)],
-        ["Margen", `${margin.toFixed(2)}%`]
+        isAdminUser()?["Margen", `${margin.toFixed(2)}%`]:["Productos distintos",String(products.length)]
       ]
     };
   }
@@ -5879,7 +5947,7 @@ function getGeneratedReport() {
       ...base,
       eyebrow: "Reporte de inventario",
       title: "Existencias actuales",
-      headers: ["Producto", "Categoría", "Existencia", "Mínimo", "Estado", "Valor"],
+      headers: ["Producto", "Categoría", "Existencia", "Mínimo", "Estado", ...(isAdminUser()?["Valor"]:[])],
       rows: activeProducts
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((product) => {
@@ -5888,18 +5956,18 @@ function getGeneratedReport() {
           return [
             product.name,
             product.category,
-            quantityText(stock, product.unit),
+            typeof product.stockQuantity==='number'?quantityText(stock, product.unit):'Sin verificar',
             quantityText(Number(product.minStock || 0), product.unit),
             statusLabel,
-            money(stock * Number(product.costPrice || 0))
+            ...(isAdminUser()?[typeof product.stockQuantity==='number'&&Number(product.costPrice)>0?money(stock*product.costPrice):'Pendiente']:[])
           ];
         }),
-      kpis: [
-        ["Valor invertido", money(inventoryValue)],
+      kpis: isAdminUser()?[
+        ["Valor invertido", activeProducts.every(p=>typeof p.stockQuantity==='number'&&Number(p.costPrice)>0)?money(inventoryValue):'Pendiente'],
         ["Productos activos", String(activeProducts.length)],
         ["Inventario bajo", String(lowStock.length)],
-        ["Venta proyectada", money(projectedValue)]
-      ]
+        ["Venta proyectada", activeProducts.every(p=>typeof p.stockQuantity==='number'&&Number(p.price)>0)?money(projectedValue):'Pendiente']
+      ]:[["Productos activos",String(activeProducts.length)],["Con conteo",String(activeProducts.filter(p=>typeof p.stockQuantity==='number').length)],["Inventario bajo",String(lowStock.length)],["Sin verificar",String(activeProducts.filter(p=>typeof p.stockQuantity!=='number').length)]]
     };
   }
 
@@ -5922,7 +5990,7 @@ function getGeneratedReport() {
       ["Total vendido", money(totals.total)],
       ["Ventas", String(totals.count)],
       ["Ticket promedio", money(totals.count > 0 ? totals.total / totals.count : 0)],
-      ["Margen", `${margin.toFixed(2)}%`]
+      isAdminUser()?["Margen", `${margin.toFixed(2)}%`]:["Productos distintos",String(getProductSalesFromSales(sales).size)]
     ]
   };
 }
@@ -6052,7 +6120,7 @@ function syncReportPresentation(report) {
   const notes = report.type === "inventory" ? ["Costo total actual", "Existencias actuales", "En el mínimo o por debajo", "Valor a precio de venta"] : report.type === "products" ? ["Ventas del periodo", "Productos distintos vendidos", "Operaciones completadas", "Utilidad bruta / ventas"] : ["Ventas del periodo", "Operaciones completadas", "Por venta completada", "Utilidad bruta / ventas"];
   ["Primary", "Secondary", "Third", "Fourth"].forEach((id, index) => {
     $("reportKpi" + id + "Icon").innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + paths[icons[index]] + '</svg>';
-    $("reportKpi" + id + "Note").textContent = notes[index];
+    $("reportKpi" + id + "Note").textContent = isAdminUser()?notes[index]:'Información operativa autorizada';
   });
 }
 

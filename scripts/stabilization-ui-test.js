@@ -7,6 +7,7 @@ function checkoutHarness(storage=new Map()){
   const nodes=new Map(),calls=[],node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',disabled:false,textContent:'',attributes:new Map(),setAttribute(k,v){this.attributes.set(k,v);},focus(){}});return nodes.get(id);};
   const state={sessionAuthenticated:true,currentUser:{id:'owner',role:'admin'},checkoutGeneration:0,ticket:[{productId:'piece',quantity:1,total:100}],sales:[],paymentMethod:'efectivo',paymentReference:'',discount:0};
   const context={state,crypto,console:{error(){}},$:node,$$:()=>[],sessionStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},window:{setTimeout(){},print(){}},getSalesCashShift:()=>({id:'cash',businessDate:'2026-10-28'}),closeInvoiceDecisionModal(){},goToCashRegister(){},setPosStep(){},updatePaymentUi(){},setPaymentMethod:v=>{state.paymentMethod=v;},buildReceipt:sale=>calls.push(['receipt',sale.id]),renderTicket(){},clearSelectedProduct(){},updateTicketId(){},loadProducts:async()=>{},loadCashSessions:async()=>{},renderCashRegister(){},renderWeighPanel(){},updateTotals(){node('chargeBtn').disabled=state.ticket.length===0;node('clearTicketBtn').disabled=state.ticket.length===0;},showToast:message=>calls.push(['toast',message]),canAccessView:()=>true,setView(){}};
+  context.prevalidateCheckoutStock=async()=>true;
   load(context,['getCheckoutIntentId','persistPendingCheckout','restorePendingCheckout','syncCheckoutControls','chargeSale']);return {c:context,s:state,n:node,calls,storage};
 }
 const result={id:'T-SYNTHETIC',items:[],total:100};
@@ -36,7 +37,7 @@ test('Errores definidos desbloquean la captura; una respuesta tardía no modific
   const h=checkoutHarness();h.c.fetchJson=async()=>{throw Object.assign(Error('Dato inválido'),{status:400});};await h.c.chargeSale(false);
   assert.equal(h.s.checkoutPending,null);assert.equal(h.s.ticket.length,1);assert.equal(h.n('ticketItems').inert,false);
   let resolve;h.c.fetchJson=()=>new Promise(r=>{resolve=r;});const pending=h.c.chargeSale(false);
-  h.s.checkoutGeneration++;h.s.currentUser={id:'other',role:'employee'};h.s.ticket=[{productId:'another'}];h.s.sales=[];resolve(result);await pending;
+  await new Promise(setImmediate);h.s.checkoutGeneration++;h.s.currentUser={id:'other',role:'employee'};h.s.ticket=[{productId:'another'}];h.s.sales=[];resolve(result);await pending;
   assert.equal(h.s.ticket[0].productId,'another');assert.equal(h.s.sales.length,0);
 });
 

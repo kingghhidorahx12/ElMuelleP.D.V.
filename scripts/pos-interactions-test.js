@@ -28,10 +28,10 @@ function harness() {
     setPosStep(){},requestScaleWeight(){calls.push('scale');},showToast:x=>calls.push(x),
     updateManualQuantityUi(){},verifyAdminPin:async()=>{},money:x=>`$${x}`,pieceStockText:x=>`${x} pzas`,quantityText:x=>String(x),
     getCheckoutIntentId:()=> 'synthetic-intent-0001', getSalesCashShift:()=>({id:'synthetic-cash'}),
-    roundCurrency:x=>Math.round(x*100)/100};
+    isAdminUser:()=>true,roundCurrency:x=>Math.round(x*100)/100};
   vm.createContext(context);
   for (const name of ['selectProduct','focusCatalogProduct','syncProductSelection','clearSelectedProduct',
-    'validatePieceQuantity','updatePieceQuantityModal','openPieceQuantityModal','closePieceQuantityModal',
+    'getTicketStockErrors','validatePieceQuantity','updatePieceQuantityModal','openPieceQuantityModal','closePieceQuantityModal',
     'confirmPieceQuantity','getEffectiveQuantity','addCurrentProductToTicket','openManualModal','closeManualModal',
     'saveManualQuantity','getManualQuantityValue']) {
     const match=source.match(new RegExp(`^(?:async )?function ${name}\\([^]*?^}`, 'm'));
@@ -97,12 +97,13 @@ test('existing scale UI distinguishes disconnected, connected and error without 
   assert.equal(h.n('scaleStatusPill').textContent,'Error de báscula');
 });
 test('micro feedback honors OS preference, internal preference and background visibility',()=>{
-  const h=harness(); let count=0;
+  const h=harness(); let count=0,frames;
   Object.assign(h.c,{posMicroMotion:{matches:true},posReducedMotion:false,posFeedbackByElement:new WeakMap(),activePosFeedback:new Set()});
   vm.runInContext(source.match(/^function animatePosFeedback\([^]*?^}/m)[0],h.c);
-  const element={animate(){count++;return {cancel(){},finished:Promise.resolve()};}};
+  const element={animate(values){frames=values;count++;return {cancel(){},finished:Promise.resolve()};}};
   h.c.animatePosFeedback(element); assert.equal(count,0);
   h.c.posMicroMotion.matches=false; h.c.posReducedMotion=true; h.c.animatePosFeedback(element); assert.equal(count,0);
   h.c.posReducedMotion=false; h.c.document.hidden=true; h.c.animatePosFeedback(element); assert.equal(count,0);
   h.c.document.hidden=false; h.c.animatePosFeedback(element); assert.equal(count,1);
+  h.c.animatePosFeedback(element,'navigation'); assert.equal(count,2); assert.ok(frames.every(frame=>!frame.transform));
 });

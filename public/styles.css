@@ -2349,12 +2349,10 @@ body:where(:not(.pos-approved):not(.atelier-shell)):not(.sidebar-collapsed) .ses
 @keyframes viewEnter {
   from {
     opacity: 0;
-    transform: translateY(8px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -2979,11 +2977,9 @@ body:where(:not(.pos-approved):not(.atelier-shell)):not(.sidebar-collapsed) .ses
 @keyframes employeeNavIn {
   from {
     opacity: 0;
-    transform: translateX(-5px);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
   }
 }
 
@@ -3597,7 +3593,7 @@ body:where(:not(.pos-approved):not(.atelier-shell)):not(.sidebar-collapsed) .ses
   border-color: rgba(201, 154, 62, 0.72);
   background: #fff8e7;
   box-shadow: 0 12px 28px rgba(16, 33, 61, 0.12);
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .access-user-card span {
@@ -5930,7 +5926,7 @@ textarea {
 }
 
 #inventoryView .inventory-row.financial:hover {
-  transform: translateY(-1px);
+  transform: none;
   box-shadow: 0 13px 28px rgba(6, 43, 95, 0.11);
 }
 
@@ -6958,7 +6954,7 @@ body:where(:not(.pos-approved):not(.atelier-shell)):not(.has-topbar-context) .to
 }
 
 #inventoryView .entry-mode-toggle button:hover {
-  transform: translateY(-1px);
+  transform: none;
   background: rgba(255, 255, 255, 0.72);
 }
 
@@ -7772,7 +7768,7 @@ body:where(:not(.pos-approved):not(.atelier-shell)):not(.has-topbar-context) .to
 
 #reportsView .cash-denomination-card:hover,
 #reportsView .cash-denomination-card:focus-within {
-  transform: translateY(-2px);
+  transform: none;
   border-color: rgba(214,154,45,.46);
   box-shadow: 0 13px 24px rgba(10,36,62,.11);
 }
@@ -8569,7 +8565,7 @@ body:where(:not(.pos-approved):not(.atelier-shell)):has(#cashCounterPanel:not(.h
 
 #reportsView .cash-denomination-card:hover,
 #reportsView .cash-denomination-card:focus-within {
-  transform: translateY(-2px);
+  transform: none;
   border-color: rgba(201,154,62,0.38);
   box-shadow: 0 14px 28px rgba(10, 36, 62, 0.08);
 }
@@ -10004,7 +10000,7 @@ h5,
 
 #inventoryView .entry-mode-toggle button:hover,
 .subview-tabs button:hover {
-  transform: translateY(-1px);
+  transform: none;
   background: rgba(255, 255, 255, 0.72) !important;
 }
 
@@ -10441,7 +10437,7 @@ h5,
 }
 
 .access-user-card:hover {
-  transform: translateY(-1px);
+  transform: none;
   background: rgba(255, 255, 255, 0.72);
   box-shadow: none;
 }
@@ -10596,8 +10592,8 @@ select {
 }
 
 @keyframes product-card-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes product-image-shimmer {
@@ -10744,8 +10740,8 @@ select {
 :where(body:where(:not(.pos-approved):not(.atelier-shell))) .app-view.active.view-entering { animation: app-view-in 290ms cubic-bezier(.22,.8,.26,1) both; }
 
 @keyframes app-view-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 :where(body:where(:not(.pos-approved):not(.atelier-shell))) .sidebar,
@@ -10763,12 +10759,12 @@ body:where(:not(.pos-approved):not(.atelier-shell)).sidebar-expanding .sidebar .
 body:where(:not(.pos-approved):not(.atelier-shell)).sidebar-expanding .sidebar .session-box { animation: sidebar-content-in 250ms 20ms ease both; }
 
 @keyframes sidebar-content-out {
-  to { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 0; }
 }
 
 @keyframes sidebar-content-in {
-  from { opacity: 0; transform: translateX(-10px); }
-  to { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* La ventana de primer arranque conserva una escala amable y sin contenido recortado. */
@@ -10990,8 +10986,8 @@ body:is(.pos-approved,.atelier-shell) .nav-item > span { position:absolute; left
 body:is(.pos-approved,.atelier-shell) .nav-item[data-view="billing"] > span { width:calc(100% - 44px); font-size:10.5px; letter-spacing:-.1px; white-space:nowrap; }
 body:is(.pos-approved,.atelier-shell) .nav-item[hidden] { display:none; }
 body:is(.pos-approved,.atelier-shell) .nav-item::before,body:is(.pos-approved,.atelier-shell) .nav-item::after { content:none; }
-body:is(.pos-approved,.atelier-shell) .nav-item:hover { background:#a4dcff26; box-shadow:none; }
-body:is(.pos-approved,.atelier-shell) .nav-item:active { background:#a4dcff36; }
+body:is(.pos-approved,.atelier-shell) .nav-item:not(.active):hover { background:rgba(164,220,255,.07); border-color:#a4dcff38; box-shadow:none; }
+body:is(.pos-approved,.atelier-shell) .nav-item:not(.active):active { background:#a4dcff1a; }
 body:is(.pos-approved,.atelier-shell) .nav-item:focus-visible { outline:2px solid #ffd16c; outline-offset:-2px; }
 body:is(.pos-approved,.atelier-shell) .nav-item.active { color:#06234a; background:linear-gradient(#f7fcff,#e8f4ff); border-color:#9ccce9; box-shadow:none; font-weight:650; }
 body:is(.pos-approved,.atelier-shell) .nav-item .pos-nav-icon { color:var(--nav-icon,#bedfff); }
@@ -11064,8 +11060,8 @@ body:is(.pos-approved,.atelier-shell) .pos-clock-icon { width:16px; height:16px;
 body:is(.pos-approved,.atelier-shell) #ticketToggleBtn { position:relative; display:grid; place-items:center; flex:0 0 96px; width:96px; min-height:32px; margin:0; padding:6px 8px; border:1px solid #eab33f; border-radius:6px; background:var(--atelier-button-gold); color:#06234a; font-size:11px; font-weight:750; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; box-shadow:none; }
 body:is(.pos-approved,.atelier-shell) #ticketToggleBtn:hover { border-color:#c98b16; background:var(--atelier-button-gold-hover); }
 body:is(.pos-approved,.atelier-shell) #ticketToggleBtn.active { border-color:#c98b16; box-shadow:inset 0 0 0 1px #c98b1650; }
-body:is(.pos-approved,.atelier-shell) #ticketToggleText { grid-area:1/1; opacity:1; transform:translateY(0); transition:opacity .18s ease,transform .18s ease; }
-body:is(.pos-approved,.atelier-shell) #ticketToggleBtn.ticket-label-out #ticketToggleText { opacity:0; transform:translateY(-3px); transition-duration:.16s; }
+body:is(.pos-approved,.atelier-shell) #ticketToggleText { grid-area:1/1; opacity:1; transform:translateY(0); transition:opacity .18s ease; }
+body:is(.pos-approved,.atelier-shell) #ticketToggleBtn.ticket-label-out #ticketToggleText { opacity:0; transform:none; transition-duration:.16s; }
 body:is(.pos-approved,.atelier-shell) .workspace { grid-column:1; grid-row:2; min-height:0; min-width:0; height:100%; margin:0; padding:6px 10px 6px 36px; overflow:visible; }
 body:is(.pos-approved,.atelier-shell) .app-view:not(.active) { display:none; }
 body:is(.pos-approved,.atelier-shell) #posView.active { display:block; height:100%; min-height:0; padding:0; }
@@ -11249,10 +11245,10 @@ body.pos-approved #chargeBtn { width:100%; min-height:46px; padding:10px; border
 body.pos-approved #chargeBtn:disabled { opacity:.65; }
 body.pos-approved #chargeBtn:not(:disabled):hover { background:var(--atelier-button-gold-hover); border-color:#cc951f; }
 body.pos-approved #clearTicketBtn { min-height:32px; width:100%; padding:6px 10px; border:1px solid #d4e6f3; border-radius:7px; background:#eff7fd; color:#34577b; font-size:11px; font-weight:600; }
-body.pos-approved .weigh-panel { display:none; opacity:0; transform:translateY(4px); pointer-events:none; transition:opacity 180ms ease,transform 180ms ease,display 180ms allow-discrete; position:absolute; z-index:4; left:12px; right:12px; bottom:12px; grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr); gap:10px 28px; padding:16px 18px 16px; border:1px solid #d3e5f1; border-radius:16px; background:linear-gradient(120deg,#fff,#eff7fd); isolation:isolate; backdrop-filter:blur(12px); box-shadow:0 16px 40px #061b3733; color:var(--pos-navy); }
+body.pos-approved .weigh-panel { display:none; opacity:0; transform:none; pointer-events:none; transition:opacity 180ms ease,display 180ms allow-discrete; position:absolute; z-index:4; left:12px; right:12px; bottom:12px; grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr); gap:10px 28px; padding:16px 18px 16px; border:1px solid #d3e5f1; border-radius:16px; background:linear-gradient(120deg,#fff,#eff7fd); isolation:isolate; backdrop-filter:blur(12px); box-shadow:0 16px 40px #061b3733; color:var(--pos-navy); }
 body.pos-approved.product-selected .weigh-panel { display:grid; opacity:1; transform:none; pointer-events:auto; }
 body.pos-approved .weigh-panel[data-close-immediate] { transition:none; }
-@starting-style { body.pos-approved.product-selected .weigh-panel { opacity:0; transform:translateY(4px); } }
+@starting-style { body.pos-approved.product-selected .weigh-panel { opacity:0; transform:none; } }
 body.pos-approved .weigh-panel > .pos-tide { display:none; }
 body.pos-approved .weigh-heading { align-self:start; }
 body.pos-approved .weigh-photo-space { position:relative; display:flex; align-items:center; justify-content:flex-end; gap:14px; min-width:0; min-height:80px; }
@@ -11417,9 +11413,9 @@ body.atelier-shell #reportsView[data-reports-mode="cash"].active { height:auto; 
 #reportsView .cashdesk-expected > div { display:grid; gap:7px; min-width:0; }
 #reportsView .cashdesk-expected span { font-size:var(--summary-label-size); line-height:1.3; color:#eef8ff; }
 #reportsView .cashdesk-expected strong { color:white; font-size:var(--summary-value-size); line-height:1.15; font-weight:700; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
-#reportsView .cashdesk-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; padding:0; margin-bottom:6px; border:0; background:none; box-shadow:none; }
-#reportsView .cashdesk-kpis article { display:flex; align-items:center; gap:12px; min-width:0; min-height:62px; padding:11px 14px; border:1px solid #c5deef; border-radius:12px; background:linear-gradient(130deg,#fff,#f5faff); box-shadow:inset 0 1px #fff,0 6px 16px #174c7514; }
-#reportsView .cashdesk-kpis article:last-child { border:1px solid #c5deef; }
+#reportsView .cashdesk-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; padding:0; margin-bottom:6px; border:1px solid #c5deef; border-radius:10px; background:linear-gradient(130deg,#ffffffd9,#f5faffd9); box-shadow:none; overflow:hidden; }
+#reportsView .cashdesk-kpis article { display:flex; align-items:center; gap:12px; min-width:0; min-height:62px; padding:11px 14px; border:0; border-radius:0; background:none; box-shadow:none; }
+#reportsView .cashdesk-kpis article + article { border-left:1px solid #d7e9f4; }
 #reportsView .cashdesk-kpis article > div { display:grid; gap:5px; min-width:0; }
 #reportsView .cashdesk-kpis article > div > span { font-size:13px; color:var(--atelier-muted); }
 #reportsView .cashdesk-kpis strong { font-size:20px; line-height:1.2; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
@@ -11428,9 +11424,9 @@ body.atelier-shell #reportsView[data-reports-mode="cash"].active { height:auto; 
 #reportsView .cashdesk-kpi-sales .cashdesk-kpi-icon { color:#1263d7; background:#e9f4ff; }
 #reportsView .cashdesk-kpi-in .cashdesk-kpi-icon { color:#098c63; background:#dcf4e9; }
 #reportsView .cashdesk-kpi-out .cashdesk-kpi-icon { color:#e02b40; background:#ffe7ec; }
-#reportsView .cashdesk-tabs { display:flex; gap:0; padding:0; overflow:hidden; border:1px solid #d8e7f1; border-radius:10px; background:#eaf3f9; }
-#reportsView .cashdesk-tabs button { display:flex; align-items:center; justify-content:center; gap:12px; flex:1; min-width:0; min-height:42px; padding:8px; border:0; border-right:1px solid #d8e7f1; border-bottom:3px solid transparent; border-radius:0; background:transparent; color:var(--atelier-muted); font:600 13px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; cursor:pointer; transition:color .18s ease,border-color .18s ease; }
-#reportsView .cashdesk-tabs button[aria-selected="true"] { color:#fff; background:var(--atelier-button-blue); border-bottom-color:var(--atelier-button-blue-border); box-shadow:none; }
+#reportsView .cashdesk-tabs { display:flex; gap:0; padding:3px; overflow:hidden; border:1px solid #c7deee; border-radius:10px; background:linear-gradient(110deg,#edf7fd,#f5fbff); outline:none; }
+#reportsView .cashdesk-tabs button { display:flex; align-items:center; justify-content:center; gap:12px; flex:1; min-width:0; min-height:38px; padding:8px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--atelier-muted); font:600 13px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; cursor:pointer; transition:color .18s ease,border-color .18s ease; }
+#reportsView .cashdesk-tabs button[aria-selected="true"] { color:#fff; background:var(--atelier-button-blue); border-color:var(--atelier-button-blue-border); box-shadow:none; }
 #reportsView .cashdesk :is(button,input,select):focus-visible { outline:2px solid #217ca9; outline-offset:3px; }
 body.pos-motion-reduced #reportsView .cashdesk-tabs button { transition:none; }
 #reportsView .cashdesk-pane { display:grid; gap:10px; min-width:0; outline-offset:4px; }
@@ -11547,7 +11543,9 @@ body.role-employee #reportsView .cashdesk-actions { grid-template-columns:repeat
   #reportsView .cashdesk-expected { margin-left:0; padding:16px; border:0; }
   #reportsView .cashdesk-expected strong { font-size:var(--summary-value-size); }
   #reportsView .cashdesk-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  #reportsView .cashdesk-kpis { gap:10px; }
+  #reportsView .cashdesk-kpis { gap:0; }
+  #reportsView .cashdesk-kpis article:nth-child(3) { border-left:0; }
+  #reportsView .cashdesk-kpis article:nth-child(n+3) { border-top:1px solid #d7e9f4; }
   #reportsView .cashdesk-kpis article { padding:12px; gap:8px; min-height:74px; }
   #reportsView .cashdesk-kpi-icon { width:30px; height:30px; }
   #reportsView .cashdesk-kpis strong { font-size:18px; }
@@ -11586,6 +11584,7 @@ body.atelier-shell #reportsView .report-kpis { --summary-art:url("./assets/pos/a
 
 body.atelier-shell .summary-banner { --summary-radius:14px; --summary-indicator-height:104px; --summary-label-size:12px; --summary-value-size:23px; position:relative; isolation:isolate; gap:0; overflow:hidden; border:1px solid #bfdef0; border-radius:var(--summary-radius); background:#edf8ff; box-shadow:0 6px 18px #1c597914; }
 /* El paisaje se solapa bajo el bloque destacado y funde su extremo con la superficie. */
+body.atelier-shell :is(#dashboardView,#productsView,#inventoryView,#reportsView) .summary-banner { box-shadow:inset 0 0 0 1px #d8ecf680; }
 body.atelier-shell .summary-banner::before { content:""; position:absolute; inset:0 0 0 calc(var(--summary-scene-start,25%) - 24px); background:var(--summary-seascape); mask-image:linear-gradient(90deg,transparent,#000 24px); pointer-events:none; z-index:0; }
 body.atelier-shell .summary-banner > * { position:relative; z-index:1; }
 body.atelier-shell .summary-banner:not(.cashdesk-summary) > :nth-child(2) { grid-column:3; }
@@ -11628,6 +11627,7 @@ body.atelier-shell label { color:var(--atelier-muted); font-size:12px; font-weig
 body.atelier :is(.solid-btn,.warning-btn) { background:var(--atelier-button-gold); box-shadow:0 2px 4px #174c7510; }
 body.atelier-shell :is(.solid-btn,.warning-btn) { min-height:38px; border:1px solid #eab33f; border-radius:7px; background:var(--atelier-button-gold); color:#06234a; box-shadow:none; font-size:13px; font-weight:650; }
 body.atelier-shell :is(.quiet-btn,.ghost-btn,.chip,.icon-btn) { border:1px solid #d4e5f1; border-radius:7px; background:#eff6fc; color:var(--atelier-ink); box-shadow:none; }
+body.atelier :is(.quiet-btn,.ghost-btn,.danger-soft-btn) { font-size:12px; font-weight:600; line-height:1.25; }
 body.atelier-shell :is(.subview-tabs,.segmented-control) { border:0; background:transparent; box-shadow:none; gap:6px; }
 body.atelier-shell .subview-tabs button { min-height:36px; padding:8px 14px; border:1px solid var(--atelier-line); border-radius:7px; background:#eff6fc; color:var(--atelier-ink); font-size:12px; }
 body.atelier-shell .subview-tabs button.active { background:var(--atelier-button-blue); color:white; border-color:var(--atelier-button-blue-border); }
@@ -11717,12 +11717,12 @@ body.atelier-shell .management-toolbar-action { margin-left:auto; white-space:no
 body.atelier-shell .management-photo { display:block; flex:none; width:44px; height:38px; overflow:hidden; border-radius:6px; background:#e4eff7; }
 body.atelier-shell .management-photo img { display:block; width:100%; height:100%; object-fit:cover; }
 body.atelier-shell .management-photo.missing::after { content:"Sin foto"; display:grid; place-items:center; height:100%; color:#45648a; font-size:10px; }
-body.atelier-shell :is(.management-table-panel,.management-activity-panel) { min-width:0; padding:14px; border:1px solid #bcdff5; border-radius:12px; background:linear-gradient(125deg,#ffffffeb,#edf7ffed); box-shadow:0 7px 18px #174c7510; }
+body.atelier-shell :is(.management-table-panel,.management-activity-panel) { min-width:0; padding:14px; border:1px solid #bfdeee; border-radius:12px; background:linear-gradient(125deg,#ffffffeb,#edf7ffed); box-shadow:0 2px 6px #174c7508; }
 body.atelier-shell :is(.management-table-panel,.management-activity-panel) > h3 { margin:0 0 10px; font-size:17px; }
 body.atelier-shell .management-table-scroll { min-width:0; overflow-x:auto; }
 body.atelier-shell .management-table { position:relative; table-layout:fixed; width:100%; border-collapse:collapse; background:transparent; font-size:12px; }
 body.atelier-shell .management-table :is(th,td) { padding:10px; text-align:left; vertical-align:middle; border-bottom:1px solid #cfe4f2; overflow-wrap:anywhere; }
-body.atelier-shell .management-table th { background:#d8eaf8; color:#45648a; font-size:11px; }
+body.atelier-shell .management-table th { background:#eaf6fc; color:#45648a; font-size:11px; }
 body.atelier-shell .management-table th:first-child { width:30%; }
 body.atelier-shell .management-table th:last-child { width:17%; }
 body.atelier-shell .management-table tbody tr:nth-child(even):not(.management-detail-row) { background:#eaf5fc7a; }
@@ -11754,6 +11754,18 @@ body.atelier-shell .management-stock-detail p { color:#45648a; margin:7px 0; fon
 body.atelier-shell .management-inventory-editor { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:12px; }
 body.atelier-shell .management-inventory-editor > :is(div:first-child,.wide,.inventory-actions) { grid-column:1/-1; }
 @media (max-width:1100px) { body.atelier-shell .management-inventory-grid { grid-template-columns:minmax(0,1fr); } }
+@media (min-width:761px) and (max-width:1200px) {
+body.atelier-shell :is(#productsView,#inventoryView) .management-indicators.summary-banner,
+body.atelier-shell #reportsView .report-kpis.summary-banner { grid-template-columns:repeat(2,minmax(0,1fr)); }
+body.atelier-shell :is(#productsView,#inventoryView,#reportsView) .summary-banner > :nth-child(2) { grid-column:auto; }
+body.atelier-shell :is(#productsView,#inventoryView) .management-indicator:nth-child(n+3),
+body.atelier-shell #reportsView .report-kpis > article:nth-child(n+3) { border-top:1px solid #c5dfef; }
+body.atelier-shell :is(#productsView,#inventoryView) .management-indicator:nth-child(3),
+body.atelier-shell #reportsView .report-kpis > article:nth-child(3) { border-left:0; }
+body.atelier-shell :is(#productsView,#inventoryView) .management-indicator strong,
+body.atelier-shell #reportsView .report-kpis strong { overflow:visible; text-overflow:clip; white-space:nowrap; overflow-wrap:normal; }
+body.atelier-shell :is(#productsView,#inventoryView) .management-table { min-width:700px; }
+}
 @media (max-width:760px) {
 body.atelier-shell .summary-banner { --summary-indicator-height:138px; --summary-value-size:20px; }
 body.atelier-shell .summary-banner::before { inset:calc(50% - 24px) 0 0; mask-image:linear-gradient(180deg,transparent,#000 24px); }
@@ -11811,6 +11823,7 @@ body.atelier-shell #dashboardView.active { overflow:visible; padding:0; }
 #dashboardView .business-filters select { width:auto; }
 #dashboardView .business-filters input { width:142px; }
 body.atelier-shell #dashboardView .business-kpis.summary-banner { --summary-scene-start:calc((100% - var(--summary-scene-slot)) * 1.4 / 5.4); display:grid; grid-template-columns:minmax(0,1.4fr) var(--summary-scene-slot) repeat(4,minmax(0,1fr)); }
+#dashboardView .business-kpis.summary-banner > article:not(:first-child) { border-radius:9px; box-shadow:inset 0 0 0 1px #c4e1f0; }
 #dashboardView .business-kpi { position:relative; isolation:isolate; display:flex; align-items:center; gap:12px; min-width:0; min-height:104px; padding:14px; color:#12395e; overflow:hidden; }
 #dashboardView .business-kpi > div { display:grid; flex:1; gap:7px; min-width:0; }
 #dashboardView .business-kpi > div > span { font-size:12px; line-height:1.3; }
@@ -11898,6 +11911,10 @@ body.pos-motion-reduced #dashboardView .business-card button { transition:none; 
  body.atelier-shell #dashboardView .business-kpis.summary-banner > :nth-child(2) { grid-column:auto; }
  #dashboardView .business-row-analysis { grid-template-columns:repeat(2,minmax(0,1fr)); }
  #dashboardView .business-row-analysis > :last-child { grid-column:1 / -1; }
+}
+@media (min-width:761px) and (max-width:900px) {
+ body.atelier-shell #dashboardView .business-kpis.summary-banner { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ #dashboardView .business-kpi-0 { grid-column:1/-1; }
 }
 @media (max-width:760px) {
  body.atelier-shell #dashboardView .business-kpis.summary-banner { --summary-art-wash:linear-gradient(90deg,#edf8ffc7,#edf8fff2 70%,#edf8ff); grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -12160,9 +12177,9 @@ body.atelier-shell:has(#reportsView[data-reports-mode="reports"].active) .app-sh
 body.atelier-shell #reportsView[data-reports-mode="reports"].active { height:auto; min-height:100%; overflow:clip; overscroll-behavior:auto; }
 body.atelier-shell #reportsView[data-reports-mode="reports"] .report-generator-panel { height:auto; min-height:100%; grid-template-rows:auto auto; align-content:start; gap:14px; padding:12px; overflow:visible; }
 body.atelier-shell #reportsView .report-content { display:grid; gap:14px; min-width:0; }
-body.atelier-shell #reportsView .report-controls { display:grid; gap:14px; min-width:0; padding:12px; border:1px solid var(--atelier-line); border-radius:12px; background:var(--atelier-heading-surface); }
+body.atelier-shell #reportsView .report-controls { display:grid; gap:14px; min-width:0; padding:12px; border:1px solid #c7deee; border-radius:12px; background:var(--atelier-heading-surface); }
 body.atelier-shell #reportsView .report-control-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
-body.atelier-shell #reportsView .report-type-tabs { display:flex; flex-wrap:wrap; gap:0; min-width:0; padding:3px; border:1px solid #d2e6f5; border-radius:11px; background:linear-gradient(110deg,#e7f4ff,#f5fbff); }
+body.atelier-shell #reportsView .report-type-tabs { display:flex; flex-wrap:wrap; gap:0; min-width:0; padding:3px; border:1px solid #c7deee; border-radius:10px; background:linear-gradient(110deg,#edf7fd,#f5fbff); outline:none; }
 body.atelier-shell #reportsView .report-output-actions { display:flex; flex-wrap:wrap; gap:8px; }
 body.atelier-shell #reportsView .report-controls button { display:inline-flex; justify-content:center; align-items:center; gap:7px; min-height:38px; padding:7px 12px; font-size:12px; white-space:nowrap; }
 body.atelier-shell #reportsView .report-controls button svg { width:18px; height:18px; flex:none; }
@@ -12252,6 +12269,7 @@ body.atelier-shell #reportsView .report-payment-legend small { color:#426385; fo
  body.atelier-shell #reportsView .report-field:first-child { flex-basis:100%; }
  body.atelier-shell #reportsView :is(#reportDateField,#reportEndDateField) { flex-basis:100%; }
  body.atelier-shell #reportsView .report-field :is(select,input),body.atelier-shell #reportsView .report-controls button { min-height:44px; height:44px; }
+ body.atelier-shell #reportsView .cashdesk-tabs button { min-height:44px; }
  body.atelier-shell #reportsView .report-field :is(select,input) { font-size:16px; }
  body.atelier-shell #reportsView #generateReportBtn { flex:1 1 100%; }
  body.atelier-shell #reportsView .report-kpis.summary-banner { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -12445,4 +12463,43 @@ body.atelier-shell #settingsView .settings-section-note { margin:0; font-size:12
 
 #productsView .status-badge.danger,#inventoryView .status-badge.danger{background:#ffe9ec;color:#a02739;border:1px solid #efbbc4}
 #productsView .status-badge::before,#inventoryView .status-badge::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:5px}
+body.atelier-shell :is(#productsView,#inventoryView) .status-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 6px;font-size:10px;font-weight:600;line-height:1.2;white-space:nowrap;overflow-wrap:normal;vertical-align:middle}
+body.atelier-shell :is(#productsView,#inventoryView) .status-badge::before{flex:none;width:5px;height:5px;margin:0}
 #manualModal textarea:focus-visible{outline:2px solid #1675b6;outline-offset:1px}
+
+/* Lote P1: controles operativos Glass Atelier, con acciones fuera del scroll. */
+.financial-private [data-admin-finance]{display:none!important}
+.ticket-quantity-edit{width:58px;min-height:30px;padding:3px 5px;border:1px solid #abcde7;border-radius:5px;font:inherit}
+/* Pestañas propias: hombros suaves y superficie contenida en el borde del panel. */
+#dashboardView .business-card .business-edge-arrow{width:28px;height:72px;min-width:28px;min-height:44px;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;touch-action:manipulation}
+#dashboardView .business-card .business-edge-prev{left:0}#dashboardView .business-card .business-edge-next{right:0}
+#dashboardView .business-edge-arrow::before{position:absolute;top:0;right:0;width:19px;height:72px;background:url("./assets/pos/panel-edge-tab.svg") center/100% 100% no-repeat;mask:none}
+#dashboardView .business-edge-prev::before{left:0;right:auto;transform:scaleX(-1)}
+#dashboardView .business-card .business-edge-arrow:not(:disabled):is(:hover,:active){background:transparent;border:0;box-shadow:none;filter:brightness(1.15)}
+#dashboardView .business-card .business-edge-arrow:focus-visible{outline:2px solid #d9aa3a;outline-offset:-2px}
+#dashboardView .business-card .business-edge-arrow:disabled{background:transparent;border:0;box-shadow:none;opacity:.3}
+.business-alert-carousel{padding-inline:12px;box-sizing:border-box}
+.pin-input-control{position:relative;display:block;width:100%;min-width:0}
+.pin-input-control input{padding-right:40px!important;width:100%;box-sizing:border-box}
+.pin-visibility-button{position:absolute;right:3px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:34px;min-height:32px;padding:7px;border:0;border-radius:6px;background:transparent;color:#175b8e;cursor:pointer}
+.pin-visibility-button svg{width:20px;height:20px}.pin-visibility-button[aria-pressed="true"]{background:#e1f2ff;color:#063553}
+.pin-visibility-button:focus-visible{outline:2px solid #0874c9;outline-offset:1px}input[data-pin-protected]::-ms-reveal{display:none}
+#productsView .products-layout #productEditorDialog .product-form-panel{display:flex!important;flex-direction:column;max-height:calc(90dvh - 2px);overflow:hidden!important}
+#productsView .products-layout #productEditorDialog .product-form{flex:1 1 auto;min-height:0;max-height:calc(90dvh - 110px);overflow:auto!important;padding:0 5px 12px 0!important}
+#productsView #productEditorDialog .form-actions{flex:0 0 auto;position:relative;grid-row:auto;padding:10px 0 0!important;margin:0!important;border-top:1px solid #c8dfef;background:#f7fcff}
+#productsView #productEditorDialog label:has(#productNameInput){grid-column:2;grid-row:2}
+#productsView #productEditorDialog label:has(#productCodeInput){grid-column:3;grid-row:2}
+#productsView #productEditorDialog .product-photo-choose{grid-column:1;grid-row:6/9;display:grid;align-content:start;gap:6px;min-width:0;font:11px/1.4 "Segoe UI",sans-serif}
+#productPhotoInput{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden;clip-path:inset(50%);opacity:0}
+#productPhotoChooseBtn{display:grid;justify-items:center;gap:8px;padding:14px 8px;border:1px dashed #90bce0;border-radius:8px;background:#ecf8ff;color:#075c9f;min-height:82px;font:600 12px "Segoe UI",sans-serif}
+#productPhotoChooseBtn svg{width:26px;height:26px}#productPhotoFileName{overflow-wrap:anywhere;min-width:0;color:#123e63}
+#productPhotoStatus{color:#53738c}#productPhotoStatus[data-state="error"]{color:#a22639}#productPhotoStatus[data-state="valid"]{color:#08734a}
+#productsView #productEditorDialog .product-photo-choose{position:relative;grid-row:6}
+#productsView #productEditorDialog #productPhotoInput{position:absolute!important;inset:0 auto auto 0;width:1px!important;height:1px!important;min-height:0!important;padding:0!important}
+body.not-pos #ticketToggleBtn{display:none!important}
+@media(max-width:650px){#productsView #productEditorDialog .product-photo-choose{grid-column:1!important;grid-row:3!important}#productsView #productEditorDialog label:has(#productCodeInput){grid-column:1;grid-row:auto}}
+
+/* Entradas y cambios de distribución sin desplazamiento animado. */
+body:is(.pos-approved,.atelier-shell) :is(.sidebar,.app-shell,.brand,.brand-mark,.nav-item,.scale-card){transition-property:opacity,color,background-color,border-color,box-shadow}
+body.pos-approved :is(.ticket-panel,.ticket-panel-viewport){transition-property:opacity,visibility}
+body.pos-approved.ticket-collapsed .ticket-panel{transform:none}

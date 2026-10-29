@@ -370,6 +370,7 @@
                 Producto
                 <input id="productNameInput" type="text" placeholder="Ej. Camarón coctelero" />
               </label>
+              <label>Código (opcional)<input id="productCodeInput" type="text" maxlength="80" /></label>
 
               <label class="wide">Descripción<textarea id="productDescriptionInput" maxlength="1000" rows="2"></textarea></label>
               <label>
@@ -407,12 +408,11 @@
                 <input id="productMinStockInput" type="number" min="0" step="0.001" placeholder="0.000" />
               </label>
 
-              <label class="wide">Fotografía (JPEG, PNG o WebP, hasta 5 MiB)<input id="productPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" /></label><div class="product-photo-preview" aria-label="Fotografía: también puedes arrastrar un archivo aquí"><span id="productPhotoPlaceholder">Selecciona una fotografía</span><img id="productPhotoPreview" alt="Vista previa de la fotografía" hidden /><button id="cancelProductPhotoBtn" class="quiet-btn" type="button">Cancelar selección de fotografía</button></div><label class="wide"><input id="productActiveInput" type="checkbox" checked /> Producto activo</label><details class="context-help wide"><summary aria-label="Ayuda sobre productos">?</summary><p>Productos edita la información comercial y la fotografía. Registra el conteo inicial y los movimientos con motivo desde Inventario.</p></details><div id="catalogPendingOperations" class="wide" aria-live="polite" hidden></div>
-              <div class="form-actions wide">
-                <button id="saveProductBtn" class="solid-btn" type="submit">Guardar</button>
-                <button id="resetProductFormBtn" class="quiet-btn" type="button">Limpiar</button><button id="cancelProductFormBtn" class="quiet-btn" type="button">Cancelar</button>
-              </div>
+              <div class="product-photo-choose"><input id="productPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" tabindex="-1" aria-label="Fotografía del producto" /><button id="productPhotoChooseBtn" type="button" class="quiet-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 14v7h16v-7"/></svg>Seleccionar fotografía</button><span id="productPhotoFileName">Ningún archivo seleccionado</span><small id="productPhotoStatus" role="status">JPEG, PNG o WebP · máximo 5 MiB · recomendado 1:1</small></div><div class="product-photo-preview" aria-label="Fotografía: también puedes arrastrar un archivo aquí"><span id="productPhotoPlaceholder">Selecciona una fotografía</span><img id="productPhotoPreview" alt="Vista previa de la fotografía" hidden /><button id="cancelProductPhotoBtn" class="quiet-btn" type="button">Quitar selección</button></div><label class="wide"><input id="productActiveInput" type="checkbox" checked /> Producto activo</label><details class="context-help wide"><summary aria-label="Ayuda sobre productos">?</summary><p>Productos edita la información comercial y la fotografía. Registra el conteo inicial y los movimientos con motivo desde Inventario.</p></details><div id="catalogPendingOperations" class="wide" aria-live="polite" hidden></div>
             </form>
+              <div class="form-actions wide">
+                <button id="cancelProductFormBtn" class="quiet-btn" type="button">Cancelar</button><button id="resetProductFormBtn" class="quiet-btn" type="button">Limpiar</button><button id="saveProductBtn" class="solid-btn" type="submit" form="productForm">Guardar</button>
+              </div>
           </section>
 
           </dialog><section class="work-panel product-projection-panel">

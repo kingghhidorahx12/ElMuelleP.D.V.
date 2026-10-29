@@ -102,9 +102,9 @@ app.use('/api', (req, _res, next) => {
   next();
 });
 app.use(express.static(path.join(__dirname, "..", "public")));
-app.use('/api', (_req, res, next) => {
+app.use('/api', (req, res, next) => {
   const send = res.json.bind(res);
-  res.json = value => { if (database.backupStatus.failed) res.set('X-ElMuelle-Backup', 'pending'); return send(value); };
+  res.json = value => { if (database.backupStatus.failed) res.set('X-ElMuelle-Backup', 'pending'); return send(serializeFinancialForUser(value, req.validatedSessionUser)); };
   next();
 });
 
@@ -445,6 +445,7 @@ function clearSessionCookie(res) {
 }
 
 function getSessionUser(req, touch = true) {
+  req.validatedSessionUser = null;
   const token = String(getCookies(req).el_muelle_session || "").trim();
   if (!token) return null;
 
@@ -465,6 +466,7 @@ function getSessionUser(req, touch = true) {
 
   if (touch) session.expiresAt = Date.now() + AUTH_SESSION_MS;
   authSessions.set(token, session);
+  req.validatedSessionUser = user;
   return user;
 }
 
@@ -516,12 +518,7 @@ function ensureDataDir() {
 }
 
 function readJson(filePath, fallback) {
-  try {
-    return database.read(filePath, fallback);
-  } catch (error) {
-    console.error("Error leyendo datos:", filePath, error);
-    return fallback;
-  }
+  return database.read(filePath, fallback);
 }
 
 function writeJson(filePath, data) {
@@ -597,6 +594,12 @@ function decryptSensitivePayload(payload) {
   }
 }
 
+function serializeFinancialForUser(value, user) {
+  if (user?.role === 'admin' || value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(item => serializeFinancialForUser(item, user));
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !/(?:cost|costo|profit|margin|margen|ganancia|utilidad|investment|invertido|weightedAverage|projected|projection|rentabilidad|purchasePrice)/i.test(key)).map(([key,item]) => [key, serializeFinancialForUser(item,user)]));
+}
+
 function serializeSaleForUser(sale, user) {
   const response = JSON.parse(JSON.stringify(sale));
   const invoice = response.invoice || {};
@@ -611,7 +614,7 @@ function serializeSaleForUser(sale, user) {
 
   delete invoice.customerEncrypted;
   response.invoice = invoice;
-  return response;
+  return serializeFinancialForUser(response, user);
 }
 
 function slugify(value) {
@@ -648,6 +651,7 @@ function normalizeProductPayload(body, existingProduct = {}) {
 
   return {
     name: validate.text(body.name === undefined ? existingProduct.name : body.name, 'Nombre', 120),
+    code: validate.text(body.code === undefined ? existingProduct.code || '' : body.code, 'Código', 80, {optional:true}),
     description: validate.text(body.description === undefined ? existingProduct.description || '' : body.description, 'Descripción', 1000, {optional:true}),
     category: validate.text(body.category === undefined ? existingProduct.category : body.category, 'Categoría', 80),
     unit,
@@ -1356,17 +1360,22 @@ app.get("/api/sales/:id", (req, res) => {
   res.json(serializeSaleForUser(sale, user));
 });
 
+function getOperationalDate(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+
+function visibleCashSessions(user, sessions = readCashSessions()) {
+  const businessDate = getOperationalDate();
+  return user.role === "admin" ? sessions : sessions.filter(session => session.status === "open" || session.businessDate === businessDate);
+}
+
 app.get("/api/cash-sessions", (req, res) => {
   const user = requireSessionUser(req, res);
   if (!user) return;
 
   const sessions = readCashSessions();
   const sales = readJson(salesPath, []);
-  const visibleSessions = user.role === "admin"
-    ? sessions
-    : sessions.filter((session) => {
-        return session.status === "open" || session.businessDate === new Date().toISOString().slice(0, 10);
-      });
+  const visibleSessions = visibleCashSessions(user, sessions);
 
   res.json(
     visibleSessions
@@ -1403,7 +1412,7 @@ app.post("/api/cash-sessions/open", (req, res) => {
   }
 
   const openingAmount = validate.number(req.body.openingAmount === undefined ? 0 : req.body.openingAmount, 'Fondo inicial');
-  const businessDate = validate.date(req.body.businessDate === undefined ? new Date().toISOString().slice(0, 10) : req.body.businessDate, 'Fecha de apertura');
+  const businessDate = validate.date(req.body.businessDate === undefined ? getOperationalDate() : req.body.businessDate, 'Fecha de apertura');
 
   if (openingAmount < 0) {
     return res.status(400).json({
@@ -1555,7 +1564,7 @@ app.get("/api/cash-shifts", (req, res) => {
   const user = requireSessionUser(req, res);
   if (!user) return;
   if (!access.allows(user,['cash'])) return res.status(403).json({message:'No tienes autorización para consultar caja.'});
-  res.json(readCashSessions().map((session) => serializeCashSession(session)));
+  res.json(visibleCashSessions(user).map((session) => serializeCashSession(session)));
 });
 
 app.put("/api/cash-shifts", (req, res) => {
