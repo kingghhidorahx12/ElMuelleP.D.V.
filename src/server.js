@@ -1710,6 +1710,7 @@ app.post("/api/sales", (req, res) => {
         throw error;
       }
 
+      if(require('./configuration').readPaymentMethods(database)[paymentMethod]!==true){const error=new Error('Este método de pago está desactivado. Selecciona otro método disponible.');error.statusCode=409;throw error;}
       const total = roundMoney(subtotal - discount);
       const profitSummary = calculateSaleProfit(items, total);
       validate.number(profitSummary.totalCost, 'Costo total');
@@ -1923,7 +1924,7 @@ app.get("/api/scale/status", (req, res) => {
   });
 });
 
-const configuration = require('./configuration').registerConfiguration({app,database,requireAdminUser,requireSessionUser,encryptSensitivePayload,decryptSensitivePayload,recordAuditEvent});
+const configuration = require('./configuration').registerConfiguration({app,database,requireAdminUser,requireSessionUser,encryptSensitivePayload,decryptSensitivePayload,recordAuditEvent,canUsePos:user=>access.allows(user,['pos']),notifyScanner:access.notifyScanner,notifyPaymentMethods:access.notifyPaymentMethods});
 
 app.use((error, _req, res, _next) => {
   res.status(error.statusCode || (error.type === 'entity.parse.failed' ? 400 : 500)).json({ message:error.statusCode ? error.message : 'No se pudo completar la operación.' });

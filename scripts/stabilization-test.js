@@ -102,6 +102,8 @@ test('Peso manual: autorización vinculada a usuario, sesión, intención, produ
 });
 
 test('Administrador, tarjeta, transferencia, descuentos existentes y cancelación conservan totales',async()=>{
+  // Esta prueba ejercita tarjeta explícitamente habilitada por administración.
+  assert.equal((await api('/api/payment-methods','PUT',{efectivo:true,tarjeta:true,transferencia:true})).status,200);
   for(const paymentMethod of ['tarjeta','transferencia']){const result=await api('/api/sales','POST',sale({paymentMethod,paymentDetails:{reference:'SINTETICO'}}));assert.equal(result.status,201);assert.equal(result.body.total,100);}
   const manualBody=sale({items:[{productId:'kg',quantity:1,source:'manual'}],discount:10,discountReason:'Prueba sintética'});const adminGrant=await api('/api/authorizations/manual-weight','POST',{pin:'864209',productId:'kg',quantity:1,checkoutIntentId:manualBody.checkoutIntentId,cashSessionId:cashId,reason:'falla_bascula'});assert.equal(adminGrant.status,200);manualBody.items[0].manualAuthorization=adminGrant.body.token;
   const manual=await api('/api/sales','POST',manualBody);assert.equal(manual.status,201);assert.equal(manual.body.total,190);

@@ -7,7 +7,7 @@ const source=fs.readFileSync(path.join(__dirname,'../public/app.js'),'utf8');
 function extract(name){const match=source.match(new RegExp('^(?:async )?function '+name+'\\([^]*?^}','m'));assert.ok(match,name);return match[0];}
 function harness(){
   const calls=[],nodes=new Map();
-  const node=id=>{if(!nodes.has(id))nodes.set(id,{id,textContent:'',dataset:{},classList:{toggle(){},remove(){}},setAttribute(){},scrollTop:0,scrollLeft:0});return nodes.get(id);};
+  const node=id=>{if(!nodes.has(id))nodes.set(id,{id,textContent:'',dataset:{},classList:{toggle(){},remove(){}},setAttribute(){},replaceChildren(){this.textContent='';},scrollTop:0,scrollLeft:0});return nodes.get(id);};
   const workspace={scrollTop:250,scrollLeft:0,scrollTo(options){calls.push(['scroll',options]);this.scrollTop=options.top;this.scrollLeft=options.left;}};
   const nav={scrollTop:35};
   const state={activeView:'sales',currentUser:{role:'admin'},reportsMode:'reports'};

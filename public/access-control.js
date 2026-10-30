@@ -76,7 +76,10 @@ function syncAccessSession() {
   closeAccessStream();accessStreamOwner=state.currentUser.id;
   if(typeof EventSource==='undefined')return;
   const owner=accessStreamOwner;accessStream=new EventSource('/api/access/events');
+  accessStream.addEventListener('open',()=>{if(accessStreamOwner===owner&&typeof refreshPaymentMethods==='function')refreshPaymentMethods();});
   accessStream.addEventListener('permissions',event=>{if(accessStreamOwner!==owner)return;try{applyAccessUser(JSON.parse(event.data));}catch{}});
+  accessStream.addEventListener('scanner',()=>{if(accessStreamOwner===owner&&typeof refreshScannerSettings==='function')refreshScannerSettings();});
+  accessStream.addEventListener('payment-methods',()=>{if(accessStreamOwner===owner&&typeof refreshPaymentMethods==='function')refreshPaymentMethods();});
   accessStream.addEventListener('expired',()=>{if(accessStreamOwner===owner)logoutToAccess({preservePendingCheckout:Boolean(state.checkoutPending)});});
 }
 function buildPermissionEditor() {

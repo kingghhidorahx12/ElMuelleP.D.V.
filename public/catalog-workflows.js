@@ -59,10 +59,11 @@ async function saveCommercialProduct(event){
 }
 async function saveInventoryReceipt(event){
   event.preventDefault();if(state.inventorySaving)return;state.inventorySaving=true;const button=$('saveInventoryEntryBtn');button.disabled=true;
+  document.querySelectorAll('[data-inventory-operation],[data-entry-product-mode],#resetInventoryEntryBtn').forEach(control=>control.disabled=true);
   try{
     const movementMode=state.inventoryMovementMode||'receipt',isNew=movementMode==='receipt'&&getInventoryEntryMode()==='new',product=isNew?null:getSelectedInventoryEntryProduct(),payload={productId:product?.id,quantity:Number($('inventoryEntryQuantityInput').value),unitCost:Number($('inventoryEntryUnitCostInput').value),salePrice:Number($('inventoryEntrySalePriceInput').value||0),receivedAt:$('inventoryEntryDateInput').value||getLocalDateString(),reason:$('inventoryEntryNotesInput').value.trim(),supplier:$('inventorySupplierInput')?.value.trim()||''};
     if(isNew){payload.newProduct=getInventoryNewProductDraft();delete payload.productId;}
-    if(!payload.reason)throw Error('Captura el motivo de la recepción.');if(!isNew&&typeof product?.stockQuantity!=='number')throw Error('Registra primero el conteo inicial en Existencias.');
+    if(!payload.reason)throw Error('Captura el '+inventoryMovementText(movementMode).reason.toLowerCase()+'.');if(!isNew&&typeof product?.stockQuantity!=='number')throw Error('Registra primero el conteo inicial en Existencias.');
     if(movementMode!=='receipt'){
       if(!Number.isFinite(payload.quantity)||payload.quantity<0||movementMode==='waste'&&payload.quantity<=0)throw Error('Captura una cantidad válida.');
       const stockQuantity=movementMode==='waste'?product.stockQuantity-payload.quantity:payload.quantity;
@@ -71,7 +72,7 @@ async function saveInventoryReceipt(event){
     }
     if(!await openProductConfirm({title:isNew?'Alta y recepción inicial':'Registrar entrada',message:'El producto y el movimiento se confirmarán en una sola operación.',summary:quantityText(payload.quantity,product?.unit||payload.newProduct.unit),confirmLabel:'Registrar'}))return;
     await runCatalogOperation('receipt','/api/inventory/entries','POST',payload);resetInventoryEntryForm();showToast('Recepción confirmada.');await loadProducts();await loadInventoryEntries();
-  }catch(error){showToast(error.message||'No se confirmó la recepción.');}finally{state.inventorySaving=false;button.disabled=false;}
+  }catch(error){showToast(error.message||'No se confirmó el movimiento.');}finally{state.inventorySaving=false;button.disabled=false;document.querySelectorAll('[data-inventory-operation],[data-entry-product-mode],#resetInventoryEntryBtn').forEach(control=>control.disabled=false);}
 }
 async function saveInventoryMovement(productId){
   const product=state.products.find(p=>p.id===productId),escape=CSS.escape(productId),quantityInput=document.querySelector('[data-stock-product="'+escape+'"]'),why=document.querySelector('[data-inventory-reason="'+escape+'"]');
@@ -97,15 +98,139 @@ function initCatalogWorkflows(){
   $('closeProductEditorBtn').addEventListener('click',()=>{resetProductForm();setProductMode('list');});
   $('productConfirmModal').addEventListener('cancel',event=>{event.preventDefault();closeProductConfirm(false);});
   $('productEditorDialog').addEventListener('cancel',event=>{event.preventDefault();resetProductForm();setProductMode('list');});
-  document.querySelectorAll('[data-inventory-operation]').forEach(button=>button.addEventListener('click',()=>{
-    const mode=button.dataset.inventoryOperation;state.inventoryMovementMode=mode;$('inventoryQuantityLabel').textContent=mode==='receipt'?'Cantidad recibida':mode==='waste'?'Cantidad de merma':'Existencia resultante';
-    document.querySelectorAll('[data-inventory-operation]').forEach(tab=>{tab.classList.toggle('active',tab===button);tab.setAttribute('aria-selected',String(tab===button));});
-    for(const name of ['inventoryEntryUnitCostInput','inventoryEntrySalePriceInput','inventoryEntryDateInput','inventorySupplierInput'])$(name).closest('label').hidden=mode!=='receipt';
-    document.querySelector('[aria-label="Tipo de entrada de mercancía"]').hidden=mode!=='receipt';if(mode!=='receipt')setInventoryEntryMode('existing');
-    $('saveInventoryEntryBtn').textContent=mode==='receipt'?'Registrar entrada':mode==='waste'?'Registrar merma':'Registrar ajuste';
-    const reason=$('inventoryEntryNotesInput').closest('label');reason.firstChild.textContent=mode==='receipt'?'Motivo de recepción':mode==='waste'?'Motivo de merma':'Motivo de ajuste';
-  }));
+  document.querySelectorAll('[data-inventory-operation]').forEach(button=>button.addEventListener('click',()=>setInventoryMovementMode(button.dataset.inventoryOperation)));
+  $('productInventoryShortcutBtn').addEventListener('click',()=>openProductInventoryEntry(state.editingProductId));
+  $('inventoryEntriesList').addEventListener('toggle',event=>{if(event.target.matches('.inventory-history-finance'))renderInventoryEntryFinancialDetails(event.target);},true);
+  window.addEventListener('elmuelle:session',()=>{const identity=renderInventoryEntries.cache&&JSON.parse(renderInventoryEntries.cache.key);if(!state.sessionAuthenticated||!canAccessView('inventory')||identity&&(identity[2]!==state.currentUser?.id||identity[3]!==isAdminUser()))renderInventoryEntries.cache=null;});
+  initInventoryTabKeys();initContextHelp();
   initPinVisibility();
+}
+
+function inventoryMovementText(mode){return {receipt:{reason:'Motivo de recepción',placeholder:'Ej. Compra de mercancía',action:'Registrar entrada',help:'Explica por qué se recibe esta mercancía.'},adjustment:{reason:'Motivo de ajuste',placeholder:'Ej. Corrección tras conteo físico',action:'Registrar ajuste',help:'Explica la diferencia y registra la existencia resultante.'},waste:{reason:'Motivo de merma',placeholder:'Ej. Deterioro de mercancía',action:'Registrar merma',help:'Explica la pérdida y registra la cantidad que se retira.'}}[mode];}
+function setInventoryMovementMode(mode='receipt'){
+  if(!['receipt','adjustment','waste'].includes(mode))return;
+  if(state.inventorySaving||state.catalogOperationLocks?.size)return;
+  state.inventoryMovementMode=mode;
+  $('inventoryQuantityLabel').textContent=mode==='receipt'?'Cantidad recibida':mode==='waste'?'Cantidad de merma':'Existencia resultante';
+  document.querySelectorAll('[data-inventory-operation]').forEach(tab=>{const selected=tab.dataset.inventoryOperation===mode;tab.classList.toggle('active',selected);tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1;});
+  for(const name of ['inventoryEntryUnitCostInput','inventoryEntrySalePriceInput','inventoryEntryDateInput','inventorySupplierInput'])$(name).closest('label').hidden=mode!=='receipt';
+  document.querySelector('[aria-label="Tipo de entrada de mercancía"]').hidden=mode!=='receipt';if(mode!=='receipt')setInventoryEntryMode('existing');
+  const text=inventoryMovementText(mode);$('saveInventoryEntryBtn').textContent=text.action;
+  $('inventoryReasonLabel').textContent=text.reason;
+  const reason=$('inventoryEntryNotesInput');reason.placeholder=text.placeholder;reason.title=text.help;reason.setAttribute('aria-label',text.reason);
+}
+function initInventoryTabKeys(){
+  for(const selector of ['.inventory-subview-tabs','#inventoryOperationTabs','.entry-mode-toggle']){
+    const group=document.querySelector(selector);if(!group)continue;
+    group.addEventListener('keydown',event=>{
+      const tabs=[...group.querySelectorAll('[role="tab"]')].filter(t=>!t.disabled&&t.getClientRects().length),index=tabs.indexOf(event.target);
+      if(index<0)return;
+      const next={ArrowRight:(index+1)%tabs.length,ArrowLeft:(index+tabs.length-1)%tabs.length,Home:0,End:tabs.length-1}[event.key];
+      if(next===undefined)return;event.preventDefault();tabs[next].click();tabs[next].focus({preventScroll:true});
+    });
+  }
+}
+function syncProductInventoryShortcut(){
+  const button=$('productInventoryShortcutBtn');if(!button)return;
+  const product=state.products.find(p=>p.id===state.editingProductId);
+  button.hidden=!product||!isAdminUser()||!canAccessView('inventory');button.disabled=product?.active===false;
+}
+function hasUnsavedCommercialProduct(){
+  if(!$('productEditorDialog')?.open)return false;
+  const product=state.products.find(p=>p.id===state.editingProductId);if(!product)return true;
+  const text={productNameInput:product.name,productDescriptionInput:product.description||'',productCodeInput:product.code||'',productUnitInput:product.unit};
+  const category=$('productCategoryInput');text.productCategoryInput=[...category.options].some(o=>o.value===product.category)?product.category:'';
+  return Boolean(state.pendingProductPhoto)||Object.entries(text).some(([id,value])=>$(id).value!==String(value))
+    ||Number($('productPriceInput').value)!==Number(product.price)||Number($('productCostInput').value||0)!==Number(product.costPrice||0)
+    ||$('productMinStockInput').value!==(typeof product.minStock==='number'?String(product.minStock):'')||$('productActiveInput').checked!==(product.active!==false);
+}
+async function openProductInventoryEntry(productId){
+  const owner=state.currentUser?.id;
+  try{
+    if(!state.sessionAuthenticated||!isAdminUser()||!canAccessView('inventory'))throw Error('Registrar entradas requiere acceso administrativo a Inventario.');
+    if(state.productSaving||state.inventorySaving||state.catalogOperationLocks?.size)throw Error('Espera a que termine la operación pendiente.');
+    if(!state.products.some(p=>p.id===productId&&p.active!==false))throw Error('El producto no está disponible. Selecciona un producto activo del catálogo.');
+    if(hasUnsavedCommercialProduct()&&!await openProductConfirm({title:'Cambios de producto sin guardar',message:'Continuar descarta los cambios del formulario y la fotografía pendiente. Cancelar te devuelve a la edición.',summary:'Se abrirá Entrada de mercancía. Navegar no modifica existencias.',confirmLabel:'Continuar a Inventario'}))return false;
+    const products=await fetchJson('/api/products');
+    if(!state.sessionAuthenticated||state.currentUser?.id!==owner||!isAdminUser())return false;
+    const product=products.find(p=>p.id===productId&&p.active!==false);
+    if(!product)throw Error('El producto dejó de estar disponible. El formulario se conserva; actualiza el catálogo.');
+    state.products=products;renderInventoryEntryProductOptions();
+    if($('productEditorDialog')?.open){resetProductForm();setProductMode('list');}
+    setView('inventory');setInventoryMode('entry');setInventoryMovementMode('receipt');setInventoryEntryMode('existing');
+    $('inventoryEntryProductInput').value=product.id;
+    if($('inventoryEntryProductInput').value!==product.id)throw Error('No se pudo preseleccionar el producto. Selecciónalo desde Inventario.');
+    populateInventoryEntryDefaults();$('inventoryEntryQuantityInput').focus({preventScroll:true});
+    showToast(typeof product.stockQuantity==='number'?'Producto seleccionado. Revisa los datos y confirma la entrada.':'Producto sin verificar: registra primero su conteo inicial en Existencias.');return true;
+  }catch(error){if(state.currentUser?.id===owner)showToast(error.message||'No se pudo abrir Entrada de mercancía.');return false;}
+}
+
+const contextHelpDescriptions={
+  "products": "Aquí puedes crear o editar un producto y su fotografía. Revisa los datos y guarda al terminar. Para cambiar sus existencias, entra a Inventario.",
+  "inventory-entry": "Registra la mercancía que recibes, un ajuste después de contar o una merma. Elige el movimiento, completa los datos y explica el motivo antes de confirmar.",
+  "inventory-history": "Busca movimientos por producto, fecha o tipo. Revisa cuánto cambió la existencia, el motivo y quién lo registró. Limpiar sólo restablece los filtros.",
+  "manual-weight": "Escribe el peso que necesitas usar y el motivo. Un administrador debe autorizarlo con su PIN. Cancelar te devuelve a la venta sin aplicar ese peso.",
+  "settings-general": "Elige cómo quieres ver y usar la aplicación: avisos, fecha, hora y apariencia. Guarda tus cambios al terminar. Estas preferencias corresponden a tu usuario.",
+  "settings-business": "Captura el nombre, los datos de contacto y el logotipo del negocio. Revisa la información antes de guardar; se usará en los documentos y pantallas que la muestran.",
+  "settings-scale": "Conecta la báscula y revisa que el peso de la pantalla coincida con el dispositivo. Si no hay lectura, revisa la conexión antes de preparar una venta.",
+  "settings-users": "Administra quién puede entrar al sistema. Cada empleado usa su propio PIN. Revisa sus permisos para darle acceso sólo a las pantallas que necesita.",
+  "settings-peripherals": "Aquí puedes activar el lector de códigos y abrir una prueba de impresión. Sólo administración cambia el ajuste del lector, que se comparte en todo el establecimiento.",
+  "settings-fiscal": "Guarda los datos fiscales del negocio y revísalos con tu constancia fiscal. Una solicitud de factura se guarda para continuar el trámite; no es un CFDI emitido.",
+  "settings-appearance": "Elige el aspecto de la aplicación entre las opciones disponibles. Guarda para conservarlo en tu usuario o recupera tus preferencias anteriores.",
+  "settings-audit": "Revisa las acciones recientes registradas en el sistema y quién las realizó. Pulsa Actualizar para consultar los nuevos registros. Aquí no se cambian las operaciones.",
+  "settings-maintenance": "Consulta el estado de los respaldos y comprueba si la base de datos presenta problemas. Verificar sólo revisa la información; no restaura ni reemplaza tus datos."
+};
+function contextHelpText(button){
+  if(typeof panelHelpText==='function'){const text=panelHelpText(button);if(text)return text;}
+  const key=button.dataset.contextHelp==='settings'?'settings-'+document.querySelector('.settings-layout').dataset.settingsMode:button.dataset.contextHelp;
+  return contextHelpDescriptions[key]||'';
+}
+function closeContextHelp(){
+  const active=initContextHelp.active;if(!active)return;
+  clearTimeout(initContextHelp.timer);if(typeof active.tip.hidePopover==='function'&&active.tip.matches(':popover-open'))active.tip.hidePopover();active.tip.remove();
+  active.button.setAttribute('aria-expanded','false');active.button.removeAttribute('aria-describedby');initContextHelp.active=null;
+}
+function positionContextHelp(){
+  const active=initContextHelp.active;if(!active)return;
+  const b=active.button.getBoundingClientRect(),tip=active.tip;
+  if(!active.button.getClientRects().length||b.bottom<0||b.top>innerHeight){closeContextHelp();return;}
+  const gap=8;tip.style.maxWidth='min(320px, calc(100vw - 16px))';
+  let box=tip.getBoundingClientRect(),left=b.right+gap,top=b.top-4;
+  const available=innerWidth-left-gap;
+  if(available>=200){tip.style.maxWidth=Math.min(320,available)+'px';box=tip.getBoundingClientRect();tip.dataset.placement='right';}
+  else{left=Math.max(gap,Math.min(b.left,innerWidth-box.width-gap));top=b.bottom+gap;tip.dataset.placement='below';}
+  tip.style.left=Math.max(gap,Math.min(left,innerWidth-box.width-gap))+'px';
+  tip.style.top=Math.max(gap,Math.min(top,innerHeight-box.height-gap))+'px';
+}
+function openContextHelp(button,pinned=false){
+  clearTimeout(initContextHelp.timer);
+  if(initContextHelp.active?.button===button){initContextHelp.active.pinned ||= pinned;return;}
+  closeContextHelp();const text=contextHelpText(button);if(!text)return;
+  const tip=document.createElement('div');tip.id='context-help-explanation';tip.className='context-help-tooltip';tip.setAttribute('role','tooltip');tip.setAttribute('popover','manual');tip.textContent=text;
+  (button.closest('dialog')||document.body).append(tip);initContextHelp.active={button,tip,pinned};
+  button.setAttribute('aria-describedby',tip.id);button.setAttribute('aria-expanded','true');tip.showPopover?.();positionContextHelp();
+  tip.addEventListener('pointerenter',()=>clearTimeout(initContextHelp.timer));tip.addEventListener('pointerleave',scheduleContextHelpClose);
+}
+function scheduleContextHelpClose(){
+  clearTimeout(initContextHelp.timer);initContextHelp.timer=setTimeout(()=>{const active=initContextHelp.active;if(active&&!active.pinned&&!active.button.matches(':focus-visible')&&!active.tip.matches(':hover'))closeContextHelp();},120);
+}
+function initContextHelp(){
+  if(initContextHelp.ready)return;initContextHelp.ready=true;
+  for(const details of document.querySelectorAll('details.context-help')){
+    const summary=details.querySelector('summary'),button=document.createElement('button');button.type='button';button.className='context-help-trigger';button.textContent='?';button.setAttribute('aria-expanded','false');button.setAttribute('aria-label',summary.getAttribute('aria-label'));
+    const product=details.closest('#productForm'),inventory=details.closest('.inventory-entry-panel');
+    button.dataset.contextHelp=product?'products':inventory?'inventory-entry':'manual-weight';
+    const head=product?.querySelector('.form-title')||inventory?.querySelector('.inventory-entry-title')||details.closest('.modal')?.querySelector('.modal-head');
+    if(head){head.insertBefore(button,head.querySelector('#closeProductEditorBtn')||null);details.remove();}
+  }
+  document.addEventListener('pointerover',event=>{const button=event.target.closest('[data-context-help]');if(button&&event.pointerType!=='touch')openContextHelp(button);});
+  document.addEventListener('pointerout',event=>{if(event.target.closest('[data-context-help]'))scheduleContextHelpClose();});
+  document.addEventListener('focusin',event=>{const button=event.target.closest('[data-context-help]');if(button)openContextHelp(button);else closeContextHelp();});
+  document.addEventListener('click',event=>{const button=event.target.closest('[data-context-help]');if(!button)return;if(initContextHelp.active?.button===button&&initContextHelp.active.pinned)closeContextHelp();else openContextHelp(button,true);});
+  document.addEventListener('pointerdown',event=>{const active=initContextHelp.active;if(active&&!active.button.contains(event.target)&&!active.tip.contains(event.target))closeContextHelp();},true);
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&initContextHelp.active){event.preventDefault();event.stopPropagation();closeContextHelp();}},true);
+  document.addEventListener('scroll',()=>{if(initContextHelp.active)positionContextHelp();},true);window.addEventListener('resize',positionContextHelp);
+  document.addEventListener('close',closeContextHelp,true);
 }
 
 function updateManualProductContext(){const product=state.selectedProduct;if(!product)return;$('manualProductName').textContent=product.name;$('manualProductUnit').textContent=product.unit==='kg'?'Por kilogramo':'Por pieza';$('manualProductPrice').textContent='Precio: '+money(product.price)+' / '+getUnitLabel(product.unit);$('manualProductPhoto').src=getPosProductImagePath(product);$('manualProductPhoto').hidden=false;$('manualProductPhoto').onerror=()=>{$('manualProductPhoto').hidden=true;};}

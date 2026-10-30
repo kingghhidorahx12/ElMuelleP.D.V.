@@ -21,7 +21,7 @@ function fingerprint() {
 }
 const before=fingerprint();
 console.log(JSON.stringify({head:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),sourceFingerprint:before}));
-const tests=['persistence-safety','consolidation','configuration-integration','screen-permissions','navigation-access','session-restore','pos-interactions','p1-regression','recovery-compatibility','stabilization','stabilization-ui','catalog-integral','integral-p1','residual-regression'].map(name=>'scripts/'+name+'-test.js');
+const tests=['persistence-safety','consolidation','configuration-integration','screen-permissions','navigation-access','session-restore','pos-interactions','p1-regression','recovery-compatibility','stabilization','stabilization-ui','catalog-integral','integral-p1','residual-regression','scanner-integration'].map(name=>'scripts/'+name+'-test.js');
 const suite=spawnSync(process.execPath,['--test','--test-concurrency=1',...tests],{cwd:root,env:{...process.env,NODE_OPTIONS:'',EL_MUELLE_STORAGE_MODE:''},stdio:'inherit',windowsHide:true});
 let failed=suite.status!==0;
 if(!failed) {

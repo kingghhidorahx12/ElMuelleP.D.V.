@@ -84,3 +84,12 @@ test('Historial: conteos y mermas muestran existencias y motivo sin simular comp
   const c=load({state:{inventoryEntries:entries},$:id=>id==='inventoryEntriesList'?list:{value:''},escapeHtml:String,quantityText:(v,u)=>`${v} ${u}`,money:()=>{throw Error('Un movimiento no comercial no tiene importes de compra');}},['renderInventoryEntries']);
   c.renderInventoryEntries();for(const text of ['Conteo inicial','Merma','Sin verificar → 2 kg','2 kg → 1 kg','Conteo físico','Deterioro'])assert.ok(list.innerHTML.includes(text),text);assert.ok(!list.innerHTML.includes('Inversión'));
 });
+
+test('Historial: una respuesta tardía no repone importes de otra sesión ni permisos revocados',async()=>{
+ for(const revoked of [false,true]){
+  let resolve;const pending=new Promise(r=>resolve=r),state={sessionAuthenticated:true,currentUser:{id:'admin'},checkoutGeneration:1,inventoryEntries:[]};
+  const c=load({state,fetchJson:()=>pending,canAccessView:()=>!revoked},['loadInventoryEntries']);const request=c.loadInventoryEntries();
+  if(!revoked){state.currentUser={id:'employee'};state.checkoutGeneration++;}
+  resolve([{id:'private-synthetic',unitCost:41.73}]);await request;assert.deepEqual(state.inventoryEntries,[]);assert.equal(state.inventoryHistoryRevision,undefined);
+ }
+});

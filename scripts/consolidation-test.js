@@ -32,6 +32,8 @@ test('Venta, caja, entradas, retiros, cancelación y stock conservan totales y a
   const products=await api('/api/products');assert.equal(products.body[0].stockQuantity,8);
   assert.equal((await api('/api/sales','POST',{items:[{productId:'test-piece',quantity:999}],paymentMethod:'efectivo'})).status,400);
   assert.equal((await api('/api/products')).body[0].stockQuantity,8);assert.equal((await api('/api/sales')).body.length,1);
+  // Esta prueba ejercita tarjeta explícitamente habilitada por administración.
+  assert.equal((await api('/api/payment-methods','PUT',{efectivo:true,tarjeta:true,transferencia:true})).status,200);
   const cancelSale=await api('/api/sales','POST',{items:[{productId:'test-piece',quantity:1}],paymentMethod:'tarjeta',paymentReference:'SYNTHETIC'});assert.equal(cancelSale.status,201);
   assert.equal((await api('/api/sales/'+cancelSale.body.id+'/cancel','PATCH',{reason:'Cancelación sintética'})).status,200);
   assert.equal((await api('/api/products')).body[0].stockQuantity,8);

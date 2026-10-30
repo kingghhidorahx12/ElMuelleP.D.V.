@@ -199,7 +199,7 @@
 
       <div class="payment-methods">
         <button class="pay-method active" type="button" data-method="efectivo">Efectivo</button>
-        <button class="pay-method" type="button" data-method="tarjeta">Tarjeta</button>
+        <button class="pay-method" type="button" data-method="tarjeta" disabled hidden>Tarjeta</button>
         <button class="pay-method" type="button" data-method="transferencia">Transferencia</button>
       </div>
       <label id="paymentReferencePanel" class="payment-reference-panel" hidden>
@@ -219,7 +219,7 @@
           <section class="catalog-panel">
             <div class="pos-catalog-tools" role="group" aria-label="Herramientas del catálogo">
               <label class="pos-catalog-search"><svg class="pos-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 21-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0"/></svg><input id="searchInput" type="search" aria-label="Buscar producto por nombre o código" placeholder="Buscar producto por nombre o código..." /></label>
-              <button id="scanProductBtn" class="pos-tool-btn" type="button" title="Preparar búsqueda para lector de códigos de teclado"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7V4h4M16 4h4v3M20 17v3h-4M8 20H4v-3M7 8v8M10 7v10M13 8v8M16 7v10"/></svg><span>Escanear</span></button>
+              <button id="scanProductBtn" class="pos-tool-btn" type="button" hidden title="Capturar un código de producto"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7V4h4M16 4h4v3M20 17v3h-4M8 20H4v-3M7 8v8M10 7v10M13 8v8M16 7v10"/></svg><span>Escanear</span></button>
               <button id="catalogFavoritesBtn" class="pos-tool-btn" type="button" aria-pressed="false"><span class="pos-tool-star" aria-hidden="true">★</span><span>Favoritos</span></button>
               <div class="pos-view-switch" role="group" aria-label="Vista del catálogo">
                 <button id="catalogImagesBtn" class="pos-tool-btn active" type="button" aria-pressed="true" aria-controls="productGrid" aria-label="Vista Imágenes" title="Imágenes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg></button>
@@ -368,7 +368,7 @@
 
               <label class="wide">
                 Producto
-                <input id="productNameInput" type="text" placeholder="Ej. Camarón coctelero" />
+                <input id="productNameInput" type="text" autofocus placeholder="Ej. Camarón coctelero" />
               </label>
               <label>Código (opcional)<input id="productCodeInput" type="text" maxlength="80" /></label>
 
@@ -411,6 +411,7 @@
               <div class="product-photo-choose"><input id="productPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" tabindex="-1" aria-label="Fotografía del producto" /><button id="productPhotoChooseBtn" type="button" class="quiet-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 14v7h16v-7"/></svg>Seleccionar fotografía</button><span id="productPhotoFileName">Ningún archivo seleccionado</span><small id="productPhotoStatus" role="status">JPEG, PNG o WebP · máximo 5 MiB · recomendado 1:1</small></div><div class="product-photo-preview" aria-label="Fotografía: también puedes arrastrar un archivo aquí"><span id="productPhotoPlaceholder">Selecciona una fotografía</span><img id="productPhotoPreview" alt="Vista previa de la fotografía" hidden /><button id="cancelProductPhotoBtn" class="quiet-btn" type="button">Quitar selección</button></div><label class="wide"><input id="productActiveInput" type="checkbox" checked /> Producto activo</label><details class="context-help wide"><summary aria-label="Ayuda sobre productos">?</summary><p>Productos edita la información comercial y la fotografía. Registra el conteo inicial y los movimientos con motivo desde Inventario.</p></details><div id="catalogPendingOperations" class="wide" aria-live="polite" hidden></div>
             </form>
               <div class="form-actions wide">
+                <button id="productInventoryShortcutBtn" class="quiet-btn" type="button" hidden>Registrar entrada en Inventario</button>
                 <button id="cancelProductFormBtn" class="quiet-btn" type="button">Cancelar</button><button id="resetProductFormBtn" class="quiet-btn" type="button">Limpiar</button><button id="saveProductBtn" class="solid-btn" type="submit" form="productForm">Guardar</button>
               </div>
           </section>
@@ -462,7 +463,7 @@
         <div class="inventory-management-layout" data-inventory-mode="stock">
           <div class="subview-tabs inventory-subview-tabs atelier-tabs" role="tablist" aria-label="Secciones de inventario">
             <button class="active" type="button" role="tab" aria-selected="true" data-inventory-mode-btn="stock">Existencias</button>
-            <button type="button" role="tab" aria-selected="false" data-inventory-mode-btn="entry">Entrada de mercancía</button>
+            <button type="button" role="tab" aria-selected="false" aria-label="Entrada de mercancía" data-inventory-mode-btn="entry">Entrada</button>
             <button type="button" role="tab" aria-selected="false" data-inventory-mode-btn="history">Historial</button>
           </div>
           <section class="work-panel inventory-entry-panel">
@@ -471,7 +472,7 @@
                 <h3>Movimiento de inventario</h3>
               </div>
 
-              <div id="inventoryOperationTabs" class="atelier-tabs wide" role="tablist" aria-label="Movimiento de inventario"><button type="button" class="active" aria-selected="true" role="tab" data-inventory-operation="receipt">Entrada de mercancía</button><button type="button" aria-selected="false" role="tab" data-inventory-operation="adjustment">Ajuste</button><button type="button" aria-selected="false" role="tab" data-inventory-operation="waste">Merma</button></div><div class="entry-mode-toggle wide" role="tablist" aria-label="Tipo de entrada de mercancía">
+              <div id="inventoryOperationTabs" class="atelier-tabs wide" role="tablist" aria-label="Movimiento de inventario"><button type="button" class="active" aria-selected="true" role="tab" aria-label="Entrada de mercancía" data-inventory-operation="receipt">Entrada</button><button type="button" aria-selected="false" role="tab" data-inventory-operation="adjustment">Ajuste</button><button type="button" aria-selected="false" role="tab" data-inventory-operation="waste">Merma</button></div><div class="entry-mode-toggle wide" role="tablist" aria-label="Tipo de entrada de mercancía">
                 <button class="active" type="button" role="tab" aria-selected="true" data-entry-product-mode="existing">Producto existente</button>
                 <button type="button" role="tab" aria-selected="false" data-entry-product-mode="new">Producto nuevo</button>
               </div>
@@ -511,6 +512,7 @@
                   Mínimo sugerido
                   <input id="inventoryNewProductMinStockInput" type="number" min="0" step="0.001" placeholder="0.000" />
                 </label>
+                <label class="wide">Código (opcional)<input id="inventoryNewProductCodeInput" type="text" maxlength="80" autocomplete="off" /></label>
               </div>
 
               <label>
@@ -535,7 +537,7 @@
 
               <label class="wide">Proveedor (opcional)<input id="inventorySupplierInput" type="text" maxlength="120" /></label>
               <label class="wide">
-                Motivo de recepción
+                <span id="inventoryReasonLabel">Motivo de recepción</span>
                 <input id="inventoryEntryNotesInput" type="text" maxlength="180" required placeholder="Motivo de la recepción" />
               </label>
 
@@ -610,7 +612,15 @@
 
                 <h3>Historial de movimientos</h3>
               </div>
-              <input id="inventoryEntrySearchInput" type="search" placeholder="Buscar producto, nota o folio..." />
+              <button class="context-help-trigger" type="button" data-context-help="inventory-history" aria-label="Ayuda sobre el historial de inventario" aria-expanded="false">?</button>
+            </div>
+            <div class="inventory-history-filters" role="search" aria-label="Filtrar movimientos de inventario">
+              <label class="inventory-history-search"><span>Buscar movimiento</span><input id="inventoryEntrySearchInput" type="search" placeholder="Producto, nota o folio..." /></label>
+              <label>Desde<input id="inventoryHistoryFrom" type="date" /></label>
+              <label>Hasta<input id="inventoryHistoryTo" type="date" /></label>
+              <label>Movimiento<select id="inventoryHistoryType"><option value="all">Todos</option><option value="received">Entrada de mercancía</option><option value="initial_receipt">Alta con entrada inicial</option><option value="initial_count">Conteo inicial</option><option value="adjustment">Ajuste</option><option value="waste">Merma</option><option value="restitution">Restitución</option></select></label>
+              <button id="clearInventoryHistoryBtn" class="quiet-btn" type="button">Limpiar</button>
+              <p id="inventoryHistoryCount" role="status" aria-live="polite"></p>
             </div>
             <div id="inventoryEntriesList" class="inventory-entries-list">
               <p class="empty-state">Aún no hay entradas registradas.</p>
@@ -1100,5 +1110,8 @@
   <script src="./catalog-workflows.js"></script>
   <script src="./settings-center.js"></script>
   <script src="./access-control.js"></script>
+  <script src="./scanner.js"></script>
+  <script src="./payment-methods.js"></script>
+  <script src="./panel-help.js"></script>
 </body>
 </html>

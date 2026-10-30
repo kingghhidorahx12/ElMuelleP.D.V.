@@ -97,6 +97,7 @@ async function saveBusinessConfiguration(event) {
 }
 function syncConfigurationSection(mode) {
   const definition=configurationSections[mode];if(!definition)return;
+  if(typeof closeContextHelp==='function')closeContextHelp();
   $('settingsSectionTitle').textContent=definition[0];$('settingsSectionEyebrow').textContent=mode==='scale'?'Configuración del dispositivo':'Configuración del sistema';
   $('configurationSectionDescription').textContent=definition[2];$('configurationHeroIcon').innerHTML=configurationIcon(definition[3]);
   $('configurationSaveArea').hidden=!['general','appearance'].includes(mode);$('configurationUsersIndicator').hidden=mode!=='users';
@@ -110,6 +111,7 @@ function setConfigurationUserTab(key,focus=false) {
 }
 function buildConfigurationCenter() {
   const motion=$('posMotionToggle');
+  const help=document.createElement('button');help.type='button';help.className='context-help-trigger';help.dataset.contextHelp='settings';help.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4M12 17h.01"/></svg>';help.setAttribute('aria-label','Ayuda de esta sección de Configuración');help.setAttribute('aria-expanded','false');const title=$('settingsSectionTitle'),titleRow=document.createElement('div');titleRow.className='settings-title-row';title.before(titleRow);titleRow.append(title,help);
   document.querySelector('.settings-subview-tabs').innerHTML=Object.entries(configurationSections).map(([key,[title,sub,,icon]])=>`<button id="settingsTab-${key}" type="button" role="tab" aria-selected="false" aria-controls="settingsPane-${key}" tabindex="-1" data-settings-mode-btn="${key}">${configurationIcon(icon)}<span>${title}<small>${sub}</small></span></button>`).join('');
   const head=document.querySelector('.settings-section-head');head.insertAdjacentHTML('afterbegin','<span id="configurationHeroIcon" class="configuration-hero-icon"></span>');head.querySelector('div').insertAdjacentHTML('beforeend','<p id="configurationSectionDescription"></p>');head.insertAdjacentHTML('beforeend','<div id="configurationSaveArea"><button id="configurationSaveBtn" class="quiet-btn" type="button">'+configurationIcon('save')+'Guardar cambios</button><small id="configurationPending" role="status">Cargando preferencias…</small></div><div id="configurationUsersIndicator" hidden><span>Usuarios totales</span><strong id="configurationUserCount">—</strong><small>Sistema activo · sesión verificada</small></div>');
   const appearance=preferenceSelect('theme','Tema visual',[['marine','Marino (predeterminado)']],'Único tema aprobado disponible.')+preferenceSelect('accent','Color de acento',[['gold','Dorado'],['sky','Celeste']])+preferenceSelect('interfaceMode','Modo de interfaz',[['light','Claro']],'Se conserva la interfaz clara aprobada.');

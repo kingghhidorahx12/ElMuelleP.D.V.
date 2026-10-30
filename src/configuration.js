@@ -46,11 +46,46 @@ function normalizeBusiness(input) {
   out.logo=logo;
   return out;
 }
-function registerConfiguration({app,database,requireAdminUser,requireSessionUser,encryptSensitivePayload,decryptSensitivePayload,recordAuditEvent}) {
+const DEFAULT_PAYMENT_METHODS=Object.freeze({efectivo:true,tarjeta:false,transferencia:true});
+function readPaymentMethods(database){return database.readDocument('business-settings','payment-methods',DEFAULT_PAYMENT_METHODS);}
+function registerConfiguration({app,database,requireAdminUser,requireSessionUser,encryptSensitivePayload,decryptSensitivePayload,recordAuditEvent,canUsePos,notifyScanner=()=>{},notifyPaymentMethods=()=>{}}) {
   const startedAt=new Date().toISOString();
   const readPrivate=(collection,id,fallback={})=>{const record=database.readDocument(collection,id);return record?decryptSensitivePayload(record.encrypted)||fallback:fallback;};
   const savePrivate=(collection,id,value)=>database.saveDocument(collection,id,{encrypted:encryptSensitivePayload(value)});
   const safe=(fn)=>(req,res)=>{try {res.set('Cache-Control','no-store');fn(req,res);}catch(error){res.status(error.statusCode||500).json({message:error.statusCode?error.message:'No se pudo completar la configuración.'});}};
+  const scanner=()=>({enabled:database.readDocument('peripheral-settings','scanner')?.enabled===true});
+  app.get('/api/payment-methods',safe((req,res)=>{
+    const user=requireSessionUser(req,res);if(!user)return;
+    if(user.role!=='admin'&&!canUsePos?.(user))return res.status(403).json({message:'No tienes acceso al Punto de Venta.'});
+    res.json(readPaymentMethods(database));
+  }));
+  app.put('/api/payment-methods',safe((req,res)=>{
+    const user=requireAdminUser(req,res);if(!user)return;
+    const value=req.body,keys=Object.keys(DEFAULT_PAYMENT_METHODS);
+    if(!value||Array.isArray(value)||Object.keys(value).length!==keys.length||!keys.every(key=>typeof value[key]==='boolean'))invalid('Indica qué métodos de pago estarán activos.');
+    if(!keys.some(key=>value[key]))invalid('Mantén al menos un método de pago activo para poder cobrar.');
+    const saved=database.transaction(()=>{
+      const previous=readPaymentMethods(database),next=Object.fromEntries(keys.map(key=>[key,value[key]]));
+      if(keys.some(key=>previous[key]!==next[key])){database.saveDocument('business-settings','payment-methods',next);recordAuditEvent('payment_methods_changed','business','payment-methods',user,{previous,next});}
+      return next;
+    });
+    notifyPaymentMethods(saved);res.json(saved);
+  }));
+  app.get('/api/peripherals/scanner',safe((req,res)=>{
+    const user=requireSessionUser(req,res);if(!user)return;
+    if(user.role!=='admin'&&!canUsePos?.(user))return res.status(403).json({message:'No tienes autorización para usar el escáner del POS.'});
+    res.json(scanner());
+  }));
+  app.put('/api/peripherals/scanner',safe((req,res)=>{
+    const user=requireAdminUser(req,res);if(!user)return;
+    if(!req.body||Array.isArray(req.body)||Object.keys(req.body).length!==1||typeof req.body.enabled!=='boolean')invalid('Usar escáner debe ser un valor booleano.');
+    const value=database.transaction(()=>{
+      const previous=scanner(),next={enabled:req.body.enabled};
+      if(previous.enabled!==next.enabled){database.saveDocument('peripheral-settings','scanner',next);recordAuditEvent('scanner_setting_changed','peripheral','scanner',user,{previous:previous.enabled,next:next.enabled});}
+      return next;
+    });
+    notifyScanner(value);res.json(value);
+  }));
   app.get('/api/preferences',safe((req,res)=>{const user=requireSessionUser(req,res);if(!user)return;res.json(database.readDocument('ui-preferences',user.id,DEFAULT_PREFERENCES));}));
   app.put('/api/preferences',safe((req,res)=>{const user=requireSessionUser(req,res);if(!user)return;const prefs=normalizePreferences(req.body);database.transaction(()=>{database.saveDocument('ui-preferences',user.id,prefs);recordAuditEvent('preferences_updated','user',user.id,user,{keys:Object.keys(prefs)});});res.json(prefs);}));
   app.get('/api/configuration',safe((req,res)=>{
@@ -66,4 +101,4 @@ function registerConfiguration({app,database,requireAdminUser,requireSessionUser
   app.get('/api/configuration/integrity',safe((req,res)=>{if(!requireAdminUser(req,res))return;const rows=database.db.prepare('PRAGMA quick_check').all();res.json({ok:rows.length===1&&Object.values(rows[0])[0]==='ok',checkedAt:new Date().toISOString()});}));
   return {normalizeContact,readProfile:id=>readPrivate('user-profile',id),saveProfile:(id,value)=>savePrivate('user-profile',id,value),recordAccess:id=>database.transaction(()=>database.saveDocument('user-access',id,{at:new Date().toISOString()}))};
 }
-module.exports={registerConfiguration,normalizePreferences,normalizeBusiness,normalizeContact,DEFAULT_PREFERENCES};
+module.exports={registerConfiguration,normalizePreferences,normalizeBusiness,normalizeContact,DEFAULT_PREFERENCES,readPaymentMethods};

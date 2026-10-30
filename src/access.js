@@ -66,6 +66,8 @@ function registerAccess({app,database,getSessionUser,requireAdminUser,recordAudi
     next();
   });
   function notifyUsers(ids) { for (const client of clients) if (ids.has(client.userId)) send(client); }
-  return {effective,allows,sessionUser,notifyUsers};
+  function notifyScanner(value) {for(const client of clients){const user=getSessionUser(client.req,false);if(user&&(user.role==='admin'||allows(user,['pos'])))client.res.write(`event: scanner\ndata: ${JSON.stringify(value)}\n\n`);}}
+  function notifyPaymentMethods(value){for(const client of clients){const user=getSessionUser(client.req,false);if(user&&(user.role==='admin'||allows(user,['pos'])))client.res.write(`event: payment-methods\ndata: ${JSON.stringify(value)}\n\n`);}}
+  return {effective,allows,sessionUser,notifyUsers,notifyScanner,notifyPaymentMethods};
 }
 module.exports={registerAccess,MODULES,EMPLOYEE_DEFAULTS};

@@ -88,6 +88,8 @@ test('Instalación sintética conserva 28 productos, usuarios, permisos, caja y 
   assert.equal((await api('/api/settings','PUT',{users,employeePins:{worker:workerPin},adminContact:{email:'admin@example.com',phone:'6690000000'}})).status,200);
   const permissions=Object.fromEntries(require('../src/access').MODULES.map(id=>[id,id==='sales']));assert.equal((await api('/api/users/worker/permissions','PUT',{permissions})).status,200);
   assert.equal((await api('/api/cash-sessions/open','POST',{openingAmount:100})).status,201);
+  // Esta prueba ejercita tarjeta explícitamente habilitada por administración.
+  assert.equal((await api('/api/payment-methods','PUT',{efectivo:true,tarjeta:true,transferencia:true})).status,200);
   const sale=await api('/api/sales','POST',{items:[{productId:'synthetic-0',quantity:1}],paymentMethod:'tarjeta',paymentReference:'SYNTHETIC'});assert.equal(sale.status,201);saleId=sale.body.id;
   assert.equal((await api('/api/sales/'+saleId+'/invoice','PATCH',{rfc:'XAXX010101000',businessName:'Receptor sintético',fiscalZip:'00000',fiscalRegime:'601',cfdiUse:'G03',email:'invoice@example.com'})).status,200);
   const business=(await api('/api/configuration')).body.business;assert.equal((await api('/api/configuration/business','PUT',{...business,commercialName:'Negocio sintético',email:'business@example.com'})).status,200);

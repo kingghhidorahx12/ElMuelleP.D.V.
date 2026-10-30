@@ -656,6 +656,7 @@ function maximizeApplicationWindow() {
 }
 
 function logoutToAccess({ preservePendingCheckout = false } = {}) {
+  if(typeof renderInventoryEntries==='function')renderInventoryEntries.cache=null;
   if(typeof resetPinVisibility==='function')resetPinVisibility();
   state.pendingProductPhoto=null;state.productPhotoVersion=(state.productPhotoVersion||0)+1;if($('catalogPendingOperations'))$('catalogPendingOperations').textContent='';if($('productEditorDialog')?.open)$('productEditorDialog').close();
   const preservedCheckout = preservePendingCheckout ? state.checkoutPending : null;
@@ -685,7 +686,7 @@ function logoutToAccess({ preservePendingCheckout = false } = {}) {
     currentCutTotals: { total: 0, profit: 0, count: 0, cash: 0, card: 0, transfer: 0, canceled: 0 }
   });
   ["salesList", "salesDetail", "recentSalesList", "reportTableBody", "printArea", "auditEventsList",
-    "cashMovementsList", "cashHistoryList", "cashActivityList", "productAdminList", "inventoryList", "inventoryRecentActivity", "pieceQuantityProductName",
+    "cashMovementsList", "cashHistoryList", "cashActivityList", "productAdminList", "inventoryList", "inventoryEntriesList", "inventoryRecentActivity", "pieceQuantityProductName",
     "pieceQuantityUnitPrice", "pieceQuantityStock", "pieceQuantitySubtotal", "pieceQuantityError", "invoiceSaleSummary"]
     .forEach((id) => { if ($(id)) $(id).textContent = ""; });
   ["salesKpi0", "salesKpi1", "salesKpi2", "salesKpi3", "reportKpiPrimary", "reportKpiSecondary", "reportKpiThird", "reportKpiFourth", "catalogProductCount", "catalogActiveCount", "catalogCategoryCount", "catalogInventoryValue", "inventoryProductCount", "inventoryAttentionCount", "inventoryDayMovements", "inventoryPendingAdjustments"]
@@ -1064,6 +1065,7 @@ function updateManualQuantityUi() {
 
 function setPaymentMethod(method = "efectivo") {
   const nextMethod = ["efectivo", "tarjeta", "transferencia"].includes(method) ? method : "efectivo";
+  if(typeof isPaymentMethodEnabled==='function'&&!isPaymentMethodEnabled(nextMethod))return;
   state.paymentMethod = nextMethod;
   $$(".pay-method").forEach((button) => {
     button.classList.toggle("active", button.dataset.method === nextMethod);
@@ -1138,6 +1140,7 @@ function setProductMode(mode = "list") {
   const validMode = ["list", "form"].includes(mode) ? mode : "list";
   const root = document.querySelector(".products-layout");
   const changed = root && root.dataset.productsMode !== validMode;
+  if(changed&&typeof closeContextHelp==='function')closeContextHelp();
   if (root) root.dataset.productsMode = validMode;
 
   $$('[data-products-mode-btn]').forEach((button) => {
@@ -1147,6 +1150,7 @@ function setProductMode(mode = "list") {
   });
 
   const dialog=$('productEditorDialog');if(dialog){if(validMode==='form'&&!dialog.open)dialog.showModal();else if(validMode==='list'&&dialog.open)dialog.close();}
+  if(typeof syncProductInventoryShortcut==='function')syncProductInventoryShortcut();
   syncTopbarContext();
   if (changed) animatePosFeedback(root.querySelector(validMode === "list" ? ".product-catalog-panel" : ".product-form-panel"), "navigation");
 }
@@ -1155,15 +1159,19 @@ function setInventoryMode(mode = "stock") {
   const validMode = ["entry", "stock", "history"].includes(mode) ? mode : "stock";
   const root = document.querySelector(".inventory-management-layout");
   const changed = root && root.dataset.inventoryMode !== validMode;
+  if(changed&&typeof closeContextHelp==='function')closeContextHelp();
   if (root) root.dataset.inventoryMode = validMode;
+  if(validMode!=='history'&&$('inventoryEntriesList')?.childElementCount)$('inventoryEntriesList').replaceChildren();
 
   $$('[data-inventory-mode-btn]').forEach((button) => {
     const isActive = button.dataset.inventoryModeBtn === validMode;
     button.classList.toggle("active", isActive);
     button.setAttribute("aria-selected", isActive ? "true" : "false");
+    button.tabIndex = isActive ? 0 : -1;
   });
 
   syncTopbarContext();
+  if(validMode==='history'&&!$('inventoryEntriesList')?.childElementCount)renderInventoryEntries();
   if (changed) animatePosFeedback(root.querySelector({ entry: ".inventory-entry-panel", stock: ".inventory-analysis-panel", history: ".inventory-history-panel" }[validMode]), "navigation");
 }
 
@@ -1708,6 +1716,9 @@ function setView(viewName) {
     clearSelectedProduct({ immediate: true });
   }
   const changed = state.activeView !== viewName;
+  if(changed&&typeof closeScannerCapture==='function')closeScannerCapture();
+  if(changed&&typeof closeContextHelp==='function')closeContextHelp();
+  if(changed&&state.activeView==='inventory')$('inventoryEntriesList')?.replaceChildren();
   state.activeView = viewName;
 
   $$(".nav-item").forEach((button) => {
@@ -2297,7 +2308,7 @@ function getFilteredProducts() {
       (state.activeCategory === "favorites" ? state.favoriteProductIds.has(String(product.id)) : product.category === state.activeCategory);
     const matchesUnit =
       state.activeUnitFilter === "all" || product.unit === state.activeUnitFilter;
-    const matchesSearch = product.name.toLowerCase().includes(query) || String(product.id).toLowerCase().includes(query);
+    const matchesSearch = product.name.toLowerCase().includes(query) || String(product.id).toLowerCase().includes(query) || (typeof product.code==='string'&&product.code.toLowerCase().includes(query));
 
     return isActive && matchesCategory && matchesUnit && matchesSearch;
   });
@@ -2618,8 +2629,8 @@ function confirmPieceQuantity() {
   state.selectedProduct = product;
   state.detectedQuantity = result.quantity;
   state.quantitySource = "manual";
-  addCurrentProductToTicket({ nextStep: "product" });
-  ($$(".product-card,.pos-list-add").find((button) => button.dataset.id === product.id) || $("searchInput"))?.focus({ preventScroll: true });
+  addCurrentProductToTicket();
+  $("ticketItems")?.querySelector?.('[data-ticket-quantity="'+state.ticket.findIndex(item=>item.productId===product.id&&item.unit==='pieza'&&Number(item.price)===Number(product.price))+'"]')?.focus({preventScroll:true});
 }
 
 function renderWeighPanel() {
@@ -2702,6 +2713,24 @@ function changeTicketQuantity(index, raw) {
   renderTicket();
 }
 
+function getTicketPieceLimit(index){
+  const item=state.ticket[index],product=state.products.find(p=>p.id===item?.productId);
+  if(!item||item.unit!=='pieza'||!product||product.active===false||typeof product.stockQuantity!=='number')return null;
+  const reserved=state.ticket.reduce((sum,line,i)=>sum+(i!==index&&line.productId===item.productId?Number(line.quantity):0),0);
+  return Math.min(100,Math.max(0,Math.floor(product.stockQuantity-reserved)));
+}
+
+function stepTicketQuantity(index,delta){
+  if(state.checkoutPending||state.checkoutProcessing||state.checkoutPreparing)return;
+  const input=$('ticketItems').querySelector('[data-ticket-quantity="'+index+'"]');if(!input)return;
+  const raw=input.value,quantity=Number(raw);
+  if(!raw.trim()||!Number.isInteger(quantity)||quantity<1){changeTicketQuantity(index,raw);return;}
+  changeTicketQuantity(index,quantity+delta);
+  const selector='[data-ticket-step="'+delta+'"][data-ticket-index="'+index+'"]';
+  const next=$('ticketItems').querySelector(selector);
+  (next&&!next.disabled?next:$('ticketItems').querySelector('[data-ticket-quantity="'+index+'"]'))?.focus({preventScroll:true});
+}
+
 async function prevalidateCheckoutStock() {
   const owner=state.currentUser?.id,generation=state.checkoutGeneration;
   try {
@@ -2713,7 +2742,7 @@ async function prevalidateCheckoutStock() {
   } catch(error){showToast(error.message||'No se pudieron verificar las existencias. Conserva el ticket y vuelve a intentar.','error');return false;}
 }
 
-function addCurrentProductToTicket({ nextStep = "checkout" } = {}) {
+function addCurrentProductToTicket() {
   if (state.checkoutPending || state.checkoutProcessing) return;
   const product = state.selectedProduct;
 
@@ -2779,23 +2808,26 @@ function addCurrentProductToTicket({ nextStep = "checkout" } = {}) {
 
   clearSelectedProduct();
   renderTicket();
-  setPosStep(nextStep);
+  setPosStep("checkout");
   showToast(toastMessage);
 }
 
 function renderTicket() {
   const ticketItems = $("ticketItems");
+  // Retirar un campo enfocado puede emitir change durante innerHTML: esa captura ya fue reemplazada.
+  ticketItems.querySelectorAll('[data-ticket-quantity]').forEach(input=>input.__ticketReplacing=true);
 
   if (state.ticket.length === 0) {
     ticketItems.innerHTML = `<p class="empty-state">Agrega productos para iniciar.</p>`;
   } else {
     ticketItems.innerHTML = state.ticket
       .map((item, index) => {
+        const piece=item.unit==='pieza',limit=piece?getTicketPieceLimit(index):null;
         return `
           <article class="ticket-item">
             <div class="pos-ticket-copy">
-              <div class="pos-ticket-product"><strong>${escapeHtml(item.name)}</strong><span class="pos-ticket-quantity">${escapeHtml(quantityText(item.quantity, item.unit))}</span></div>
-              <div class="pos-ticket-details"><span class="pos-ticket-unit">${money(item.price)} / ${escapeHtml(getUnitLabel(item.unit))}</span><small>${item.unit==='pieza'?'Piezas':item.source === "scale" ? "Báscula" : "Manual autorizado"}</small>${item.unit==='pieza'?`<input class="ticket-quantity-edit" data-ticket-quantity="${index}" aria-label="Cantidad de ${escapeHtml(item.name)}" type="number" min="1" max="100" step="1" value="${item.quantity}" />`:''}</div>
+              <div class="pos-ticket-product"><strong>${escapeHtml(item.name)}</strong>${piece?'':`<span class="pos-ticket-quantity">${escapeHtml(quantityText(item.quantity, item.unit))}</span>`}</div>
+              <div class="pos-ticket-details"><span class="pos-ticket-unit">${money(item.price)} ${piece?'c/u':'/ '+escapeHtml(getUnitLabel(item.unit))}</span>${piece?`<div class="ticket-piece-control"><div class="ticket-quantity-stepper" role="group" aria-label="Cantidad de ${escapeHtml(item.name)}"><button class="ticket-quantity-step" type="button" data-ticket-index="${index}" data-ticket-step="-1" aria-label="Quitar una pieza de ${escapeHtml(item.name)}" ${item.quantity<=1?'disabled':''}>−</button><input class="ticket-quantity-edit" data-ticket-quantity="${index}" aria-label="Cantidad de ${escapeHtml(item.name)}" type="number" inputmode="numeric" min="1" max="${limit??100}" step="1" style="--ticket-quantity-digits:${String(item.quantity).length}" value="${item.quantity}" /><button class="ticket-quantity-step" type="button" data-ticket-index="${index}" data-ticket-step="1" aria-label="Agregar una pieza de ${escapeHtml(item.name)}" ${limit===null||item.quantity>=limit?'disabled':''}>+</button></div><span class="ticket-piece-unit" aria-hidden="true">${item.quantity===1?'pza':'pzas'}</span></div>`:`<small>${item.source === "scale" ? "Báscula" : "Manual autorizado"}</small>`}</div>
             </div>
             <b>${money(item.total)}</b>
             <button class="icon-btn" type="button" data-remove-item="${index}" aria-label="Quitar producto"><svg class="pos-remove-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg></button>
@@ -2806,7 +2838,16 @@ function renderTicket() {
   }
 
   updateTotals();
-  ticketItems.querySelectorAll('[data-ticket-quantity]').forEach(input=>input.addEventListener('change',()=>changeTicketQuantity(Number(input.dataset.ticketQuantity),input.value)));
+  ticketItems.querySelectorAll('[data-ticket-quantity]').forEach(input=>{
+    input.addEventListener('input',()=>input.style.setProperty('--ticket-quantity-digits',String(Math.max(1,input.value.length))));
+    input.addEventListener('change',()=>{if(input.isConnected&&!input.__ticketReplacing)changeTicketQuantity(Number(input.dataset.ticketQuantity),input.value);});
+    input.addEventListener('keydown',event=>{if(event.key!=='Enter'||event.repeat||event.isComposing)return;event.preventDefault();const index=Number(input.dataset.ticketQuantity);changeTicketQuantity(index,input.value);ticketItems.querySelector('[data-ticket-quantity="'+index+'"]')?.focus({preventScroll:true});});
+  });
+  ticketItems.querySelectorAll('[data-ticket-step]').forEach(button=>{
+    button.addEventListener('pointerdown',event=>event.preventDefault());
+    button.addEventListener('mousedown',event=>event.preventDefault());
+    button.addEventListener('click',()=>stepTicketQuantity(Number(button.dataset.ticketIndex),Number(button.dataset.ticketStep)));
+  });
   animatePosFeedback(ticketItems, "ticket");
 }
 
@@ -2995,9 +3036,10 @@ function restorePendingCheckout() {
 
 function syncCheckoutControls() {
   const processing = state.checkoutProcessing === true, locked = processing || Boolean(state.checkoutPending);
+  if(typeof reconcilePaymentMethod==='function')reconcilePaymentMethod();
   ['invoiceYesBtn', 'invoiceNoBtn'].forEach(id => { if ($(id)) $(id).disabled = processing; });
   ['clearTicketBtn', 'paymentReferenceInput', 'confirmWeightBtn', 'manualWeightBtn'].forEach(id => { if ($(id) && locked) $(id).disabled = true; });
-  $$('.pay-method').forEach(button => { button.disabled = locked; });
+  $$('.pay-method').forEach(button => { button.disabled = locked || (typeof isPaymentMethodEnabled==='function'&&!isPaymentMethodEnabled(button.dataset.method)); });
   if ($('ticketItems')) $('ticketItems').inert = locked;
   if (!locked && $('manualWeightBtn')) $('manualWeightBtn').disabled = false;
   if ($('chargeBtn')) {
@@ -3009,6 +3051,7 @@ function syncCheckoutControls() {
 
 async function chargeSale(invoiceRequested = false) {
   if (state.checkoutProcessing || state.checkoutPreparing) return;
+  if(!state.checkoutPending&&typeof isPaymentMethodEnabled==='function'&&!isPaymentMethodEnabled(state.paymentMethod)){showToast('Selecciona un método de pago disponible. Revisa Configuración si no hay opciones activas.');return;}
   const ownerId = state.currentUser?.id, generation = state.checkoutGeneration || 0;
   const isCurrent = () => state.sessionAuthenticated && state.currentUser?.id === ownerId && (state.checkoutGeneration || 0) === generation;
   if (!state.checkoutPending) {
@@ -3327,6 +3370,9 @@ function renderAdminProducts() {
   list.querySelectorAll("[data-toggle-product]").forEach((button) => {
     button.addEventListener("click", () => toggleProductStatus(button.dataset.toggleProduct));
   });
+  if(isAdminUser()&&canAccessView('inventory'))list.querySelectorAll('.management-product-options > div').forEach((host,index)=>{
+    const product=filteredProducts[index],button=document.createElement('button');button.type='button';button.className='quiet-btn';button.textContent='Registrar entrada en Inventario';button.disabled=product.active===false;button.dataset.entryForProduct=product.id;button.addEventListener('click',()=>openProductInventoryEntry(product.id));host.append(button);
+  });
 }
 
 async function toggleProductStatus(productId) {
@@ -3389,7 +3435,7 @@ function getInventoryEntryMode() {
 }
 
 function setInventoryEntryMode(mode = "existing") {
-  const entryMode = mode === "new" ? "new" : "existing";
+  const entryMode = mode === "new" && (!state.inventoryMovementMode||state.inventoryMovementMode==='receipt') ? "new" : "existing";
   const form = $("inventoryEntryForm");
   if (form) form.dataset.entryMode = entryMode;
 
@@ -3398,11 +3444,8 @@ function setInventoryEntryMode(mode = "existing") {
     button.classList.toggle("active", isActive);
     button.setAttribute("aria-selected", String(isActive));
     button.setAttribute("aria-pressed", String(isActive));
+    button.tabIndex = isActive ? 0 : -1;
   });
-
-  if (entryMode === "new" && $("inventoryEntryProductInput")) {
-    $("inventoryEntryProductInput").value = "";
-  }
 
   updateInventoryEntryProjection();
 }
@@ -3414,6 +3457,7 @@ function getInventoryNewProductDraft() {
   return {
     id: "",
     name: $("inventoryNewProductNameInput")?.value.trim() || "",
+    code: $("inventoryNewProductCodeInput")?.value.trim() || "",
     category: $("inventoryNewProductCategoryInput")?.value || "Pescados y mariscos",
     unit: unitValue,
     price: Number($("inventoryEntrySalePriceInput")?.value || 0),
@@ -3513,15 +3557,20 @@ function resetInventoryEntryForm() {
     $("inventoryNewProductUnitInput").value = "kg";
   }
   setInventoryEntryMode("existing");
+  if(typeof setInventoryMovementMode==='function')setInventoryMovementMode(state.inventoryMovementMode||'receipt');
 }
 
 async function loadInventoryEntries() {
+  const owner=state.currentUser?.id,generation=state.checkoutGeneration;
   try {
-    state.inventoryEntries = await fetchJson("/api/inventory/entries");
+    const entries=await fetchJson("/api/inventory/entries");
+    if(!state.sessionAuthenticated||state.currentUser?.id!==owner||state.checkoutGeneration!==generation||!canAccessView('inventory'))return;
+    state.inventoryEntries = entries;
+    state.inventoryHistoryRevision=(state.inventoryHistoryRevision||0)+1;
     renderInventoryEntryProductOptions();
     renderInventory();
     renderInventorySummary();
-    renderInventoryEntries();
+    renderInventoryEntries(state.activeView!=='inventory'||document.querySelector('.inventory-management-layout')?.dataset.inventoryMode!=='history');
     updateInventoryEntryProjection();
     if(typeof renderPendingRestitutions==='function')await renderPendingRestitutions();
   } catch (error) {
@@ -3554,45 +3603,60 @@ function renderInventorySummary() {
   $("inventoryEntriesCount").textContent = String(state.inventoryEntries.length);
 }
 
-function renderInventoryEntries() {
+function renderInventoryEntries(prepareOnly=false) {
+  prepareOnly=prepareOnly===true;
   const list = $("inventoryEntriesList");
   if (!list) return;
-
   const query = $("inventoryEntrySearchInput")?.value.trim().toLowerCase() || "";
+  const from = $('inventoryHistoryFrom')?.value || '', to = $('inventoryHistoryTo')?.value || '';
+  const kind = $('inventoryHistoryType')?.value || 'all';
+  const key=JSON.stringify([state.inventoryHistoryRevision||0,state.inventoryEntries.length,state.currentUser?.id,typeof isAdminUser==='function'&&isAdminUser(),query,from,to,kind]);
+  const apply=cache=>{if(cache.template&&list.replaceChildren)list.replaceChildren(cache.template.content.cloneNode(true));else list.innerHTML=cache.html;if(typeof bindCatalogPhotos==='function')bindCatalogPhotos(list);};
+  if(renderInventoryEntries.cache?.key===key){if(!prepareOnly)apply(renderInventoryEntries.cache);return;}
+  const dateFormatter = new Intl.DateTimeFormat('es-MX');
+  const entryIndices = new Map(state.inventoryEntries.map((entry,index)=>[entry,index]));
+  const dateKey = entry => entry.receivedAt || String(entry.createdAt || '').slice(0,10);
   const entries = state.inventoryEntries.filter((entry) => {
     const haystack = `${entry.id || ""} ${entry.productName || ""} ${entry.reason || entry.notes || ""}`.toLowerCase();
-    return haystack.includes(query);
+    const date = dateKey(entry);
+    return haystack.includes(query) && (kind === 'all' || (entry.type || 'received') === kind)
+      && (!from || date >= from) && (!to || date <= to);
   });
-
+  if($('inventoryHistoryCount'))$('inventoryHistoryCount').textContent = `${entries.length} de ${state.inventoryEntries.length} movimientos`;
   if (entries.length === 0) {
-    list.innerHTML = `<p class="empty-state">No hay movimientos con esos criterios.</p>`;
+    const html=`<p class="empty-state">No hay movimientos con esos criterios.</p>`;renderInventoryEntries.cache={key,html};if(!prepareOnly)list.innerHTML=html;
     return;
   }
-
-  list.innerHTML = entries.map((entry) => {
+  const html = '<div class="inventory-history-scroll" tabindex="0" role="region" aria-label="Tabla de movimientos de inventario"><table class="inventory-history-table"><caption class="sr-only">Movimientos registrados: fechas, cantidades, motivos y responsables disponibles</caption><thead><tr>'+['Fecha','Producto','Movimiento','Cantidad','Existencias','Motivo y proveedor','Responsable','Folio / referencia'].map(label=>'<th scope="col">'+label+'</th>').join('')+'</tr></thead><tbody>'+entries.map((entry) => {
     const labels = { initial_count: "Conteo inicial", adjustment: "Ajuste", waste: "Merma", restitution: "Restitución", initial_receipt: "Alta con entrada inicial", received: "Entrada de mercancía" };
-    const label = labels[entry.type] || "Entrada de mercancía";
+    const label = labels[entry.type || 'received'] || 'Movimiento registrado';
     const receipt = !entry.type || ["received", "initial_receipt"].includes(entry.type);
     const stock = value => typeof value === "number" ? quantityText(value, entry.unit) : "Sin verificar";
-    const margin = Number(entry.projectedRevenue) > 0 ? Number(entry.projectedProfit) / Number(entry.projectedRevenue) * 100 : 0;
-    const date = entry.receivedAt
-      ? new Date(`${entry.receivedAt}T12:00:00`).toLocaleDateString("es-MX")
-      : new Date(entry.createdAt).toLocaleDateString("es-MX");
+    const recordedDate = dateKey(entry), parsedDate = recordedDate ? new Date(recordedDate+'T12:00:00') : null;
+    const date = parsedDate && !Number.isNaN(parsedDate.getTime()) ? dateFormatter.format(parsedDate) : 'Sin fecha registrada';
+    const quantity = typeof entry.quantity === 'number' && Number.isFinite(entry.quantity) ? entry.quantity : null;
+    const quantityTextValue = quantity === null ? 'Sin registrar' : (quantity>0 && entry.type!=='initial_count'?'+':'')+quantityText(quantity,entry.unit);
+    const product = state.products?.find(p=>p.id===entry.productId);
+    const financial = receipt && isAdminUser() ? '<details class="inventory-history-finance" data-entry-finance="'+entryIndices.get(entry)+'"><summary>Importes de esta entrada</summary></details>' : '';
+    return `<tr class="inventory-history-row"><td><time${recordedDate?' datetime="'+escapeHtml(recordedDate)+'"':''}>${escapeHtml(date)}</time></td>
+      <td><div class="management-product-cell">${product?catalogPhoto(product):''}<strong>${escapeHtml(entry.productName || 'Sin nombre registrado')}</strong></div>${financial}</td>
+      <td><span class="inventory-movement-type" data-movement-kind="${escapeHtml(entry.type||'received')}">${escapeHtml(label)}</span></td>
+      <td class="inventory-history-quantity${quantity===null?'':quantity<0?' is-negative':quantity>0?' is-positive':''}">${escapeHtml(quantityTextValue)}</td>
+      <td class="inventory-history-stock">${escapeHtml(stock(entry.previousStock)+' → '+stock(entry.newStock))}</td>
+      <td class="inventory-history-reason">${escapeHtml(entry.reason || entry.notes || 'Sin motivo registrado')}${entry.supplier?'<small>Proveedor: '+escapeHtml(entry.supplier)+'</small>':''}</td>
+      <td>${escapeHtml(entry.createdBy?.name || 'Sin responsable registrado')}</td><td class="inventory-history-reference">${escapeHtml(entry.id || 'Sin folio registrado')}</td></tr>`;
+  }).join('')+'</tbody></table></div>';
+  // Cache only the operational row markup. Private amounts are built on demand and never cached.
+  const template=typeof document!=='undefined'?document.createElement('template'):null;if(template)template.innerHTML=html;
+  renderInventoryEntries.cache={key,html,template};if(!prepareOnly)apply(renderInventoryEntries.cache);
+}
 
-    return `
-      <article class="inventory-entry-row">
-        <div class="inventory-entry-main">
-          <strong>${escapeHtml(entry.productName)}</strong>
-          <span>${escapeHtml(label)} · ${escapeHtml(entry.id)} · ${escapeHtml(date)}${entry.reason || entry.notes ? ` · ${escapeHtml(entry.reason || entry.notes)}` : ""}</span>
-          <small>${receipt ? `${quantityText(entry.quantity, entry.unit)}${isAdminUser()?` a ${money(entry.unitCost)} · Costo promedio ${money(entry.weightedAverageCost)}`:''}` : `${stock(entry.previousStock)} → ${stock(entry.newStock)}`}</small>
-        </div>
-        ${receipt && isAdminUser() ? `<div class="inventory-entry-value"><span>Inversión</span><strong>${money(entry.totalCost)}</strong></div>
-        <div class="inventory-entry-value"><span>Venta proyectada</span><strong>${money(entry.projectedRevenue)}</strong></div>
-        <div class="inventory-entry-value profit"><span>Ganancia</span><strong>${money(entry.projectedProfit)}</strong></div>
-        <span class="status-badge ${Number(entry.projectedProfit) >= 0 ? "ok" : "warn"}">${margin.toFixed(2)}%</span>` : `<div class="inventory-entry-value"><span>Existencias finales</span><strong>${stock(entry.newStock)}</strong></div>`}
-      </article>
-    `;
-  }).join("");
+function renderInventoryEntryFinancialDetails(details){
+  if(!details.open||details.querySelector('dl')||!isAdminUser())return;
+  const index=Number(details.dataset.entryFinance),entry=Number.isSafeInteger(index)&&index>=0?state.inventoryEntries[index]:null;if(!entry)return;
+  const recorded=value=>typeof value==='number'&&Number.isFinite(value),amount=value=>recorded(value)?money(value):'Pendiente';
+  const margin=recorded(entry.projectedRevenue)&&recorded(entry.projectedProfit)&&entry.projectedRevenue>0?(100*entry.projectedProfit/entry.projectedRevenue).toFixed(2)+'%':'Pendiente';
+  details.insertAdjacentHTML('beforeend','<dl>'+[['Costo por unidad',amount(entry.unitCost)],['Costo promedio',amount(entry.weightedAverageCost)],['Inversión',amount(entry.totalCost)],['Venta proyectada',amount(entry.projectedRevenue)],['Ganancia',amount(entry.projectedProfit)],['Margen',margin]].map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+escapeHtml(value)+'</dd></div>').join('')+'</dl>');
 }
 
 function getInventoryMovementMap(days = 30) {
@@ -6666,10 +6730,6 @@ function bindEvents() {
     const products = getFilteredProducts();
     if (products.length === 1) selectProduct(products[0]);
   });
-  on($("scanProductBtn"), "click", () => {
-    $("searchInput").focus();
-    $("searchInput").select();
-  });
   on($("catalogFavoritesBtn"), "click", () => {
     state.activeCategory = state.activeCategory === "favorites" ? "all" : "favorites";
     renderCategories();
@@ -6756,6 +6816,8 @@ function bindEvents() {
     on($(id), "input", updateInventoryEntryProjection);
   });
   on($("inventoryEntrySearchInput"), "input", renderInventoryEntries);
+  ['inventoryHistoryFrom','inventoryHistoryTo','inventoryHistoryType'].forEach(id=>on($(id),'change',renderInventoryEntries));
+  on($('clearInventoryHistoryBtn'),'click',()=>{['inventoryEntrySearchInput','inventoryHistoryFrom','inventoryHistoryTo'].forEach(id=>$(id).value='');$('inventoryHistoryType').value='all';renderInventoryEntries();});
   on($("inventorySearchInput"), "input", renderInventory);
   on($("inventoryCategoryFilter"), "change", renderInventory);
   on($("inventoryStatusFilter"), "change", renderInventory);
@@ -6921,6 +6983,9 @@ async function init() {
   if(typeof initCatalogWorkflows==='function')initCatalogWorkflows();
   if (typeof initSettingsCenter === 'function') initSettingsCenter();
   if (typeof initAccessControl === 'function') initAccessControl();
+  if (typeof initScanner === 'function') initScanner();
+  if (typeof initPaymentMethods === 'function') initPaymentMethods();
+  if (typeof initPanelHelp === 'function') initPanelHelp();
   if (!state.setupRequired) window.setTimeout(maximizeApplicationWindow, 0);
 }
 
