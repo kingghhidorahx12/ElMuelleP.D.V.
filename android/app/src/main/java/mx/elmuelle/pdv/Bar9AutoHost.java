@@ -98,7 +98,7 @@ final class Bar9AutoHost {
    stage="START_READER";connected=true;UsbDeviceConnection link=connection;
    reader=new SerialInputOutputManager(port,new SerialInputOutputManager.Listener(){public void onNewData(byte[] bytes){accept(bytes,link,expected);}public void onRunError(Exception error){control.execute(()->lost(link,expected,error));}});
    reader.setReadTimeout(currentAttempt.readTimeout);reader.start();
-   auto.opened(now());code="USB_DETECTING";operation="READ";message="Detectando · lectura iniciada; solicitud P cada 800 ms";event("READER_STARTED_BEFORE_P");
+   auto.opened(now());code="USB_DETECTING";operation="READ";message="Detectando · lectura iniciada; solicitando peso";event("READER_STARTED_BEFORE_P");
    if(auto.tick(now())==ScaleAutoSession.Action.POLL)sendWindowsRequest();
   }catch(Exception error){exceptionClass=error.getClass().getSimpleName();code=stage.equals("PERMISSION")?"USB_PERMISSION_DENIED":stage.equals("SERIAL_PARAMETERS")?"SERIAL_CONFIG_FAILED":stage.equals("CONTROL_LINES")?"CONTROL_LINES_FAILED":"USB_OPEN_FAILED";operation=stage;event(code);release();auto.transportFailed(now(),code);}
  }
@@ -110,7 +110,7 @@ final class Bar9AutoHost {
  private synchronized void accept(byte[] bytes,UsbDeviceConnection link,long expected){
   if(!connected||connection!=link||session!=expected||decoder==null||bytes.length==0)return;
   lastRx=now();rxBytes+=bytes.length;rxChunks++;auto.bytes(lastRx,bytes.length);long before=decoder.frameSequence();weight=decoder.feed(bytes);sequence++;
-  auto.reading(weight.code,weight.valid,weight.stable);code=weight.code;message=weight.message;operation="READ";
+  if(decoder.frameSequence()!=before)auto.reading(weight.code,weight.valid,weight.stable);code=weight.code;message=weight.message;operation="READ";
   if(weight.valid&&decoder.frameSequence()!=before){lastValid=lastRx;if(weight.stable&&!profileSaved)saveVerified();}
  }
  private synchronized void lost(UsbDeviceConnection link,long expected,Exception error){
@@ -125,6 +125,7 @@ final class Bar9AutoHost {
  }
  private JSONObject profile()throws JSONException{
   JSONObject p=new JSONObject().put("profileRevision",3).put("configuredModel","RHINO BAR-9").put("modelSource","OWNER_CONFIRMED").put("modelInferredFromUsb",false).put("autoBar9",true).put("vid",6790).put("pid",29987).put("deviceId",deviceId).put("driver","ch34x").put("protocol","ascii-auto-safe").put("unit","auto").put("maxKg",40).put("baud",9600).put("dataBits",8).put("parity",0).put("stopBits",1).put("flowControl","none").put("command","P").put("commandConfirmed",true).put("commandSource","APPROVED_WINDOWS_IMPLEMENTATION").put("windowsSourceSHA256",ScaleSerialPolicy.WINDOWS_SOURCE_SHA256).put("pollMs",800);
+  p.put("pollMs",auto==null?800:auto.pollIntervalMs()).put("responseTimeoutMs",800);
   if(currentAttempt!=null){p.put("readTimeoutMs",currentAttempt.readTimeout);if(currentAttempt.dtr!=null)p.put("dtr",currentAttempt.dtr).put("rts",currentAttempt.rts);}if(decoder!=null&&!decoder.reportedUnit().isEmpty())p.put("detectedUnit",decoder.reportedUnit());return p;
  }
  synchronized JSONObject state(){
@@ -141,7 +142,7 @@ final class Bar9AutoHost {
   try{if(events.size()>=96)events.removeFirst();JSONObject e=new JSONObject().put("elapsedMs",now()-startedAt).put("event",name).put("operation",operation).put("attempt",auto==null?0:auto.attemptNumber()).put("exceptionClass",exceptionClass);if(currentAttempt!=null)e.put("transport",currentAttempt.id());events.add(e);}catch(JSONException ignored){}
  }
  private JSONObject currentDiagnostic()throws Exception{
-  JSONObject report=state().put("format","ElMuellePDV-USB-diagnostic-v2").put("automatic",true).put("modelInferred",false).put("exceptionClass",exceptionClass).put("receivedChunks",rxChunks).put("transmittedBytes",txBytes).put("transmittedRequests",txRequests).put("completedFrames",decoder==null?0:decoder.frameSequence()).put("captureActive",trace.capturing(now())).put("captureWindowMs",60000).put("unknownPayloadsRedacted",true).put("diagnosticWriteError",diagnosticWriteError).put("attemptLimit",auto==null?6:auto.attemptLimit());
+  JSONObject report=state().put("format","ElMuellePDV-USB-diagnostic-v2").put("automatic",true).put("modelInferred",false).put("exceptionClass",exceptionClass).put("receivedChunks",rxChunks).put("transmittedBytes",txBytes).put("transmittedRequests",txRequests).put("responseTimeouts",auto==null?0:auto.requestTimeouts()).put("completedFrames",decoder==null?0:decoder.frameSequence()).put("captureActive",trace.capturing(now())).put("captureWindowMs",60000).put("unknownPayloadsRedacted",true).put("diagnosticWriteError",diagnosticWriteError).put("attemptLimit",auto==null?6:auto.attemptLimit());
   JSONArray log=new JSONArray();for(JSONObject e:events)log.put(e);report.put("events",log);
   JSONArray frames=new JSONArray();for(ScaleTrace.Entry e:trace.snapshot())frames.put(new JSONObject().put("elapsedMs",e.elapsedMs).put("direction",e.direction).put("format",e.format).put("capturedBytes",e.bytes).put("redacted",e.redacted).put("hex",e.hex).put("ascii",e.ascii));report.put("frames",frames);
   if(device!=null){JSONArray interfaces=new JSONArray();for(int i=0;i<device.getInterfaceCount();i++){UsbInterface f=device.getInterface(i);JSONArray endpoints=new JSONArray();for(int j=0;j<f.getEndpointCount();j++){UsbEndpoint ep=f.getEndpoint(j);endpoints.put(new JSONObject().put("address",ep.getAddress()).put("type",ep.getType()).put("maxPacketSize",ep.getMaxPacketSize()));}interfaces.put(new JSONObject().put("id",f.getId()).put("class",f.getInterfaceClass()).put("endpoints",endpoints));}report.put("usbInterfaces",interfaces);}return report;

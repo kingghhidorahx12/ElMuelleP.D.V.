@@ -5,7 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class ScaleAutoSessionTest {
- private ScaleDecoder.Reading feed(ScaleAutoSession s,ScaleDecoder d,long time,String text){byte[] bytes=text.getBytes(StandardCharsets.US_ASCII);s.bytes(time,bytes.length);ScaleDecoder.Reading r=d.feed(bytes);s.reading(r.code,r.valid,r.stable);return r;}
+ private ScaleDecoder.Reading feed(ScaleAutoSession s,ScaleDecoder d,long time,String text){byte[] bytes=text.getBytes(StandardCharsets.US_ASCII);s.bytes(time,bytes.length);long before=d.frameSequence();ScaleDecoder.Reading r=d.feed(bytes);if(d.frameSequence()!=before)s.reading(r.code,r.valid,r.stable);return r;}
  @Test public void readerOpensBeforeFirstPAndPollsEvery800ms(){
   ScaleAutoSession s=new ScaleAutoSession(null);assertEquals(ScaleAutoSession.Action.OPEN,s.tick(0));assertEquals(ScaleAutoSession.Action.NONE,s.tick(0));s.opened(100);
   assertEquals(ScaleAutoSession.Action.POLL,s.tick(100));assertEquals(ScaleAutoSession.Action.NONE,s.tick(899));assertEquals(ScaleAutoSession.Action.POLL,s.tick(900));assertArrayEquals(new byte[]{0x50},ScaleSerialPolicy.windowsBar9Command());
@@ -71,4 +71,20 @@ public class ScaleAutoSessionTest {
   ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","auto",40);assertFalse(d.feed("1kg\r1kg\r".getBytes(StandardCharsets.US_ASCII)).valid);assertFalse(d.feed("1000g\r".getBytes(StandardCharsets.US_ASCII)).valid);assertFalse(d.feed("1000g\r".getBytes(StandardCharsets.US_ASCII)).valid);assertTrue(d.feed("1000g\r".getBytes(StandardCharsets.US_ASCII)).valid);
  }
  @Test public void automaticWindowsPIsRestrictedToTheApprovedTransport(){assertTrue(ScaleSerialPolicy.approvedBar9Transport(6790,29987));assertFalse(ScaleSerialPolicy.approvedBar9Transport(0x1a86,0x5523));assertFalse(ScaleSerialPolicy.approvedBar9Transport(0x0403,0x6001));}
+ @Test public void threeStableResponsesCanValidateIn425msWithoutSkippingSamples(){
+  ScaleAutoSession s=new ScaleAutoSession(null);ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","auto",40);s.tick(0);s.opened(0);assertEquals(800,s.pollIntervalMs());assertEquals(ScaleAutoSession.Action.POLL,s.tick(0));
+  assertFalse(feed(s,d,25,"1.250kg\r").valid);assertEquals(200,s.pollIntervalMs());assertEquals(ScaleAutoSession.Action.NONE,s.tick(199));assertEquals(ScaleAutoSession.Action.POLL,s.tick(200));assertFalse(feed(s,d,225,"1.250kg\r").valid);
+  assertEquals(ScaleAutoSession.Action.POLL,s.tick(400));assertTrue(feed(s,d,425,"1.250kg\r").valid);assertEquals(3,d.frameSequence());assertFalse(ScaleSerialPolicy.fresh(1926,425));
+ }
+ @Test public void slowOrFragmentedReplyDoesNotAccumulateRequests(){
+  ScaleAutoSession s=new ScaleAutoSession(null);ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","auto",40);s.tick(0);s.opened(0);s.tick(0);feed(s,d,25,"1.250kg\r");assertEquals(ScaleAutoSession.Action.POLL,s.tick(200));
+  assertFalse(feed(s,d,220,"1.25").valid);assertEquals(ScaleAutoSession.Action.NONE,s.tick(400));assertEquals(ScaleAutoSession.Action.NONE,s.tick(999));assertEquals(ScaleAutoSession.Action.POLL,s.tick(1000));assertEquals(1,s.requestTimeouts());
+ }
+ @Test public void changedOrUnstableWeightsStillCannotPassFastPolling(){
+  ScaleAutoSession s=new ScaleAutoSession(null);ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","auto",40);s.tick(0);s.opened(0);s.tick(0);
+  for(int n=0;n<6;n++){assertFalse(feed(s,d,25+n*200,n%2==0?"1kg\r":"2kg\r").valid);s.tick(200+n*200);}assertNotEquals("AVAILABLE",s.phase());assertFalse(feed(s,d,1300,"US 1kg\r").valid);
+ }
+ @Test public void unknownReplyReturnsToBaselineAndReconnectResetsFastMode(){
+  ScaleAutoSession s=new ScaleAutoSession(null);s.tick(0);s.opened(0);s.tick(0);s.reading("WAITING_STABILITY",false,false);assertEquals(200,s.pollIntervalMs());s.reading("FORMAT_UNKNOWN",false,false);assertEquals(800,s.pollIntervalMs());s.reading("VALID_WEIGHT",true,true);s.transportFailed(100,"USB_READ_FAILED");assertEquals(800,s.pollIntervalMs());
+ }
 }

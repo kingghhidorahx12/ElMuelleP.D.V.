@@ -11,19 +11,25 @@ window.AndroidScaleUi={render(){
  for(const id of ['connectScaleBtn','connectScaleBtnSettings']){const el=document.getElementById(id);if(el){el.disabled=false;el.textContent='Configurar USB';}}
  for(const id of ['requestScaleBtn','requestScaleBtnSettings']){const el=document.getElementById(id);if(el)el.disabled=true;}
  const profile=current.profile&&typeof current.profile==='object'?current.profile:null;
- for(const [id,value]of [['scaleModelInput',profile?.configuredModel||'Modelo no confirmado'],['scaleBaudRateInput',profile?.baud||''],['scaleCommandInput',profile?.autoBar9?'P · cada 800 ms':profile?.commandConfirmed?'P confirmado':'Sólo escuchar'],['scaleUnitInput',profile?.detectedUnit||(profile?.unit==='auto'?'kg':profile?.unit||'kg')]]){const el=document.getElementById(id);if(el){el.value=String(value);if(id!=='scaleModelInput')el.disabled=true;}}
- const section=document.querySelector('.settings-protocol-note,.settings-protocol,.scale-protocol-card');if(section)section.textContent='USB nativo · '+(current.driver||'controlador por detectar')+' · '+(current.detectedFormat||'formato pendiente')+(profile?.autoBar9?' · configuración automática BAR-9 · 9600 8N1 · sin flujo · P / 800 ms':' · modelo sin confirmar')+(current.diagnosticSaved?' · diagnóstico guardado automáticamente':'');
+ for(const [id,value]of [['scaleModelInput',profile?.configuredModel||'Modelo no confirmado'],['scaleBaudRateInput',profile?.baud||''],['scaleCommandInput',profile?.autoBar9?'P · cada '+(profile.pollMs||800)+' ms':profile?.commandConfirmed?'P confirmado':'Sólo escuchar'],['scaleUnitInput',profile?.detectedUnit||(profile?.unit==='auto'?'kg':profile?.unit||'kg')]]){const el=document.getElementById(id);if(el){el.value=String(value);if(id!=='scaleModelInput')el.disabled=true;}}
+ const section=document.querySelector('.settings-protocol-note,.settings-protocol,.scale-protocol-card');if(section)section.textContent='USB nativo · '+(current.driver||'controlador por detectar')+' · '+(current.detectedFormat||'formato pendiente')+(profile?.autoBar9?' · configuración automática BAR-9 · 9600 8N1 · sin flujo · P / '+(profile.pollMs||800)+' ms':' · modelo sin confirmar')+(current.diagnosticSaved?' · diagnóstico guardado automáticamente':'');
  if(state.activeView==='settings'&&document.querySelector('.settings-layout')?.dataset.settingsMode==='scale'){const title=document.getElementById('settingsSectionTitle');if(title)title.textContent='Báscula USB OTG';}
  document.body.classList.toggle('scale-connected',Boolean(current.connected));document.body.classList.toggle('scale-error',transportError);document.querySelector('.scale-card')?.setAttribute('title',label+' · '+current.message);
 }};
 connectScale=async()=>AndroidShell.devices();
 disconnectScale=async()=>{try{await fetchJson('/api/android/native',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'scaleClose'})});}catch(error){showToast(error.message);}};
 requestScaleWeight=async()=>{};startScalePolling=()=>{};stopScalePolling=()=>{};
-setInterval(async()=>{
+let androidScaleRenderKey='';
+function androidScaleRefreshDelay(){return state.activeView==='pos'&&state.selectedProduct?.unit==='kg'?150:350;}
+async function androidScalePoll(){
  if(androidScaleBusy||!state.sessionAuthenticated)return;androidScaleBusy=true;
  try{
   const current=await fetchJson('/api/android/scale');androidScaleCurrent=current;scaleState.connected=current.connected;scaleState.stable=Boolean(current.valid&&current.stable);scaleState.error=!current.connected&&/FAILED|DENIED/.test(current.code||'');scaleState.weightKg=current.valid?current.kg:0;scaleState.raw=current.message;scaleState.lastRequestAt=current.valid?Date.now():null;
-  if(state.selectedProduct?.unit==='kg'&&(state.quantitySource==='scale'||current.valid&&!state.manualAuthorization)){state.detectedQuantity=current.valid?current.kg:0;state.quantitySource='scale';renderWeighPanel();}updateScaleUi();
- }catch{androidScaleCurrent={connected:false,valid:false,code:'STATE_UNAVAILABLE',message:'No se pudo consultar el estado del puente USB'};scaleState.connected=false;scaleState.stable=false;scaleState.weightKg=0;if(state.quantitySource==='scale'){state.detectedQuantity=0;renderWeighPanel();}updateScaleUi();}
+  const nextQuantity=current.valid?current.kg:0;
+  if(state.selectedProduct?.unit==='kg'&&(state.quantitySource==='scale'||current.valid&&!state.manualAuthorization)){const changed=state.detectedQuantity!==nextQuantity||state.quantitySource!=='scale';state.detectedQuantity=nextQuantity;state.quantitySource='scale';if(changed)renderWeighPanel();}
+  const key=JSON.stringify([current.connected,current.valid,current.stable,current.kg,current.code,current.message,current.driver,current.detectedFormat,current.autoPhase,current.diagnosticSaved,current.profile,state.activeView,state.selectedProduct?.id,document.querySelector('.settings-layout')?.dataset.settingsMode]);if(key!==androidScaleRenderKey){androidScaleRenderKey=key;updateScaleUi();}
+ }catch{androidScaleRenderKey='';androidScaleCurrent={connected:false,valid:false,code:'STATE_UNAVAILABLE',message:'No se pudo consultar el estado del puente USB'};scaleState.connected=false;scaleState.stable=false;scaleState.weightKg=0;if(state.quantitySource==='scale'){state.detectedQuantity=0;renderWeighPanel();}updateScaleUi();}
  finally{androidScaleBusy=false;}
-},350);
+}
+async function androidScaleLoop(){try{await androidScalePoll();}finally{setTimeout(androidScaleLoop,androidScaleRefreshDelay());}}
+setTimeout(androidScaleLoop,0);

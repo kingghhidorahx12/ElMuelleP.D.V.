@@ -1,19 +1,53 @@
 # EM-003: continuidad para la prueba Android
 
 Actualización: 6 de noviembre de 2026, America/Mexico_City.
-Referencia de código publicada: `4470f6a431ceac2e04afea31fa334616f154d30a` en `main`.
-Esta transferencia agrega contexto; no cambia ni recompila la APK identificada abajo.
+
+## Resultado nuevo: lectura física y demora (6 de noviembre)
+
+El propietario confirmó que la APK 1.0.9 **ya lee la báscula real**. El video
+aportado muestra peso positivo aplicado en el panel de pesaje. No muestra una
+comparación simultánea con el indicador físico: no se certificó exactitud ni
+todos los ciclos de reconexión. El pendiente actual es reducir el retraso de
+varios segundos que informa el propietario, conservando la estabilidad y vigencia.
+
+Entregada: revisión 1.0.10, código 11. Conserva la detección inicial a 800 ms
+y, después de reconocer respuestas de peso, consulta a 200 ms con una sola
+solicitud pendiente y plazo de respuesta de 800 ms. Conserva tres muestras iguales
+cuando no hay indicador ST/US. El panel activo de pesaje se consulta cada 150 ms
+y no se repinta por valores idénticos. No se modifica Windows ni el comando P.
+La mejora de latencia en hardware queda pendiente de probar con la nueva APK.
+
+Entrega privada en Descargas de la PC de preparación:
+`ElMuellePDV-Android-BAR9-Rapida-20261106-4116a048/ElMuellePDV-Android.apk`.
+Tamaño: `135365728` bytes. SHA-256 verificado:
+`C027682EC871CF3B7847AE17DEF39C0CCBB9FB6CAD808C4CA743524650579F90`.
+Se conserva applicationId y certificado de firma; instalar como actualización,
+sin desinstalar. Se verificaron 28 productos y 28 fotografías originales.
+
+Pruebas de esta mejora: **49 Java** (18 ScaleAutoSessionTest y las 31 anteriores)
+y **10 Node** de interfaz y referencia Windows. La simulación de tres respuestas
+completas a 25 ms de cada solicitud valida estabilidad a los 425 ms; no es una
+medición de latencia física. Se probaron respuestas lentas/fragmentadas sin
+solicitudes acumuladas, pesos cambiantes/inestables, vencimiento, cambio de modo,
+refresco a 150 ms y ausencia de repintados por valores idénticos. Las pruebas de
+permisos de rutas nativas se reutilizan: ese código no cambió y coincide con la APK base.
+
+El resto de esta nota conserva la referencia y evidencia de entrega de 1.0.9;
+la anterior marca de prueba física pendiente queda sustituida por este resultado.
+
+Referencia de código de la APK base 1.0.9: `4470f6a431ceac2e04afea31fa334616f154d30a`.
+La entrega vigente y el pendiente de prueba de 1.0.10 están en la actualización superior.
 
 ## Actividad inmediata
 
-El propietario llevará otra computadora y probará la APK más reciente con la
-báscula física. La nueva sesión debe acompañar esa prueba y, si falla, continuar
+El propietario ya acreditó lectura con 1.0.9 y ahora probará la velocidad de 1.0.10
+con la báscula física. La nueva sesión debe acompañar esa prueba y, si falla, continuar
 desde la evidencia nueva sin reiniciar el diagnóstico ni repetir intentos antiguos.
 
-**Estado pendiente:** todavía no se ha confirmado una lectura física con la APK
-1.0.9. No declarar que la báscula ya funciona por haber aprobado pruebas simuladas.
+**Estado pendiente:** mejora de latencia física de 1.0.10. La lectura de 1.0.9 ya
+fue confirmada por el propietario; no repetir el diagnóstico de ausencia total de RX.
 
-## APK exacta que se va a probar
+## APK base 1.0.9 que ya leyó la báscula
 
 | Dato | Valor verificado |
 | --- | --- |
@@ -67,7 +101,8 @@ La actualización debe preservar la base existente, sus usuarios y sus claves.
 | Conexión nativa CH340 | El controlador incluido reconoce `1A86:7523`; permiso y apertura fueron acreditados por el propietario. No volver a diagnosticar un controlador ausente sólo porque haya cero bytes. |
 | Sólo escuchar en 1.0.8 | `NO_DATA`, cero bytes, según evidencia del propietario. Repetir capturas pasivas de 20 s no resolvería la ausencia de una solicitud. |
 | Búsqueda del comando en manuales | No se extrapoló el manual BAR-8RS como prueba del BAR-9. La evidencia nueva fue el código Windows aprobado y el funcionamiento físico informado por el propietario. |
-| 1.0.9: lectura + P automática | Implementada, compilada, firmada y probada con simulaciones. **Prueba física aún pendiente.** |
+| 1.0.9: lectura + P automática | Lectura real confirmada por el propietario y visible en el video; presentó retraso. |
+| 1.0.10: consultas adaptativas y refresco de pesaje | Entregada, con 49 pruebas Java y 10 Node aprobadas; velocidad en tablet pendiente. |
 
 La diferencia de software corregida es que Android estaba escuchando de forma
 pasiva mientras Windows solicitaba el peso. No afirmar que eso prueba por sí solo
@@ -181,8 +216,8 @@ ni declarar una APK compilada o firmada que no exista y no haya sido verificada.
 ## Mensaje para iniciar la nueva sesión
 
 > Lee AGENTS.md, CONTINUIDAD_EM003.md y android/README.md. Continuamos EM-003.
-> Voy a probar la APK 1.0.9 (versionCode 10) con la RHINO BAR-9 por USB OTG.
-> La lectura física de esa revisión está pendiente. Si falla, utiliza el único
+> Voy a probar la velocidad de la APK 1.0.10 (versionCode 11) con RHINO BAR-9 por OTG.
+> La 1.0.9 ya leyó la báscula real, pero con demora. Si falla, utiliza el único
 > diagnóstico automático del intento y el historial documentado para corregir
 > únicamente la báscula. No repitas capturas de 20 segundos ni auditorías generales.
 
