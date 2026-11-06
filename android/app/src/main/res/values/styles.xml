@@ -1,0 +1,23 @@
+<resources>
+ <style name="Theme.ElMuelle" parent="android:style/Theme.Material.Light.NoActionBar">
+  <item name="android:windowBackground">#EAF6FF</item>
+  <item name="android:colorAccent">#1179C7</item>
+  <item name="android:statusBarColor">#EAF6FF</item>
+  <item name="android:navigationBarColor">#EAF6FF</item>
+  <item name="android:windowLightStatusBar">true</item>
+  <item name="android:forceDarkAllowed">false</item>
+  <item name="android:windowFullscreen">true</item>
+ </style>
+ <style name="Theme.ElMuelle.Starting" parent="Theme.SplashScreen">
+  <item name="android:windowFullscreen">true</item>
+  <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+  <item name="windowSplashScreenBackground">#0C1F3A</item>
+  <item name="windowSplashScreenAnimatedIcon">@drawable/muelle_launch_icon</item>
+  <item name="windowSplashScreenAnimationDuration">0</item>
+  <item name="android:statusBarColor">#0C1F3A</item>
+  <item name="android:navigationBarColor">#0C1F3A</item>
+  <item name="android:windowLightStatusBar">false</item>
+  <item name="android:forceDarkAllowed">false</item>
+  <item name="postSplashScreenTheme">@style/Theme.ElMuelle</item>
+ </style>
+</resources>

@@ -1,4 +1,5 @@
 #define MyAppName "El Muelle POS"
+#define MyShortcutName "El Muelle PDV"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "El Muelle Marisquería"
 #define MyAppExe "Abrir-ElMuellePOS.vbs"
@@ -38,15 +39,15 @@ Source: "..\dist\ElMuellePOS-Portable\app\src\release-compatibility.js"; Flags: 
 Source: "..\dist\ElMuellePOS-Portable\app\src\persistence.js"; Flags: dontcopy
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; WorkingDir: "{app}"; IconFilename: "{app}\app\public\assets\brand\el-muelle-app-icon.ico"
+Name: "{autoprograms}\{#MyShortcutName}"; Filename: "{app}\{#MyAppExe}"; WorkingDir: "{app}"; IconFilename: "{app}\app\public\assets\brand\el-muelle-shortcut-icon.ico"
 Name: "{autoprograms}\Cerrar servidor El Muelle POS"; Filename: "{app}\Cerrar-ElMuellePOS.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\app\public\assets\brand\el-muelle-app-icon.ico"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; WorkingDir: "{app}"; IconFilename: "{app}\app\public\assets\brand\el-muelle-app-icon.ico"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyShortcutName}"; Filename: "{app}\{#MyAppExe}"; WorkingDir: "{app}"; IconFilename: "{app}\app\public\assets\brand\el-muelle-shortcut-icon.ico"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Crear un acceso directo en el escritorio"; GroupDescription: "Accesos directos:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\{#MyAppExe}"; Description: "Abrir El Muelle POS"; Flags: nowait postinstall skipifsilent
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\{#MyAppExe}"""; Description: "Abrir El Muelle POS"; Flags: nowait postinstall skipifsilent
 
 [Code]
 function PrepareToInstall(var NeedsRestart: Boolean): String;

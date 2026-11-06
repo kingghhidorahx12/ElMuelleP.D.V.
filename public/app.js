@@ -27,9 +27,9 @@ function animatePosFeedback(element, kind = "catalog") {
   if (!element?.animate || document.hidden || posReducedMotion || posMicroMotion.matches || !state.sessionAuthenticated) return;
   if (kind === "catalog" && state.activeView !== "pos") return;
   posFeedbackByElement.get(element)?.cancel();
-  const frames = [{ opacity: kind === "control" ? .78 : .94 }, { opacity: 1 }];
+  const frames = [{ opacity: kind === "navigation" ? 0 : kind === "control" ? .78 : .94 }, { opacity: 1 }];
   const animation = element.animate(frames, {
-    duration: kind === "navigation" ? 180 : 150, easing: "ease-out"
+    duration: kind === "navigation" ? 200 : 150, easing: "ease-out"
   });
   posFeedbackByElement.set(element, animation);
   activePosFeedback.add(animation);
@@ -656,6 +656,7 @@ function maximizeApplicationWindow() {
 }
 
 function logoutToAccess({ preservePendingCheckout = false } = {}) {
+  document.dispatchEvent?.(new Event('pos-session-cleared'));
   if(typeof renderInventoryEntries==='function')renderInventoryEntries.cache=null;
   if(typeof resetPinVisibility==='function')resetPinVisibility();
   state.pendingProductPhoto=null;state.productPhotoVersion=(state.productPhotoVersion||0)+1;if($('catalogPendingOperations'))$('catalogPendingOperations').textContent='';if($('productEditorDialog')?.open)$('productEditorDialog').close();

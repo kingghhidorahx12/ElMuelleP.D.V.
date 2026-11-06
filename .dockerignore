@@ -1,0 +1,16 @@
+# El contexto remoto contiene únicamente el receptor independiente.
+**
+!package.json
+!package-lock.json
+!src/
+src/*
+!src/mailbox-protocol.js
+!services/
+services/*
+!services/mailbox-receiver/
+services/mailbox-receiver/*
+!services/mailbox-receiver/Dockerfile
+!services/mailbox-receiver/server.js
+!services/mailbox-receiver/entrypoint.js
+!services/mailbox-receiver/public/
+!services/mailbox-receiver/public/**

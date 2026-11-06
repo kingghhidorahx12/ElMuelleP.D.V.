@@ -1,0 +1,14 @@
+# Receptor privado de El Muelle PDV
+
+Servicio independiente del POS. Todavía no desplegado. Railway rechazó crear el proyecto por el límite gratuito; no hay URL operativa ni envíos por internet acreditados.
+
+1. En un equipo de administración, ejecutar `node services/mailbox-receiver/provision.js RUTA_PRIVADA_ABSOLUTA_NUEVA`. Crea tres secretos independientes y un cliente; no imprime las claves. No enviar los archivos por chat ni subirlos a Git.
+2. Desplegar este Dockerfile desde la raíz del repositorio en un proyecto propio. Configurar las variables de `receiver.env` mediante el gestor de secretos y copiar el contenido de `clients.json` en la variable secreta `MAILBOX_CLIENTS_JSON`. Como alternativa puede montarse ese archivo sólo para lectura y configurar `MAILBOX_CLIENTS_FILE`. Montar un único volumen persistente en `/data`. El arranque se rechaza si falta el volumen, un secreto o clientes válidos. El punto de entrada ajusta únicamente los permisos de `/data` y de sus archivos SQLite conocidos, y abandona privilegios antes de iniciar el servidor como UID 1000. No requiere otro volumen ni exponer un archivo de claves.
+3. Exponer exclusivamente HTTPS del receptor mediante el proveedor. No publicar el POS ni abrir su puerto. Guardar una copia privada de las claves y del registro de clientes separada del volumen; se requieren para recuperar los reportes cifrados. No regenerar claves durante una actualización.
+4. La bandeja está en `/admin/`. Su clave es `MAILBOX_ADMIN_TOKEN`, distinta del PIN del POS. La clave no se guarda en el navegador. Limitar adicionalmente su acceso desde la infraestructura cuando el proveedor lo permita.
+5. En el POS, entrar como administrador, abrir **Mi cuenta → Buzón → Enlace de soporte** e introducir el origen HTTPS real, identificador y clave del cliente de `clients.json`. Nunca introducir la clave administrativa del receptor ni la clave de cifrado. Sin endpoint, el buzón funciona localmente.
+6. Tras desplegar: enviar un reporte sintético autorizado desde un entorno de prueba, acreditar el acuse, responder desde la bandeja y actualizar el seguimiento en el POS. Comprobar persistencia tras reiniciar el receptor. Sólo entonces declarar funcionamiento por internet.
+
+Límites: 2 capturas PNG/JPEG/WebP de 1 MiB, 16 megapíxeles y 6000 px por imagen; 4000 caracteres; 20 reportes nuevos por cliente cada 24 horas; máximo 10000 reportes / 512 MiB cifrados. Se aplica límite por conexión y protección contra reenvíos de solicitudes firmadas. Las capturas son elegidas y autorizadas por el usuario; no hay captura de pantalla ni diagnóstico automático. No se solicita correo.
+
+SQLite contiene los reportes cifrados con AES-256-GCM. Los reportes locales permanecen en las colecciones cifradas de la base del POS y entran en su mecanismo existente de respaldos y recuperación. Ninguna clave del receptor se incluye en el instalador del cliente.

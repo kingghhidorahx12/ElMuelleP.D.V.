@@ -92,6 +92,7 @@ app.use((req, res, next) => {
   return res.status(403).json({ message: "Origen no autorizado." });
 });
 
+app.use('/api/support/reports', express.json({limit:'3mb',strict:true}));
 app.use(["/api/products", "/api/products/:id", "/api/inventory/entries"], express.json({limit:"7mb"}));
 app.use(express.json({ limit: "1mb" }));
 app.use('/api', (req, _res, next) => {
@@ -1925,6 +1926,7 @@ app.get("/api/scale/status", (req, res) => {
 });
 
 const configuration = require('./configuration').registerConfiguration({app,database,requireAdminUser,requireSessionUser,encryptSensitivePayload,decryptSensitivePayload,recordAuditEvent,canUsePos:user=>access.allows(user,['pos']),notifyScanner:access.notifyScanner,notifyPaymentMethods:access.notifyPaymentMethods});
+require('./mailbox').registerMailbox({app,database,requireSessionUser,requireAdminUser,encryptSensitivePayload,decryptSensitivePayload,recordAuditEvent});
 
 app.use((error, _req, res, _next) => {
   res.status(error.statusCode || (error.type === 'entity.parse.failed' ? 400 : 500)).json({ message:error.statusCode ? error.message : 'No se pudo completar la operación.' });

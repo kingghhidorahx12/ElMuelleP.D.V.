@@ -43,6 +43,10 @@ if ($LASTEXITCODE -ne 0) { throw "Los datos requieren otra revisión compatible.
 $storageJson = & $nodePath (Join-Path $appRoot "src\persistence.js") --prepare
 if ($LASTEXITCODE -ne 0) { throw "No se pudo preparar el almacenamiento persistente. Requiere revisión técnica; no se inició otra base." }
 $storage = $storageJson | ConvertFrom-Json
+if (Test-Path -LiteralPath (Join-Path $appRoot "initial-catalog\manifest.json")) {
+  & $nodePath (Join-Path $appRoot "scripts\initialize-client-catalog.js")
+  if ($LASTEXITCODE -ne 0) { throw "No se completó el catálogo inicial. No se inició el servidor." }
+}
 # Las versiones anteriores conocen DATA_DIR/ENV_FILE, aunque no conozcan el modo.
 $env:DATA_DIR = $storage.dataDir
 $env:ENV_FILE = $storage.envPath

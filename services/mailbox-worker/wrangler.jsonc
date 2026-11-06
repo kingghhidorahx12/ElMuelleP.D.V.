@@ -1,0 +1,13 @@
+{
+  "name": "elmuellepdv-buzon",
+  "account_id": "55a8bf0f28c78c10047614c4b0dda8e0",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {"enabled": false},
+  "assets": {"directory": "../mailbox-receiver/public", "binding": "ASSETS", "run_worker_first": true},
+  "secrets": {"required": ["MAILBOX_DATA_KEY", "MAILBOX_ADMIN_TOKEN"]},
+  "d1_databases": [{"binding": "DB", "database_name": "elmuellepdv-buzon", "database_id": "33a9c765-da0b-48f0-a02c-618b6bc653c0", "migrations_dir": "."}]
+}

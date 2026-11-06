@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(muelle)
+add_library(node SHARED IMPORTED)
+set_target_properties(node PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libnode.so)
+add_library(muelle SHARED runtime.cpp)
+target_include_directories(muelle PRIVATE ${CMAKE_SOURCE_DIR}/../../../../native-runtime/include/node)
+target_link_libraries(muelle node log)
+target_link_options(muelle PRIVATE -Wl,-z,max-page-size=16384)

@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="./styles.css" />
   <link rel="stylesheet" href="./configuration.css" />
   <link rel="stylesheet" href="./access-control.css" />
+  <link rel="stylesheet" href="./support.css" />
 </head>
 <body class="atelier auth-locked">
   <section id="setupScreen" class="access-screen setup-screen hidden" aria-label="Configuración inicial del punto de venta">
@@ -107,7 +108,7 @@
       <button class="nav-item" type="button" data-view="dashboard" data-short="PA" data-label="Resumen del negocio"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h8v8H3zM15 3h6v5h-6zM3 15h8v6H3zM15 12h6v9h-6z"/></svg><span>Resumen del negocio</span></button>
       <button class="nav-item" type="button" data-view="reports" data-short="R" data-label="Reportes"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V11M10 21V4M16 21V8M2 21h20"/></svg><span>Reportes</span></button>
       <span class="nav-group-label">Sistema</span>
-      <button class="nav-item" type="button" data-view="settings" data-short="C" data-label="Configuración"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2-1 3 3 2 2-1 3 2 3-2 3 1 2-3-1-3 2-2-2-3-3-1-1-3zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/></svg><span>Configuración</span></button>
+      <button class="nav-item" type="button" data-view="settings" data-short="C" data-label="Configuración"><svg class="pos-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.02 4.79 9.98 4.47 10.23 1.95 13.77 1.95 14.02 4.47 14.98 4.79 15.9 5.25 17.85 3.64 20.36 6.15 18.75 8.1 19.21 9.02 19.53 9.98 22.05 10.23 22.05 13.77 19.53 14.02 19.21 14.98 18.75 15.9 20.36 17.85 17.85 20.36 15.9 18.75 14.98 19.21 14.02 19.53 13.77 22.05 10.23 22.05 9.98 19.53 9.02 19.21 8.1 18.75 6.15 20.36 3.64 17.85 5.25 15.9 4.79 14.98 4.47 14.02 1.95 13.77 1.95 10.23 4.47 9.98 4.79 9.02 5.25 8.1 3.64 6.15 6.15 3.64 8.1 5.25Z"/><circle cx="12" cy="12" r="3.2"/></svg><span>Configuración</span></button>
     </nav>
 
     <section class="scale-card" aria-live="polite"><svg class="pos-scale-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16l2 9H2l2-9zM12 15v6M6 21h12M9 3h6"/></svg>
@@ -130,6 +131,7 @@
       <section id="accountMenu" class="account-menu hidden" aria-label="Mi cuenta">
         <h3>Mi cuenta</h3><strong id="accountUserName"></strong><p id="accountUserRole"></p>
         <button id="accountDevicePreferencesBtn" type="button" hidden>Preferencias del dispositivo</button>
+        <button id="accountSupportBtn" type="button">Buzón · ayuda y seguimiento</button>
         <button id="accountSwitchBtn" type="button">Cambiar usuario</button>
         <button id="accountLogoutBtn" type="button">Cerrar sesión</button>
       </section>
@@ -1104,6 +1106,15 @@
     </div>
   </div>
   <section id="printArea" class="print-area"></section>
+  <dialog id="supportDialog" aria-labelledby="supportTitle">
+    <div class="modal-head"><h3 id="supportTitle">Buzón · ¿en qué podemos ayudarte?</h3><button id="supportCloseBtn" type="button" class="icon-btn" aria-label="Cerrar buzón">×</button></div>
+    <p id="supportConnectionStatus" role="status">Los reportes se guardan en esta computadora.</p>
+    <div class="support-grid">
+      <form id="supportForm"><h4>Cuéntanos qué pasó</h4><label>Tipo<select id="supportKind"><option value="error">Error · algo no funciona</option><option value="sugerencia">Sugerencia · una idea para mejorar</option><option value="queja">Queja · algo no te gustó</option></select></label><label>Descripción<textarea id="supportDescription" rows="5" minlength="10" maxlength="4000" required placeholder="Describe qué estabas haciendo y qué ocurrió. No incluyas PIN, claves, datos bancarios ni información de clientes."></textarea></label><label>Capturas opcionales<input id="supportFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple></label><small>Hasta 2 imágenes PNG, JPEG o WebP de 1 MiB cada una. Máximo 6000 px y 16 megapíxeles. No tomamos capturas automáticamente.</small><p id="supportFileStatus" role="status"></p><label class="support-check"><input id="supportAttachmentsConsent" type="checkbox">Revisé las capturas y confirmé que no muestran información privada.</label><label class="support-check"><input id="supportRemoteConsent" type="checkbox">Autorizo enviar esta descripción y las capturas elegidas a soporte.</label><button id="supportSaveBtn" class="solid-btn" type="submit">Guardar reporte</button><p id="supportNotice" role="status" aria-live="polite"></p></form>
+      <section><div class="support-history-head"><h4>Folios y seguimiento</h4><button id="supportReloadBtn" class="quiet-btn" type="button">Actualizar lista</button></div><p>Los empleados consultan sus propios reportes. El administrador puede consultar los de esta computadora.</p><div id="supportReports"></div><article id="supportDetail" hidden><h4 id="supportDetailTitle"></h4><p id="supportDetailDescription"></p><p id="supportDetailReceipt"></p><div id="supportReplies"></div><button id="supportSendBtn" class="quiet-btn" type="button">Enviar a soporte</button><button id="supportRefreshBtn" class="quiet-btn" type="button">Consultar respuesta</button></article></section>
+    </div>
+    <details id="supportRemoteSettings" hidden><summary>Enlace de soporte · sólo administrador</summary><p>Activa el buzón de esta PC con un código de soporte. Es de un solo uso y dura diez minutos. El sistema creará una clave propia; no uses tu PIN.</p><form id="supportEnrollForm" hidden><label>Código de activación<input id="supportEnrollmentCode" type="password" autocomplete="off" maxlength="32" required></label><button class="quiet-btn" type="submit">Activar esta instalación</button></form><details><summary>Configuración técnica del enlace</summary><form id="supportConfigForm"><label>Dirección HTTPS del receptor<input id="supportEndpoint" type="url" maxlength="300" placeholder="Sin receptor configurado"></label><label>Identificador de este cliente<input id="supportClientId" maxlength="64" autocomplete="off"></label><label>Clave individual de enlace (64 caracteres; déjala vacía para conservarla)<input id="supportClientSecret" type="password" autocomplete="new-password" maxlength="64"></label><button class="quiet-btn" type="submit">Guardar enlace</button><button id="supportDisableRemoteBtn" class="quiet-btn" type="button">Desactivar enlace remoto</button></form></details></details>
+  </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="./app.js"></script>
@@ -1113,5 +1124,6 @@
   <script src="./scanner.js"></script>
   <script src="./payment-methods.js"></script>
   <script src="./panel-help.js"></script>
+  <script src="./support.js"></script>
 </body>
 </html>

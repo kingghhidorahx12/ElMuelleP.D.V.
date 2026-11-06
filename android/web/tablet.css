@@ -1,0 +1,14 @@
+/* Desktop columns and control sizes; the browser fills its actual screen bounds. */
+html,body{width:100%!important;height:100%!important;min-height:0!important;max-height:100%!important;overflow:hidden!important;overscroll-behavior:none}
+body{margin:0!important}
+.access-screen,.login-screen{height:100dvh!important;min-height:0!important;max-height:100dvh!important;overflow-y:auto!important;align-content:safe center;align-items:safe center}
+/* Pointer presses have no native selection tile; keyboard focus stays visible. */
+*{-webkit-tap-highlight-color:transparent}
+button,[role=button],.nav-item{-webkit-user-select:none;user-select:none;touch-action:manipulation}
+button:focus:not(:focus-visible){outline:none}
+/* Lay out once per toggle. AndroidMotion supplies a compositor-only transition. */
+body:is(.pos-approved,.atelier-shell) :is(.sidebar,.app-shell,.brand,.brand-mark,.nav-item,.scale-card,.ticket-panel,.ticket-panel-viewport),
+body:is(.pos-approved,.atelier-shell).sidebar-collapsed :is(.sidebar,.brand,.brand-mark,.nav-item,.scale-card),
+body.pos-approved.ticket-collapsed :is(.ticket-panel,.ticket-panel-viewport){transition:none!important}
+.android-shell-moving .app-shell,.android-shell-moving .sidebar{will-change:transform}
+.android-ticket-ghost{position:fixed!important;inset:auto!important;z-index:60!important;visibility:visible!important;pointer-events:none!important;opacity:1!important;transform:none;overflow:hidden}

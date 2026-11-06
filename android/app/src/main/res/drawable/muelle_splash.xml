@@ -1,0 +1,9 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+ <item android:width="288dp" android:height="288dp" android:gravity="center">
+  <!-- The original PNG already has transparent margins. Keep its complete
+       circular border within Android's 192dp safe area, without adding a tile. -->
+  <inset android:inset="24dp">
+   <bitmap android:src="@drawable/muelle_round_icon" android:gravity="fill" android:filter="true"/>
+  </inset>
+ </item>
+</layer-list>

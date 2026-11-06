@@ -1,0 +1,17 @@
+package mx.elmuelle.pdv;
+import org.junit.Test;import static org.junit.Assert.*;import java.nio.charset.StandardCharsets;
+public class ScaleUsbRegressionTest {
+ private ScaleDecoder.Reading read(ScaleDecoder d,String s){return d.feed(s.getBytes(StandardCharsets.US_ASCII));}
+ @Test public void autoDetectsStatusWithoutAssumingBrand(){ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","kg",100);ScaleDecoder.Reading r=read(d,"ST,NT,+ 001.250 kg\r\n");assertTrue(r.valid);assertEquals("ascii-st-us",r.format);assertEquals(1.25,r.kg,.00001);}
+ @Test public void autoDetectsUnitOnlyAfterThreeWholeFrames(){ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","kg",100);assertFalse(read(d,"+1.250kg\r").valid);assertFalse(read(d,"+1.250kg\r").valid);assertTrue(read(d,"+1.250kg\r").valid);assertEquals("ascii-explicit-unit",d.current().format);}
+ @Test public void neverInventsUnitsOrExtractsNumbersFromUnknownText(){ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","kg",100);for(String s:new String[]{"001250\r","W=1.250 kg\r","1.250kg 30.00\r","1.250kg 2.500kg\r","12:30 1.250kg\r"})assertFalse(read(d,s).valid);}
+ @Test public void repeatedUnstableFlagsRemainInvalid(){ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","kg",100);for(int n=0;n<8;n++)assertFalse(read(d,"US,GS,1.250kg\r").valid);}
+ @Test public void stxEtxFramingCanBeFragmented(){ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","kg",100);assertFalse(read(d,"\u0002ST,GS,1.").valid);assertTrue(read(d,"250kg\u0003").valid);assertEquals(1.25,d.current().kg,.00001);}
+ @Test public void bareEtxAndNestedStxCannotSalvageATail(){ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","kg",100);assertFalse(read(d,"ST 1kg\u0003\r").valid);assertFalse(read(d,"\u0002bad\u0002ST 1kg\u0003").valid);assertTrue(read(d,"ST 1kg\r").valid);}
+ @Test public void separatorsDoNotCreateNewWeightObservations(){ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","kg",100);assertTrue(read(d,"ST 2kg\r").valid);long index=d.frameSequence();read(d,"\r\n\r\n");assertEquals(index,d.frameSequence());assertFalse(ScaleSerialPolicy.fresh(2501,1000));}
+ @Test public void changedWeightsResetConsecutiveStability(){ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","kg",100);read(d,"1kg\r1kg\r");assertFalse(read(d,"2kg\r").valid);assertFalse(read(d,"2kg\r").valid);assertTrue(read(d,"2kg\r").valid);}
+ @Test public void mismatchedUnitsNegativeAndOverloadStayInvalid(){ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","kg",30);for(String s:new String[]{"ST 1500g\r","ST -1kg\r","ST 31kg\r","OVERLOAD\r","ST NaNkg\r"})assertFalse(read(d,s).valid);}
+ @Test public void malformedFrameResetsUnitOnlyConfidence(){ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","kg",100);read(d,"1kg\r1kg\r");read(d,"unknown\r");assertFalse(read(d,"1kg\r").valid);}
+ @Test public void aChunkMayContainSeveralCompleteFrames(){ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","kg",100);assertTrue(read(d,"1kg\r\n1kg\r\n1kg\r\n").valid);assertEquals(3,d.frameSequence());}
+ @Test public void traceReceivesAFullKnownFrameAndRedactsOtherPayloads(){ScaleDecoder d=new ScaleDecoder("ascii-auto-safe","kg",100);ScaleTrace trace=new ScaleTrace();trace.start(100);d.setFrameListener((raw,format,safe)->trace.add(200,raw,"RX",format,safe));read(d,"\u0002ST 1.250kg\u0003");read(d,"synthetic-private-text 123456\r");assertFalse(trace.snapshot().get(0).redacted);assertTrue(trace.snapshot().get(0).hex.startsWith("02"));assertTrue(trace.snapshot().get(1).redacted);assertFalse(trace.snapshot().get(1).ascii.contains("synthetic-private"));}
+}

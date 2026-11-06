@@ -1,0 +1,8 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{readCatalog}=require('./runtime/catalog.cjs');
+test('Initial catalog: automatic offline initialization, exact values and tamper rejection without activation',()=>{
+ const root=fs.mkdtempSync(path.join(__dirname,'../.dev/android-catalog-test-')),app=path.join(root,'app'),file=path.join(app,'initial-catalog/products.json');fs.mkdirSync(path.dirname(file),{recursive:true});
+ const products=Array.from({length:28},(_,i)=>({id:'synthetic-'+i,stockQuantity:0,price:121.25+i,costPrice:83.75+i}));
+ function write(value){const plain=JSON.stringify(value);fs.writeFileSync(file,plain);fs.writeFileSync(path.join(root,'bundle-manifest.json'),JSON.stringify({files:{'app/initial-catalog/products.json':crypto.createHash('sha256').update(plain).digest('hex')}}));}
+ global.androidNative=()=>{throw Error('Catalog must not request an activation key');};
+ try{write(products);assert.deepEqual(readCatalog(app),products);assert.equal(fs.existsSync(path.join(root,'catalog-access')),false);fs.writeFileSync(file,JSON.stringify(products).replace('121.25','999.25'));assert.throws(()=>readCatalog(app),/alterado/);write(products.slice(1));assert.throws(()=>readCatalog(app));write(products.map((p,i)=>({...p,stockQuantity:i===0?1:0})));assert.throws(()=>readCatalog(app));assert.equal(fs.existsSync(path.join(root,'data')),false);}finally{delete global.androidNative;assert.ok(root.startsWith(path.resolve(__dirname,'../.dev')+path.sep));fs.rmSync(root,{recursive:true,force:true});}
+});

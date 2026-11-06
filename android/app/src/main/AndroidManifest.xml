@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+ <uses-permission android:name="android.permission.INTERNET"/>
+ <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+ <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+ <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+ <uses-feature android:name="android.hardware.usb.host" android:required="false"/>
+ <uses-feature android:name="android.hardware.bluetooth" android:required="false"/>
+ <application android:theme="@style/Theme.ElMuelle.Starting" android:label="El Muelle PDV" android:icon="@drawable/muelle_round_icon" android:roundIcon="@drawable/muelle_round_icon" android:allowBackup="false" android:usesCleartextTraffic="false" android:networkSecurityConfig="@xml/network_security" android:extractNativeLibs="true">
+  <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="sensorLandscape" android:resizeableActivity="false" android:configChanges="orientation|screenSize|keyboardHidden" android:windowSoftInputMode="adjustResize">
+   <property android:name="android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE" android:value="false"/>
+   <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+  </activity>
+ </application>
+</manifest>

@@ -1,0 +1,13 @@
+#androidAdminTour{position:fixed;inset:0;width:100vw;height:100dvh;max-width:none;max-height:none;margin:0;padding:0;border:0;background:transparent;overflow:hidden;color:#103755;font-family:var(--font-ui,system-ui)}
+#androidAdminTour::backdrop{background:transparent}
+.android-tour-spot{position:absolute;border:2px solid #ffca53;border-radius:10px;box-shadow:0 0 0 5000px #041b2fb3;pointer-events:none}
+.android-tour-card{position:absolute;width:min(calc(340px * var(--tour-scale,1)),calc(100vw - 32px));max-height:calc(100dvh - 24px);overflow:auto;padding:calc(16px * var(--tour-scale,1));border:1px solid #b8d8ee;border-radius:14px;background:linear-gradient(145deg,#fff,#edf7ff);box-shadow:0 14px 40px #00152740;font-size:calc(14px * var(--tour-scale,1));line-height:1.45}
+.android-tour-card h2{font-size:calc(18px * var(--tour-scale,1));line-height:1.2;margin:0 0 10px;color:#06234a}
+.android-tour-card p{margin:8px 0 14px}
+.android-tour-card small{display:block;color:#4b6e8c;font-size:.82em;margin-bottom:8px}
+.android-tour-card select{width:100%;font-size:.9em;height:auto;min-height:calc(32px * var(--tour-scale,1));margin-bottom:10px;padding:5px 8px}
+.android-tour-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+.android-tour-actions button{min-height:calc(34px * var(--tour-scale,1));font-size:.88em;padding:7px 12px;border:1px solid #b7d5eb;border-radius:7px;color:#0a3e68;background:#f6fbff}
+.android-tour-actions button[data-tour-next]{background:linear-gradient(#ffdc79,#ffca53);border-color:#edb83e;font-weight:700}
+.android-tour-actions button[data-tour-later]{margin-right:auto}
+.android-tour-replay{margin:10px 0;font-size:12px}

@@ -31,3 +31,31 @@ dist/
 
 # Entorno de desarrollo aislado: SQLite sintética, secretos, PID y logs.
 .dev/
+
+# Semillas comerciales privadas preparadas para una entrega específica.
+initial-catalog/
+services/mailbox-receiver/private/
+services/mailbox-worker/.wrangler/
+services/mailbox-worker/.dev/
+
+# Android: compilados, catálogo privado y herramientas locales.
+android/.gradle/
+android/**/build/
+android/local.properties
+android/app/src/main/assets/
+android/app/src/main/jniLibs/
+android/native-runtime/
+android/keystore/
+android/**/.cxx/
+
+# Entregas, firmas, respaldos y secretos locales: nunca publicar.
+*.apk
+*.aab
+*.p12
+*.jks
+*.keystore
+*.dpapi
+*.emandroid
+*.emrecovery
+.env.*
+!.env.example

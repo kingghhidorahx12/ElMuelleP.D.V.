@@ -1,0 +1,8 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{spawnSync}=require('node:child_process');
+test('Invalid startup catalog reports a bounded failure and leaves existing files untouched (host JNI double)',()=>{
+ const root=fs.mkdtempSync(path.join(__dirname,'../.dev/android-startup-failure-'));
+ try{fs.cpSync(path.join(__dirname,'app/src/main/assets/nodeapp'),path.join(root,'bundle'),{recursive:true});fs.mkdirSync(path.join(root,'cache'));const catalog=path.join(root,'bundle/app/initial-catalog/products.json');fs.appendFileSync(catalog,' ');const before=crypto.createHash('sha256').update(fs.readFileSync(catalog)).digest('hex');
+  const child=spawnSync(process.execPath,[path.join(__dirname,'test-host-runtime.cjs')],{env:{...process.env,ANDROID_PRIVATE_ROOT:root,ANDROID_NATIVE_LIB:root,ANDROID_HTTP_TOKEN:crypto.randomBytes(32).toString('hex'),TMPDIR:path.join(root,'cache'),PORT:'0',HOST:'127.0.0.1',NODE_ENV:'test'},encoding:'utf8',timeout:30000,windowsHide:true});
+  assert.equal(child.error,undefined);assert.equal(child.status,1);assert.match(child.stdout,/STARTUP_FAILURE Error/);assert.match(child.stderr,/datos existentes se conservaron/);assert.ok(!child.stdout.includes('costPrice'));assert.equal(fs.existsSync(path.join(root,'data')),false);assert.equal(fs.existsSync(path.join(root,'initial-data')),false);assert.equal(crypto.createHash('sha256').update(fs.readFileSync(catalog)).digest('hex'),before);
+ }finally{assert.ok(root.startsWith(path.resolve(__dirname,'../.dev')+path.sep));fs.rmSync(root,{recursive:true,force:true});}
+});

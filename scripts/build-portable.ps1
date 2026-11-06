@@ -65,6 +65,14 @@ foreach ($file in @("restore-data.js", "recovery-custody.js", "manage-release.js
   Copy-Item -LiteralPath (Join-Path $projectRoot "scripts\$file") -Destination (Join-Path $appOutput "scripts\$file")
 }
 
+# Catálogo inicial privado de una entrega: sólo semillas, nunca una base o clave.
+$initialCatalog = Join-Path $projectRoot "initial-catalog"
+if (Test-Path -LiteralPath (Join-Path $initialCatalog "manifest.json")) {
+  if (@(Get-ChildItem -LiteralPath $initialCatalog -Recurse -File | Where-Object { $_.Name -in @('.env','.secrets.json') -or $_.Extension -in @('.sqlite','.emrecovery') }).Count) { throw "La carga inicial contiene archivos privados no permitidos." }
+  Copy-Item -LiteralPath $initialCatalog -Destination (Join-Path $appOutput "initial-catalog") -Recurse
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot "initialize-client-catalog.js") -Destination (Join-Path $appOutput "scripts\initialize-client-catalog.js")
+}
+
 Copy-Item -LiteralPath $nodeCommand.Source -Destination (Join-Path $outputRoot "runtime\node.exe") -Force
 foreach ($file in @("Start-ElMuellePOS.ps1", "Stop-ElMuellePOS.ps1", "Abrir-ElMuellePOS.cmd", "Cerrar-ElMuellePOS.cmd", "Abrir-ElMuellePOS.vbs", "Cerrar-ElMuellePOS.vbs")) {
   Copy-Item -LiteralPath (Join-Path $projectRoot "portable\$file") -Destination (Join-Path $outputRoot $file) -Force

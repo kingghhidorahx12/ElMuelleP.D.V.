@@ -1,0 +1,4 @@
+# Android verifica esta fuente aprobada por SHA-256; conservar LF en cualquier PC.
+public/app.js text eol=lf
+# Conservar literalmente los avisos de licencia de terceros, incluido su espaciado.
+android/licenses/* -whitespace
