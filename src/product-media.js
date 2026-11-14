@@ -20,13 +20,13 @@ async function decode(bytes,mime){
     // Sólo bytes codificados en base64; ningún nombre, ruta o script procede del cliente.
     fs.writeFileSync(page,'<!doctype html><meta charset="utf-8"><pre id="result">pending</pre><script>const i=new Image();i.onload=()=>{try{const w=i.naturalWidth,h=i.naturalHeight;if(!w||!h||w>8192||h>8192||w*h>32000000)throw Error();const c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(i,0,0);c.getContext("2d").getImageData(0,0,1,1);document.getElementById("result").textContent="VALID:"+w+":"+h}catch{document.getElementById("result").textContent="INVALID"}};i.onerror=()=>document.getElementById("result").textContent="INVALID";i.src="data:'+mime+';base64,'+bytes.toString('base64')+'";document.currentScript.remove();</script>',{flag:'wx'});
     const output=await new Promise((resolve,reject)=>{
-      const child=spawn(browser,['--headless','--disable-gpu','--no-first-run','--no-default-browser-check','--disable-background-networking','--user-data-dir='+path.join(area,'profile'),'--dump-dom','--virtual-time-budget=5000',require('node:url').pathToFileURL(page).href],{windowsHide:true,stdio:['ignore','pipe','ignore']});
-      let out='',settled=false;const timer=setTimeout(()=>{child.kill();},15000);
+      const child=spawn(browser,['--headless','--disable-gpu','--no-first-run','--no-default-browser-check','--disable-background-networking','--edge-skip-compat-layer-relaunch','--disable-features=AutoDeElevate,msEdgeUpdateLaunchServicesPreferredVersion','--user-data-dir='+path.join(area,'profile'),'--dump-dom','--virtual-time-budget=5000',require('node:url').pathToFileURL(page).href],{windowsHide:true,stdio:['ignore','pipe','ignore']});
+      let out='',settled=false;const timer=setTimeout(()=>{child.kill();},45000);
       child.stdout.on('data',b=>{out+=b;if(out.length>1024*1024)child.kill();});
       child.once('error',e=>{settled=true;clearTimeout(timer);reject(e);});child.once('close',code=>{clearTimeout(timer);if(!settled)code===0?resolve(out):reject(new Error('No se pudo decodificar la fotografía.'));});
     });
     if(!/<pre id="result">VALID:\d+:\d+<\/pre>/.test(output))invalid('La fotografía está dañada o sus dimensiones exceden el límite permitido.');
-  }finally{if(p.inside(area,os.tmpdir())&&path.basename(area).startsWith('el-muelle-image-'))fs.rmSync(area,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
+  }finally{if(p.inside(area,os.tmpdir())&&path.basename(area).startsWith('el-muelle-image-')){const page=path.join(area,'decode.html');if(fs.existsSync(page))fs.unlinkSync(page);try{fs.rmSync(area,{recursive:true,force:true,maxRetries:6,retryDelay:100});}catch(error){if(!['EPERM','EBUSY','ENOTEMPTY','EACCES'].includes(error.code))throw error;console.warn('Limpieza de caché privada del validador pendiente; la imagen temporal fue retirada.');}}}
 }
 async function preparePhoto(input,dataDir){
   if(input===undefined)return null;

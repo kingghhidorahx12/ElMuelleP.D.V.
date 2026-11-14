@@ -2,6 +2,8 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{DatabaseSync}=require('node:sqlite');
 const root=process.env.ANDROID_PRIVATE_ROOT,expected=path.resolve(__dirname,'../.dev')+path.sep;
 if(!root||!path.resolve(root).startsWith(expected))throw Error('Se requiere un entorno sintético privado');
+// A successful host test must not borrow modules from this repository.
+require('./tools/bundle-dependencies.cjs').restrictToBundle(path.join(root,'bundle'));
 let next=0;const handles=new Map(),key=crypto.randomBytes(32);
 const p=require(path.join(root,'bundle/app/src/persistence'));
 p.privateDirectory=folder=>fs.mkdirSync(folder,{mode:0o700});p.restrictPrivatePath=()=>{};
@@ -14,7 +16,15 @@ process.dlopen=module=>{module.exports.command=input=>{const a=JSON.parse(input)
  case 'dbQuery':{const s=handles.get(a.id).prepare(a.sql);value=a.mode==='run'?s.run(...a.args):s.all(...a.args);break;}
  case 'dbSnapshot':handles.get(a.id).exec("VACUUM INTO '"+a.path.replace(/'/g,"''")+"'");break;
  case 'scaleState':value={valid:false,stable:false,connected:false,kg:null,message:'Dispositivo simulado sin conexión'};break;
+ case 'appVersion':value={versionCode:Number(process.env.ANDROID_TEST_VERSION_CODE||23),versionName:'1.0.22-host-test'};break;
+ case 'peripheralStatus':case 'peripheralDiscover':case 'peripheralReconnect':case 'peripheralAutomatic':value={automaticPrinter:a.enabled!==false,searching:false,checked:0,total:0,discoveryMessage:'Detección simulada; no certifica periféricos físicos.',devices:[],network:{available:false},printer:{configured:false,message:'Sin impresora simulada'},scale:{connected:false,valid:false,message:'Báscula simulada'},bluetoothPermissionRequired:false};break;
+ case 'peripheralConnect':value={configured:true,physicalCompatibilityVerified:false};break;
+ case 'printerStatus':value={configured:false,profile:null};break;
+ case 'printerConfigure':value={configured:true,physicalCompatibilityVerified:false};break;
+ case 'printerTestConnection':value={tcpConnected:true,paperOutputVerified:false};break;
+ case 'image':value=true;break;
+ case 'printerPrint':if(process.env.ANDROID_TEST_PRINTER_CAPTURE){const file=path.resolve(process.env.ANDROID_TEST_PRINTER_CAPTURE);if(!file.startsWith(path.resolve(root)+path.sep))throw Error('Captura fuera de la prueba');fs.writeFileSync(file,Buffer.from(a.data,'base64'));}value={sentToTransport:true,paperOutputVerified:false};break;
  case 'startupFailure':process.stdout.write('STARTUP_FAILURE '+a.code+'\n');value=true;break;
  default:throw Error('No se simula este periférico');
  }return JSON.stringify({ok:true,value});}catch(error){return JSON.stringify({ok:false,error:error.message});}};};
-require('./runtime/bootstrap.cjs');
+require(path.join(root,'bundle/runtime/bootstrap.cjs'));

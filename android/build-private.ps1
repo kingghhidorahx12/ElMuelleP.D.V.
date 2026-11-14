@@ -1,4 +1,4 @@
-param([switch]$BuildTests,[switch]$ViewportTests,[switch]$ScaleTests)
+param([switch]$BuildTests,[switch]$ViewportTests,[switch]$ScaleTests,[switch]$UpdateTests,[switch]$PrinterTests,[switch]$PeripheralTests)
 $ErrorActionPreference='Stop'
 $emRepo=Split-Path -Parent $PSScriptRoot
 $emTools=Join-Path $emRepo '.dev/android-tools'
@@ -35,7 +35,10 @@ try{
  $emTasks=@('assembleRelease')
  if($BuildTests){$emTasks+=@('assembleDebug','assembleDebugAndroidTest')}
  if($ViewportTests){$emTasks+=@('testDebugUnitTest','--tests','mx.elmuelle.pdv.DesktopGeometryTest')}
- if($ScaleTests){$emTasks+=@('testDebugUnitTest','--tests','mx.elmuelle.pdv.ScaleDecoderTest','--tests','mx.elmuelle.pdv.ScaleUsbRegressionTest','--tests','mx.elmuelle.pdv.ScaleSerialPolicyTest','--tests','mx.elmuelle.pdv.ScaleTraceTest','--tests','mx.elmuelle.pdv.ScaleAutoSessionTest')}
+ if($PrinterTests){$emTasks+=@('testDebugUnitTest','--tests','mx.elmuelle.pdv.LanPrinterTransportTest')}
+ if($PeripheralTests){$emTasks+=@('testDebugUnitTest','--tests','mx.elmuelle.pdv.PeripheralPolicyTest','--tests','mx.elmuelle.pdv.LanPrinterTransportTest')}
+ if($UpdateTests){$emTasks+=@('testDebugUnitTest','--tests','mx.elmuelle.pdv.UpdatePolicyTest')}
+ if($ScaleTests){$emTasks+=@('testDebugUnitTest','--tests','mx.elmuelle.pdv.ScaleDecoderTest','--tests','mx.elmuelle.pdv.ScaleUsbRegressionTest','--tests','mx.elmuelle.pdv.ScaleSerialPolicyTest','--tests','mx.elmuelle.pdv.ScaleTraceTest','--tests','mx.elmuelle.pdv.ScaleAutoSessionTest','--tests','mx.elmuelle.pdv.ScaleDisplayTest')}
  & (Join-Path $emTools 'gradle813/gradle-8.13/bin/gradle.bat') -p $PSScriptRoot --no-daemon @emTasks
  if($LASTEXITCODE -ne 0){throw 'Compilación Android rechazada'}
 }finally{

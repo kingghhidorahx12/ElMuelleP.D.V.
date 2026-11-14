@@ -1,7 +1,8 @@
 // Cloudflare adapter: the POS protocol, validation and private inbox are shared
-// with the existing receiver. D1 stores only encrypted user-submitted reports.
+// with the existing receiver. D1 stores encrypted reports and private APK chunks.
 import crypto from 'node:crypto';
 import p from '../../src/mailbox-protocol.js';
+import {releaseRequest} from './android-releases.mjs';
 const HEX=/^[a-f0-9]{64}$/,CLIENT=/^[a-zA-Z0-9_-]{8,64}$/,UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",'Strict-Transport-Security':'max-age=31536000'};
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{...headers,'Content-Type':'application/json; charset=utf-8'}});
@@ -57,7 +58,12 @@ async function fetchRequest(request,env){
  const c=context(env);await keyCheck(c);
  if(route==='/health'&&method==='GET')return json({ok:true,service:'ElMuellePDV-Buzon'});
  const isAdmin=route.startsWith('/admin/api/');
- await rate(request,c,isAdmin?'admin':'client',120);
+ await rate(request,c,isAdmin?'admin':route.startsWith('/v1/android/')?'updates':'client',route.includes('/android/')?600:120);
+ if(route.startsWith('/admin/api/android/')){
+  const authorization=request.headers.get('Authorization')||'',token=authorization.startsWith('Bearer ')?authorization.slice(7):'';
+  if(!HEX.test(token)||!p.equal(token,env.MAILBOX_ADMIN_TOKEN)&&!(HEX.test(env.ANDROID_RELEASE_TOKEN||'')&&p.equal(token,env.ANDROID_RELEASE_TOKEN)))p.fail('Publicación no autorizada.',401);
+  return await releaseRequest({request,route,method,c,body,json,env})||json({message:'No encontrado.'},404);
+ }
  if(isAdmin)adminAuth(request,env);
  if(route==='/admin/api/capabilities'&&method==='GET')return json({individualEnrollment:true});
  if(route==='/admin/api/enrollments'&&method==='POST'){
@@ -81,7 +87,14 @@ async function fetchRequest(request,env){
   return json({enrolled:true,clientId:value.clientId});
  }
  if(route.startsWith('/v1/')){
+  // The private APK includes a download-only capability, never a publishing or
+  // mailbox credential. No enrollment, reports, or administrative access here.
+  if(route.startsWith('/v1/android/')&&method==='GET'){
+   const authorization=request.headers.get('Authorization')||'',token=authorization.startsWith('Bearer ')?authorization.slice(7):'';
+   if(HEX.test(env.ANDROID_UPDATE_READ_TOKEN||'')&&HEX.test(token)&&p.equal(token,env.ANDROID_UPDATE_READ_TOKEN))return await releaseRequest({request,route,method,c,body,json,env})||json({message:'No encontrado.'},404);
+  }
   const parsed=method==='POST'?await body(request):{raw:'',value:null},client=await clientAuth(request,c,parsed.raw);
+  if(route.startsWith('/v1/android/'))return await releaseRequest({request,route,method,c,body,json,env})||json({message:'No encontrado.'},404);
   if(route==='/v1/reports'&&method==='POST'){
    const packet=p.normalizeReport(parsed.value);if(!packet.consentRemote)p.fail('El envío requiere consentimiento.');const digest=p.hash(JSON.stringify(packet));
    let row=await c.statement('SELECT * FROM reports WHERE id=?',packet.id).first();if(row){if(row.client!==client||row.digest!==digest)p.fail('La identidad corresponde a otro reporte.',409);return json(ack(await fullRecord(c,row)));}

@@ -12,7 +12,7 @@
  .screen-role-note { margin:0 0 8px; padding:7px 10px; border:1px solid #c4e1f4; border-radius:8px; color:#426c90; background:#edf8ff; font-size:11px; }
  .restricted-access { max-width:640px; margin:16px auto; }
  .restricted-access h3 { margin:0 0 10px; }
- .screen-readonly :is([data-products-mode-btn=form],[data-inventory-mode-btn=entry],#inventoryEntryShortcutBtn,[data-edit-product],[data-toggle-product],[data-edit-inventory]) { display:none !important; }
  @media(max-width:1250px) { .permission-modules { grid-template-columns:repeat(2,minmax(0,1fr)); } }
  @media(max-width:760px) { .permission-modules { grid-template-columns:minmax(0,1fr); }.permission-editor-toolbar { align-items:stretch; }.permission-editor-toolbar button { width:100%; } }
 }
+.permission-section{border:1px solid #c4dfef;border-radius:9px;padding:8px}.permission-action{display:flex;gap:8px;align-items:center;margin:8px 0;font-size:12px}.permission-section summary{font-size:12px;color:#185b89;cursor:pointer}.permission-section details{margin-top:7px}

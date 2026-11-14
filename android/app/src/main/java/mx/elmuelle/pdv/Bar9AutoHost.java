@@ -31,7 +31,7 @@ final class Bar9AutoHost {
    String old=context.getSharedPreferences("peripherals",0).getString("scale",null);
    if(old!=null){JSONObject p=new JSONObject(old);if(!ScaleSerialPolicy.approvedBar9Transport(p.optInt("vid"),p.optInt("pid"))){enabled=false;active=false;}}
    String saved=context.getSharedPreferences("peripherals",0).getString("bar9Verified",null);
-   if(saved!=null){JSONObject p=new JSONObject(saved);if(ScaleSerialPolicy.WINDOWS_SOURCE_SHA256.equals(p.optString("windowsSourceSHA256"))&&p.optBoolean("validated",false))verified=p;}
+   if(saved!=null){JSONObject p=new JSONObject(saved);if(ScaleSerialPolicy.approvedWindowsWitness(p.optString("windowsSourceSHA256"))&&p.optBoolean("validated",false))verified=p;}
   }catch(Exception ignored){}
   IntentFilter filter=new IntentFilter(permissionAction);filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
   BroadcastReceiver receiver=new BroadcastReceiver(){public void onReceive(Context c,Intent intent){UsbDevice d=intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);if(d!=null)control.execute(()->handle(intent.getAction(),d,intent.getLongExtra("bar9Session",-1)));}};
@@ -110,7 +110,7 @@ final class Bar9AutoHost {
  private synchronized void accept(byte[] bytes,UsbDeviceConnection link,long expected){
   if(!connected||connection!=link||session!=expected||decoder==null||bytes.length==0)return;
   lastRx=now();rxBytes+=bytes.length;rxChunks++;auto.bytes(lastRx,bytes.length);long before=decoder.frameSequence();weight=decoder.feed(bytes);sequence++;
-  if(decoder.frameSequence()!=before)auto.reading(weight.code,weight.valid,weight.stable);code=weight.code;message=weight.message;operation="READ";
+  if(decoder.frameSequence()!=before)lastFrameAt=lastRx;if(decoder.frameSequence()!=before)auto.reading(weight.code,weight.valid,weight.stable);code=weight.code;message=weight.message;operation="READ";
   if(weight.valid&&decoder.frameSequence()!=before){lastValid=lastRx;if(weight.stable&&!profileSaved)saveVerified();}
  }
  private synchronized void lost(UsbDeviceConnection link,long expected,Exception error){
@@ -128,6 +128,7 @@ final class Bar9AutoHost {
   p.put("pollMs",auto==null?800:auto.pollIntervalMs()).put("responseTimeoutMs",800);
   if(currentAttempt!=null){p.put("readTimeoutMs",currentAttempt.readTimeout);if(currentAttempt.dtr!=null)p.put("dtr",currentAttempt.dtr).put("rts",currentAttempt.rts);}if(decoder!=null&&!decoder.reportedUnit().isEmpty())p.put("detectedUnit",decoder.reportedUnit());return p;
  }
+ private long lastFrameAt=-1;
  synchronized JSONObject state(){
   try{
    long time=now();boolean valid=connected&&weight!=null&&weight.valid&&ScaleSerialPolicy.fresh(time,lastValid);
@@ -135,7 +136,7 @@ final class Bar9AutoHost {
    if(connected&&!valid&&weight!=null&&weight.valid){currentCode="STALE_WEIGHT";currentMessage="La lectura venció; esperando un peso reciente";phase="DETECTING";}
    if(connected&&weight==null&&phase.equals("DETECTING")){currentCode="USB_DETECTING";currentMessage="Detectando · solicitud P enviada; esperando respuesta";}
    if(valid){phase="AVAILABLE";currentMessage="Peso disponible · "+weight.message;}
-   return new JSONObject().put("connected",connected).put("valid",valid).put("stable",valid&&weight.stable).put("kg",valid?weight.kg:JSONObject.NULL).put("sequence",sequence).put("ageMs",lastValid<0?-1:time-lastValid).put("lastByteAgeMs",lastRx<0?-1:time-lastRx).put("receivedBytes",rxBytes).put("code",currentCode).put("operation",operation).put("message",currentMessage).put("driver",connected?"Ch34xSerialDriver":"").put("detectedFormat",weight==null?"unknown":weight.format).put("autoPhase",phase).put("diagnosticSaved",diagnosticSaved).put("profileSaved",profileSaved).put("profile",profile());
+   return new JSONObject().put("connected",connected).put("valid",valid).put("stable",valid&&weight.stable).put("kg",valid?weight.kg:JSONObject.NULL).put("displayKg",ScaleDisplay.available(weight,connected,time,lastFrameAt)?weight.kg:JSONObject.NULL).put("sequence",sequence).put("ageMs",lastValid<0?-1:time-lastValid).put("lastByteAgeMs",lastRx<0?-1:time-lastRx).put("receivedBytes",rxBytes).put("code",currentCode).put("operation",operation).put("message",currentMessage).put("driver",connected?"Ch34xSerialDriver":"").put("detectedFormat",weight==null?"unknown":weight.format).put("autoPhase",phase).put("diagnosticSaved",diagnosticSaved).put("profileSaved",profileSaved).put("profile",profile());
   }catch(JSONException error){throw new IllegalStateException(error);}
  }
  private void event(String name){

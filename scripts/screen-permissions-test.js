@@ -88,7 +88,7 @@ test('La comprobación pasiva de sesiones no amplía su vencimiento por inactivi
   const serverSource=fs.readFileSync(path.join(root,'src/server.js'),'utf8');
   const getSession=serverSource.match(/^function getSessionUser\([^]*?^}/m)[0];
   const session={userId:'alice',expiresAt:1100},sessions=new Map([['synthetic-token',session]]);
-  const context={getCookies:()=>({el_muelle_session:'synthetic-token'}),authSessions:sessions,readSettings:()=>({users:[{id:'alice',role:'employee',active:true}]}),Date:{now:()=>100},AUTH_SESSION_MS:5000};
+  const context={getCookies:()=>({el_muelle_session:'synthetic-token'}),authSessions:sessions,readSettings:()=>({users:[{id:'alice',role:'employee',active:true}]}),Date:{now:()=>100},AUTH_SESSION_MS:5000,commerce:{sessionMs:()=>5000}};
   vm.createContext(context);vm.runInContext(getSession,context);assert.equal(context.getSessionUser({},false).id,'alice');assert.equal(session.expiresAt,1100);context.getSessionUser({},true);assert.equal(session.expiresAt,5100);
 });
 }

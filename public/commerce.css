@@ -1,0 +1,5 @@
+/* Only the new commercial fields; existing product geometry remains intact. */
+#productsView #productEditorDialog label:has(#productWholesaleMin){grid-column:2!important;grid-row:8!important}
+#productsView #productEditorDialog label:has(#productWholesalePrice){grid-column:3!important;grid-row:8!important}
+#productsView #productEditorDialog #unitMarginPreview{grid-column:1/-1!important;grid-row:9!important;display:block!important;margin:0!important;font-size:11px;line-height:1.45}
+@media(max-width:650px){#productsView #productEditorDialog label:has(#productWholesaleMin),#productsView #productEditorDialog label:has(#productWholesalePrice),#productsView #productEditorDialog #unitMarginPreview{grid-column:1!important;grid-row:auto!important}}

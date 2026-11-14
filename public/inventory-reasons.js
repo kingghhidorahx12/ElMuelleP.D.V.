@@ -1,0 +1,6 @@
+(function(root,factory){const value=factory();if(typeof module==='object'&&module.exports)module.exports=value;else root.InventoryReasons=value;})(typeof globalThis==='object'?globalThis:this,()=>{
+ const groups={receipt:[['compra','Compra de mercancía'],['entrega_proveedor','Entrega del proveedor'],['reposicion','Reposición del proveedor']],adjustment:[['conteo','Diferencia detectada al contar'],['captura','Corrección de captura'],['conciliacion','Conciliación de existencias']],waste:[['caducidad','Producto caducado'],['deterioro','Producto deteriorado'],['manejo','Daño durante el manejo'],['perdida','Pérdida de mercancía']],count:[['conteo_inicial','Conteo físico inicial']],restitution:[['devolucion','Devolución de venta cancelada'],['incluida','Mercancía ya incluida en el conteo']]};
+ function options(kind){return [...(groups[kind]||groups.adjustment),['otro','Otro']];}
+ function resolve(kind,code,explanation){const found=options(kind).find(([id])=>id===code);if(!found)throw Error('Selecciona un motivo válido.');if(code!=='otro')return found[1];const text=String(explanation||'').trim();if(text.length<4||text.length>174||/[\x00-\x1f\x7f]/.test(text))throw Error('Explica el motivo en Otro (4 a 174 caracteres).');return 'Otro: '+text;}
+ return {groups,options,resolve};
+});

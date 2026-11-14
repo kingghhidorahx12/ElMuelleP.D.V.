@@ -17,9 +17,9 @@ test('Offline Android JS adapter: initialization through OS alias, sales, stock,
   const cash=await request('/api/cash-sessions/open','POST',{openingAmount:100},201),piece=products.find(p=>p.unit==='pieza'),weighted=products.find(p=>p.unit==='kg');
   const sale={checkoutIntentId:crypto.randomUUID(),cashSessionId:cash.id,items:[{productId:piece.id,quantity:1,source:'manual'}],paymentMethod:'efectivo',discount:0};
   await request('/api/sales','POST',sale,409);
-  await request('/api/products/'+piece.id+'/inventory','PATCH',{operationId:crypto.randomUUID(),stockQuantity:5,reason:'Ajuste sintético del adaptador',type:'adjustment'});
+  await request('/api/products/'+piece.id+'/inventory','PATCH',{operationId:crypto.randomUUID(),stockQuantity:5,reasonCode:'conteo',type:'adjustment'});
   const sold=await request('/api/sales','POST',sale,201);assert.equal(sold.total,piece.price);assert.equal((await request('/api/sales','POST',sale)).id,sold.id);assert.equal((await request('/api/products')).find(p=>p.id===piece.id).stockQuantity,4);
-  await request('/api/products/'+weighted.id+'/inventory','PATCH',{operationId:crypto.randomUUID(),stockQuantity:5,reason:'Ajuste sintético de peso',type:'adjustment'});
+  await request('/api/products/'+weighted.id+'/inventory','PATCH',{operationId:crypto.randomUUID(),stockQuantity:5,reasonCode:'conteo',type:'adjustment'});
   await request('/api/sales','POST',{...sale,checkoutIntentId:crypto.randomUUID(),items:[{productId:weighted.id,quantity:1.25,source:'scale'}]},403);
   await request('/api/sales','POST',{...sale,checkoutIntentId:crypto.randomUUID(),items:[{productId:weighted.id,quantity:1.25,source:'manual'}]},403);
   const exported=await request('/api/android/backup/export','POST',{password:'synthetic-only'});

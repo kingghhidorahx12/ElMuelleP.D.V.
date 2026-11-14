@@ -2,13 +2,50 @@ const {test,before,after}=require('node:test'),assert=require('node:assert/stric
 const p=require('../src/mailbox-protocol'),root=path.resolve(__dirname,'..'),key=()=>crypto.randomBytes(32).toString('hex');
 const wranglerRoot=process.env.MAILBOX_WRANGLER_ROOT;if(!wranglerRoot)throw Error('Define MAILBOX_WRANGLER_ROOT con la instalación oficial de Wrangler usada para compilar el Worker.');
 const {Miniflare,convertV4MiniflareOptions}=require(path.join(wranglerRoot,'node_modules/miniflare'));
-let mf,db,url,area,small,large,report,receipt,code;const master=key(),admin=key(),client=crypto.randomUUID(),secret=key(),other=crypto.randomUUID(),otherSecret=key();
-async function request(route,method='GET',value,auth='admin',extra){const raw=value===undefined?'':JSON.stringify(value),headers=auth==='admin'?{Authorization:'Bearer '+admin,'Content-Type':'application/json'}:auth==='client'?p.signedHeaders({clientId:client,secret},method,route,raw):{'Content-Type':'application/json'};const response=await fetch(url+route,{method,headers:extra||headers,...(value===undefined?{}:{body:raw})});return {status:response.status,body:await response.json()};}
+let mf,db,url,area,small,large,report,receipt,code;const master=key(),admin=key(),publisher=key(),reader=key(),client=crypto.randomUUID(),secret=key(),other=crypto.randomUUID(),otherSecret=key();
+async function request(route,method='GET',value,auth='admin',extra){const raw=value===undefined?'':JSON.stringify(value),headers=['admin','publisher','reader'].includes(auth)?{Authorization:'Bearer '+(auth==='publisher'?publisher:auth==='reader'?reader:admin),'Content-Type':'application/json'}:auth==='client'?p.signedHeaders({clientId:client,secret},method,route,raw):{'Content-Type':'application/json'};const response=await fetch(url+route,{method,headers:extra||headers,...(value===undefined?{}:{body:raw})});return {status:response.status,body:await response.json()};}
 const packet=images=>({id:crypto.randomUUID(),kind:'error',description:'PRUEBA AISLADA de entrega cifrada, sin datos comerciales.',createdAt:new Date().toISOString(),attachments:images,attachmentsReviewed:images.length>0,consentRemote:true});
+test('APK privada: publicación completa, cifrado, autenticación e inmutabilidad',async()=>{
+ const bytes=crypto.randomBytes(524300),chunks=[bytes.subarray(0,524288),bytes.subarray(524288)],m={applicationId:'mx.elmuelle.pdv',versionCode:14,versionName:'1.0.13-android-prueba',bytes:bytes.length,sha256:p.hash(bytes),certificateSHA256:'66347436ba4bb5ec9b991b89f0a068680cdbd6020075e7f7d78e7cf6a16effd5',chunkSize:524288,chunks:chunks.map(b=>p.hash(b)),notes:'Sólo simulación, no es una APK real.'};
+ assert.equal((await request('/admin/api/android/releases','POST',m,'none')).status,401);
+ assert.equal((await request('/admin/api/reports','GET',undefined,'publisher')).status,401);
+ assert.equal((await request('/admin/api/android/releases','POST',{...m,applicationId:'otro.pos'})).status,400);
+ assert.equal((await request('/admin/api/android/releases','POST',m,'publisher')).status,201);
+ const prefix='/admin/api/android/releases/'+m.sha256;
+ assert.equal((await request(prefix+'/publish','POST',{})).status,409);
+ assert.equal((await request(prefix+'/chunks/0','PUT',{data:'YWx0ZXJhZG8='})).status,400);
+ for(let i=0;i<chunks.length;i++)assert.equal((await request(prefix+'/chunks/'+i,'PUT',{data:chunks[i].toString('base64')})).status,200);
+ const row=await db.prepare('SELECT encrypted FROM android_chunks WHERE release_id=? AND position=0').bind(m.sha256).first();assert.notDeepEqual(Buffer.from(row.encrypted),chunks[0]);
+ assert.equal((await request(prefix+'/publish','POST',{})).body.published,true);
+ const stored=await request(prefix,'GET',undefined,'publisher');assert.equal(stored.body.status,'published');assert.deepEqual(stored.body.stored,[0,1]);
+ assert.equal((await request(prefix+'/chunks/0','PUT',{data:chunks[0].toString('base64')})).status,409);
+ assert.equal((await request('/v1/android/releases/latest','GET',undefined,'none')).status,401);
+ const made=await request('/admin/api/android/enrollments','POST',{},'publisher'),id=crypto.randomUUID(),installationSecret=key();assert.equal((await request('/v1/enroll','POST',{code:made.body.code,clientId:id,secret:installationSecret},'none')).status,200);
+ const signed=route=>p.signedHeaders({clientId:id,secret:installationSecret},'GET',route,'');
+ const latest='/v1/android/releases/latest';assert.equal((await request(latest,'GET',undefined,'none',signed(latest))).body.release.sha256,m.sha256);
+ for(let i=0;i<chunks.length;i++){const route='/v1/android/releases/'+m.sha256+'/chunks/'+i,downloaded=await request(route,'GET',undefined,'none',signed(route));assert.deepEqual(Buffer.from(downloaded.body.data,'base64'),chunks[i]);}
+ const clientsBefore=(await db.prepare('SELECT COUNT(*) n FROM clients').first()).n;
+ assert.equal((await request(latest,'GET',undefined,'reader')).body.release.sha256,m.sha256);
+ assert.deepEqual(Buffer.from((await request('/v1/android/releases/'+m.sha256+'/chunks/0','GET',undefined,'reader')).body.data,'base64'),chunks[0]);
+ assert.equal((await db.prepare('SELECT COUNT(*) n FROM clients').first()).n,clientsBefore);
+ for(const route of ['/admin/api/reports','/admin/api/android/releases'])assert.equal((await request(route,'GET',undefined,'reader')).status,401);
+ assert.equal((await request('/admin/api/android/enrollments','POST',{},'reader')).status,401);
+ const bytes2=crypto.randomBytes(20),m2={...m,versionCode:15,versionName:'1.0.14-test',chunkSize:131072,bytes:20,sha256:p.hash(bytes2),chunks:[p.hash(bytes2)]},prefix2='/admin/api/android/releases/'+m2.sha256;
+ assert.equal((await request('/admin/api/android/releases','POST',m2,'publisher')).status,201);
+ assert.equal((await request(prefix2+'/chunks/0','PUT',{data:bytes2.toString('base64')},'reader')).status,401);
+ assert.equal((await request(prefix2+'/chunks/0','PUT',{data:bytes2.toString('base64')},'publisher')).status,200);
+ assert.equal((await request(prefix2+'/publish','POST',{},'publisher')).status,200);
+ assert.equal((await request(prefix2+'/retire','POST',{expectedVersionCode:15,confirmSHA256:m2.sha256},'publisher')).status,409);
+ assert.equal((await request(prefix+'/retire','POST',{expectedVersionCode:99,confirmSHA256:m.sha256},'publisher')).status,409);
+ assert.equal((await request(prefix+'/retire','POST',{expectedVersionCode:14,confirmSHA256:m.sha256},'publisher')).status,200);
+ assert.equal((await request('/admin/api/android/releases','GET',undefined,'publisher')).body.releases.length,1);
+ assert.equal((await request(latest,'GET',undefined,'reader')).body.release.sha256,m2.sha256);
+});
 before(async()=>{
  area=fs.mkdtempSync(path.join(root,'.dev','em003-worker-test-'));require('../src/persistence').restrictPrivatePath(area,true);
- mf=new Miniflare(convertV4MiniflareOptions({host:'127.0.0.1',port:0,modules:true,scriptPath:path.join(root,'services/mailbox-worker/.dev/mailbox-worker-dry/worker.js'),compatibilityDate:'2026-10-01',compatibilityFlags:['nodejs_compat'],d1Databases:{DB:'isolated-mailbox'},d1Persist:path.join(area,'d1'),bindings:{MAILBOX_DATA_KEY:master,MAILBOX_ADMIN_TOKEN:admin,LOCAL_TEST:'1'},serviceBindings:{ASSETS:async req=>{const name=new URL(req.url).pathname==='/'?'index.html':path.basename(new URL(req.url).pathname);return new Response(fs.readFileSync(path.join(root,'services/mailbox-receiver/public',name)),{headers:{'Content-Type':name.endsWith('.html')?'text/html':name.endsWith('.js')?'text/javascript':'text/css'}});}}}));
+ mf=new Miniflare(convertV4MiniflareOptions({host:'127.0.0.1',port:0,modules:true,scriptPath:process.env.MAILBOX_WORKER_BUNDLE||path.join(root,'services/mailbox-worker/.dev/mailbox-worker-dry/worker.js'),compatibilityDate:'2026-10-01',compatibilityFlags:['nodejs_compat'],d1Databases:{DB:'isolated-mailbox'},d1Persist:path.join(area,'d1'),bindings:{MAILBOX_DATA_KEY:master,MAILBOX_ADMIN_TOKEN:admin,ANDROID_RELEASE_TOKEN:publisher,ANDROID_UPDATE_READ_TOKEN:reader,LOCAL_TEST:'1'},serviceBindings:{ASSETS:async req=>{const name=new URL(req.url).pathname==='/'?'index.html':path.basename(new URL(req.url).pathname);return new Response(fs.readFileSync(path.join(root,'services/mailbox-receiver/public',name)),{headers:{'Content-Type':name.endsWith('.html')?'text/html':name.endsWith('.js')?'text/javascript':'text/css'}});}}}));
  url=(await mf.ready).origin;db=await mf.getD1Database('DB');await db.exec(fs.readFileSync(path.join(root,'services/mailbox-worker/schema.sql'),'utf8').replace(/CREATE TRIGGER[\s\S]+$/,match=>match.replace(/\r?\n/g,' ')));
+ await db.exec(fs.readFileSync(path.join(root,'services/mailbox-worker/android-releases.sql'),'utf8').replace(/--[^\r\n]*/g,''));
  const sharp=require('C:/Users/nexar/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/sharp');small={mime:'image/png',data:(await sharp({create:{width:4,height:4,channels:4,background:'#2385baff'}}).png().toBuffer()).toString('base64')};large={mime:'image/png',data:(await sharp(crypto.randomBytes(512*480*4),{raw:{width:512,height:480,channels:4}}).png().toBuffer()).toString('base64')};assert.ok(Buffer.from(large.data,'base64').length<1048576);
 });
 test('D1: la cuota diaria se aplica dentro de la transacción y un exceso no guarda otro reporte',async()=>{
@@ -46,7 +83,7 @@ test('Worker: captura inválida y exceso de tamaño se rechazan antes de persist
 });
 test('POS real aislado: activación cifrada, reintento tras perder el acuse, envío y seguimiento D1',async()=>{
  const http=require('node:http'),net=require('node:net'),{spawn}=require('node:child_process'),{DatabaseSync}=require('node:sqlite'),pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
- const appRoot=path.join(area,'pos-app'),data=path.join(area,'pos-data');fs.mkdirSync(appRoot);fs.mkdirSync(data);fs.writeFileSync(path.join(data,'products.json'),'[]');fs.cpSync(path.join(root,'src'),path.join(appRoot,'src'),{recursive:true});fs.copyFileSync(path.join(root,'package.json'),path.join(appRoot,'package.json'));
+ const appRoot=path.join(area,'pos-app'),data=path.join(area,'pos-data');fs.mkdirSync(appRoot);fs.mkdirSync(data);fs.writeFileSync(path.join(data,'products.json'),'[]');fs.cpSync(path.join(root,'src'),path.join(appRoot,'src'),{recursive:true});fs.cpSync(path.join(root,'public'),path.join(appRoot,'public'),{recursive:true});fs.copyFileSync(path.join(root,'package.json'),path.join(appRoot,'package.json'));
  let loseReceipt=true,child,proxy,auth,startupError='';
  const api=async(route,method='GET',body,cookie=auth)=>{const response=await fetch(posBase+route,{method,headers:{'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});return {status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie')?.split(';')[0]};};let posBase;
  try{

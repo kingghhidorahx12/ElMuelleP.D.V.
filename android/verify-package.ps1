@@ -21,6 +21,8 @@ function Read-Entry([string]$Name){
 function Hash-Bytes([byte[]]$Bytes){$emHasher=[Security.Cryptography.SHA256]::Create();try{return ([BitConverter]::ToString($emHasher.ComputeHash($Bytes))).Replace('-','')}finally{$emHasher.Dispose()}}
 try{
  $emBase='assets/nodeapp/'
+ $emReadChannel=[Text.Encoding]::UTF8.GetString((Read-Entry ($emBase+'runtime/update-channel.json'))) | ConvertFrom-Json
+ if(@($emReadChannel.PSObject.Properties).Count -ne 2 -or $emReadChannel.downloadToken -notmatch '^[a-f0-9]{64}$' -or $emReadChannel.endpoint -notmatch '^https://[^/]+/?$'){throw 'CANAL_DE_LECTURA_INVALIDO'}
  $emManifest=[Text.Encoding]::UTF8.GetString((Read-Entry ($emBase+'bundle-manifest.json'))) | ConvertFrom-Json
  if($emManifest.products -ne 28 -or $emManifest.photographs -ne 28 -or $emManifest.stock -ne 0 -or $emManifest.physicalCountPerformed){throw 'MANIFIESTO_CATALOGO_INVALIDO'}
  foreach($emProperty in $emManifest.files.PSObject.Properties){if((Hash-Bytes (Read-Entry ($emBase+$emProperty.Name))) -ne $emProperty.Value){throw ('HASH_ASSET_INVALIDO: '+$emProperty.Name)}}
@@ -33,8 +35,10 @@ try{
  foreach($emEntry in $emZip.Entries){if($emEntry.FullName -match '(^|/)(\.secrets\.json|\.env|.*\.(p12|jks|keystore|sqlite|emrecovery|emactivation|dpapi))$' -or $emEntry.FullName -like ($emBase+'app/data/*')){throw ('ARCHIVO_PRIVADO_NO_PERMITIDO: '+$emEntry.FullName)}}
  foreach($emAbi in @('arm64-v8a','armeabi-v7a','x86_64')){foreach($emLibrary in @('libnode.so','libmuelle.so','libsqlcipher.so')){if(!$emZip.GetEntry('lib/'+$emAbi+'/'+$emLibrary)){throw ('BIBLIOTECA_NATIVA_FALTANTE: '+$emAbi+'/'+$emLibrary)}}}
 }finally{$emZip.Dispose()}
+& (Join-Path $PSScriptRoot 'tools/check-apk-dependencies.ps1') -Apk $emApkFile.FullName
+if($LASTEXITCODE -ne 0){throw 'DEPENDENCIAS_ANDROID_INCOMPLETAS'}
 $emHash=(Get-FileHash -LiteralPath $emApkFile.FullName -Algorithm SHA256).Hash
 if($emHash -notmatch '^[0-9A-Fa-f]{64}$'){throw 'SHA256_INVALIDO'}
 $emManifestTree=(& (Join-Path $emTools 'sdk/build-tools/35.0.0/aapt.exe') dump xmltree $emApkFile.FullName 'AndroidManifest.xml') -join "`n"
 if($LASTEXITCODE -ne 0 -or $emManifestTree -notmatch 'screenOrientation[^\r\n]*0x6' -or $emManifestTree -notmatch 'resizeableActivity[^\r\n]*0x0'){throw 'ORIENTACION_HORIZONTAL_NO_CONFIGURADA'}
-[ordered]@{apk=$emApkFile.FullName;bytes=$emApkFile.Length;sha256=$emHash;signatureVerified=$true;alignmentVerified=$true;allBundleHashesVerified=$true;products=28;originalPhotographs=28;initialStock=0;physicalCountPerformed=$false;automaticCatalogueInitialization=$true;activationRequired=$false;catalogueEncryptedInApk=$false;landscapeOnlyConfigured=$true;activationKeyIncluded=$false;privateKeysIncluded=$false;predefinedUsersIncluded=$false;historicalOperationsIncluded=$false} | ConvertTo-Json
+[ordered]@{apk=$emApkFile.FullName;bytes=$emApkFile.Length;sha256=$emHash;signatureVerified=$true;alignmentVerified=$true;allBundleHashesVerified=$true;dependenciesSelfContained=$true;products=28;originalPhotographs=28;initialStock=0;physicalCountPerformed=$false;automaticCatalogueInitialization=$true;activationRequired=$false;automaticReadOnlyUpdateChannel=$true;catalogueEncryptedInApk=$false;landscapeOnlyConfigured=$true;activationKeyIncluded=$false;privateKeysIncluded=$false;predefinedUsersIncluded=$false;historicalOperationsIncluded=$false} | ConvertTo-Json

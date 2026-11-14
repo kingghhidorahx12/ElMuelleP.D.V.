@@ -10,5 +10,59 @@ button:focus:not(:focus-visible){outline:none}
 body:is(.pos-approved,.atelier-shell) :is(.sidebar,.app-shell,.brand,.brand-mark,.nav-item,.scale-card,.ticket-panel,.ticket-panel-viewport),
 body:is(.pos-approved,.atelier-shell).sidebar-collapsed :is(.sidebar,.brand,.brand-mark,.nav-item,.scale-card),
 body.pos-approved.ticket-collapsed :is(.ticket-panel,.ticket-panel-viewport){transition:none!important}
-.android-shell-moving .app-shell,.android-shell-moving .sidebar{will-change:transform}
-.android-ticket-ghost{position:fixed!important;inset:auto!important;z-index:60!important;visibility:visible!important;pointer-events:none!important;opacity:1!important;transform:none;overflow:hidden}
+body.pos-approved.ticket-collapsed #currentSalePanel.android-ticket-exit{position:fixed!important;inset:auto!important;left:var(--android-ticket-left)!important;top:var(--android-ticket-top)!important;width:var(--android-ticket-width)!important;height:var(--android-ticket-height)!important;z-index:60!important;visibility:visible!important;pointer-events:none!important;overflow:hidden}
+.peripheral-actions{display:flex;gap:8px;flex-wrap:wrap}.peripheral-automatic{display:flex!important;align-items:center;gap:8px;margin:12px 0}.peripheral-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.peripheral-summary article,.peripheral-devices article{border:1px solid var(--line,#c8d8e7);border-radius:12px;padding:12px;background:rgba(245,250,255,.7);min-width:0}.peripheral-summary p,.peripheral-devices p{margin:6px 0 0;font-size:12px;line-height:1.45;overflow-wrap:anywhere}.peripheral-devices{display:grid;gap:8px}.peripheral-devices article{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}.peripheral-devices strong{overflow-wrap:anywhere}.peripheral-help{font-size:12px;line-height:1.5;color:var(--muted,#60768e)}@media(max-width:850px){.peripheral-summary{grid-template-columns:1fr}.peripheral-devices article{grid-template-columns:1fr}}
+
+/* Only the action checklist in Usuarios y PIN: compact checks, full-row touch targets. */
+#settingsView #permissionModules{align-items:start;gap:10px}
+#settingsView #permissionModules .permission-section{min-width:0;padding:10px}
+#settingsView #permissionModules .permission-section details{margin-top:4px}
+#settingsView #permissionModules .permission-section summary{padding:6px 0;line-height:1.35}
+#settingsView #permissionModules .permission-action{display:grid!important;grid-template-columns:18px minmax(0,1fr);align-items:center;column-gap:9px;min-height:36px;margin:2px 0;padding:4px 2px;box-sizing:border-box;font:400 12px/1.35 var(--font-ui);text-align:left;cursor:pointer;overflow-wrap:anywhere}
+#settingsView #permissionModules .permission-action input[type=checkbox]{appearance:auto;display:block;box-sizing:border-box;width:18px!important;min-width:18px!important;max-width:18px!important;height:18px!important;min-height:18px!important;max-height:18px!important;padding:0!important;margin:0!important;transform:none!important;place-self:center start;accent-color:var(--atelier-control-focus,#0879d5);cursor:inherit}
+#settingsView #permissionModules .permission-action:focus-within{outline:2px solid var(--atelier-control-focus,#0879d5);outline-offset:1px;border-radius:5px}
+#settingsView #permissionModules .permission-action:has(input:disabled){cursor:not-allowed}
+@media(pointer:coarse){#settingsView #permissionModules .permission-action{min-height:40px}}
+
+/* Compact connection drawer; the approved settings layouts remain independent. */
+#androidDevicesButton{display:inline-flex;align-items:center;justify-content:center;gap:5px;width:auto!important;min-width:0!important;height:32px;min-height:32px!important;padding:5px 9px!important;font:600 12px/1.2 var(--font-ui)!important;white-space:nowrap}
+#androidDevicesButton svg{width:17px;height:17px;flex:none}
+#androidDevicesButton[hidden],#androidDevicesDialog [hidden]{display:none!important}
+#androidDevicesDialog{box-sizing:border-box;width:min(800px,92vw);max-width:92vw;max-height:90vh;padding:0;border:1px solid #b7d7eb;border-radius:16px;color:#103754;background:#f4fbff;box-shadow:0 18px 60px #052c5060;overflow:hidden;font-family:var(--font-ui)}
+#androidDevicesDialog::backdrop{background:#06233e70}
+#androidDevicesDialog .equipment-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid #cbe1ef;background:#edf8ff}
+#androidDevicesDialog .equipment-heading>div{display:flex;gap:10px;align-items:center;min-width:0}
+#androidDevicesDialog .equipment-heading svg{width:27px;height:27px;flex:none;color:#0878d4}
+#androidDevicesDialog h2{margin:0;font-size:19px;line-height:1.3}
+#androidDevicesDialog .equipment-heading p{margin:4px 0 0;font-size:12px;color:#52708a}
+#androidDevicesDialog .equipment-scroll{max-height:calc(90vh - 151px);overflow:auto;padding:16px 18px;overscroll-behavior:contain}
+#androidDevicesDialog .equipment-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+#androidDevicesDialog .equipment-summary article{min-width:0;padding:12px;border:1px solid #c5dfef;border-radius:11px;background:#fff}
+#androidDevicesDialog .equipment-summary article>div{display:flex;gap:7px;align-items:center;min-width:0}
+#androidDevicesDialog .equipment-summary svg{width:19px;height:19px;display:block;color:#167aaf}
+#androidDevicesDialog strong{font-size:13px;line-height:1.35;overflow-wrap:anywhere}
+#androidDevicesDialog p{font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+#androidDevicesDialog small{font-size:11px;line-height:1.4;color:#4b718d;overflow-wrap:anywhere}
+#androidDevicesDialog .equipment-summary p{margin:8px 0 0}
+#androidDevicesDialog .equipment-summary small{display:block;margin-top:6px}
+#androidDevicesDialog .equipment-badge{margin-left:auto;padding:3px 6px;white-space:nowrap;border-radius:10px;font-size:10px;color:#976217;background:#fff1cc}
+#androidDevicesDialog .equipment-badge[data-ready=true]{color:#14705d;background:#dff4ec}
+#androidDevicesDialog .equipment-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:14px 0 8px}
+#androidDevicesDialog :is(.solid-btn,.quiet-btn){width:auto!important;min-width:0!important;max-width:100%;min-height:36px!important;padding:8px 11px!important;font:600 12px/1.25 var(--font-ui)!important;letter-spacing:normal;white-space:normal}
+#androidDevicesDialog .equipment-notice{margin:8px 0;min-height:18px;color:#315d7e}
+#androidDevicesDialog progress{width:100%;height:7px;accent-color:#0879d5}
+#androidDevicesDialog .equipment-devices{display:grid;gap:8px;margin-top:10px}
+#androidDevicesDialog .equipment-devices article{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid #c8dfed;border-radius:10px;background:#fff}
+#androidDevicesDialog .equipment-devices small{display:block;margin-top:3px}
+#androidDevicesDialog .equipment-devices p{margin:4px 0 0;color:#5b7487}
+#androidDevicesDialog .equipment-help,#androidDevicesDialog .equipment-admin{margin-top:14px;border-top:1px solid #cbe1ef;padding-top:10px}
+#androidDevicesDialog summary{font-size:12px;line-height:1.4;font-weight:600;cursor:pointer;min-height:25px;color:#285f84}
+#androidDevicesDialog footer{padding:10px 18px;border-top:1px solid #cbe1ef;font-size:11px;line-height:1.4;color:#54718a}
+#androidDevicesDialog .configuration-option{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0}
+#androidDevicesDialog .configuration-option small{display:block;margin-top:3px}
+#androidDevicesDialog [data-automatic]{appearance:none;position:relative;box-sizing:border-box;border:0;border-radius:14px;background:#bacddd;flex:0 0 42px;width:42px!important;min-width:42px!important;max-width:42px!important;height:25px!important;min-height:25px!important;max-height:25px!important;margin:0!important;padding:0!important;transform:none!important;cursor:pointer}
+#androidDevicesDialog [data-automatic]::before{content:'';position:absolute;left:3px;top:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #17416a30;transform:none}
+#androidDevicesDialog [data-automatic]:checked{background:#0879c8}
+#androidDevicesDialog [data-automatic]:checked::before{transform:translateX(17px)}
+#androidDevicesDialog [data-automatic]:focus-visible{outline:2px solid #0879d5;outline-offset:3px}
+@media(max-width:650px){#androidDevicesDialog .equipment-summary{grid-template-columns:1fr}#androidDevicesDialog .equipment-devices article{grid-template-columns:1fr}#androidDevicesDialog .equipment-heading{padding:12px}#androidDevicesDialog .equipment-scroll{padding:12px}}

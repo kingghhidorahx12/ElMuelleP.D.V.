@@ -181,7 +181,8 @@ function normalizeSessionUser(user) {
     role,
     active: user?.active !== false,
     hasPin: user?.hasPin !== false,
-    ...(user?.permissions ? {permissions:{...user.permissions}} : {})
+    ...(user?.permissions ? {permissions:{...user.permissions}} : {}),
+    ...(user?.actions ? {actions:{...user.actions}} : {})
   };
 }
 
@@ -200,6 +201,7 @@ function getStoredSessionExpiry() {
 }
 
 function hasValidStoredSession() {
+  try{if(JSON.parse(sessionStorage.getItem(SESSION_KEY)||'null')?.role==='admin'&&!window.commerceAdminIdleMinutes)return true;}catch{}
   const expiresAt = getStoredSessionExpiry();
 
   if (!expiresAt || expiresAt <= Date.now()) {
@@ -213,7 +215,7 @@ function hasValidStoredSession() {
 function refreshStoredSessionExpiry() {
   sessionStorage.setItem(
     SESSION_EXPIRES_KEY,
-    String(Date.now() + SESSION_PERSIST_MS)
+    String(Date.now() + (JSON.parse(sessionStorage.getItem(SESSION_KEY)||'null')?.role==='admin'?(window.commerceAdminIdleMinutes||525600)*60000:SESSION_PERSIST_MS))
   );
 }
 
@@ -227,6 +229,7 @@ function scheduleSessionExpiryLogout() {
   window.clearTimeout(sessionExpiryTimer);
 
   if (!state?.sessionAuthenticated) return;
+  if(state.currentUser?.role==='admin'&&!window.commerceAdminIdleMinutes)return;
 
   const remaining = getSessionMsRemaining();
   if (remaining <= 0) {
@@ -244,6 +247,7 @@ function scheduleSessionExpiryLogout() {
 }
 
 function markSessionActivity() {
+  window.posLastActivityAt=Date.now();
   if (!state?.sessionAuthenticated || !state.sessionToken) return;
   refreshStoredSessionExpiry();
   scheduleSessionExpiryLogout();
@@ -315,6 +319,7 @@ function isAdminView(viewName) {
   return ADMIN_VIEWS.has(viewName);
 }
 
+function canAction(id){if(!state.sessionAuthenticated)return false;if(isAdminUser())return true;const section=id.split('.')[0],allowed=state.currentUser?.permissions?state.currentUser.permissions[section]===true:section==='cash'?canAccessView('reports','cash'):section==='reports'?canAccessView('reports','reports'):canAccessView(section);return allowed&&(typeof state.currentUser?.actions?.[id]==='boolean'?state.currentUser.actions[id]:PermissionActions.legacy[id]===true);}
 function canAccessView(viewName, reportsMode = state.reportsMode) {
   if (viewName === 'restricted') return true;
   if (isAdminUser()) return true;
@@ -1137,7 +1142,7 @@ function syncTopbarContext() {
 }
 
 function setProductMode(mode = "list") {
-  if (mode === 'form' && !isAdminUser()) return;
+  if (mode === 'form' && !['products.create','products.edit','products.prices','products.status'].some(canAction)) return;
   const validMode = ["list", "form"].includes(mode) ? mode : "list";
   const root = document.querySelector(".products-layout");
   const changed = root && root.dataset.productsMode !== validMode;
@@ -1156,7 +1161,7 @@ function setProductMode(mode = "list") {
   if (changed) animatePosFeedback(root.querySelector(validMode === "list" ? ".product-catalog-panel" : ".product-form-panel"), "navigation");
 }
 function setInventoryMode(mode = "stock") {
-  if (mode === 'entry' && !isAdminUser()) return;
+  if (mode === 'entry' && !['inventory.receive','inventory.adjustUp','inventory.adjustDown','inventory.waste'].some(canAction)) return;
   const validMode = ["entry", "stock", "history"].includes(mode) ? mode : "stock";
   const root = document.querySelector(".inventory-management-layout");
   const changed = root && root.dataset.inventoryMode !== validMode;
@@ -1760,6 +1765,7 @@ function setView(viewName) {
 
 async function fetchJson(url, options = {}) {
   const headers = new Headers(options.headers || {});
+  if(Date.now()-(window.posLastActivityAt||0)<60000)headers.set('X-POS-Active','1');
 
   const response = await fetch(url, {
     ...options,
@@ -1772,11 +1778,12 @@ async function fetchJson(url, options = {}) {
     const error = new Error(payload.message || "No se pudo completar la operación.");
     error.status = response.status;
     error.payload = payload;
+    if(response.status===401&&state.sessionAuthenticated&&!String(url).startsWith('/api/auth/'))logoutToAccess({preservePendingCheckout:Boolean(state.checkoutPending)});
     if(payload.code==='SCREEN_FORBIDDEN')window.dispatchEvent(new Event('elmuelle:access-denied'));
     throw error;
   }
 
-  if (state.sessionAuthenticated && state.sessionToken) {
+  if (state.sessionAuthenticated && state.sessionToken && (!isAdminUser()||!window.commerceAdminIdleMinutes||Date.now()-(window.posLastActivityAt||0)<60000||options.method&&options.method!=='GET')) {
     refreshStoredSessionExpiry();
     scheduleSessionExpiryLogout();
   }
@@ -1821,7 +1828,7 @@ function applyPublicSettings(settings = {}) {
       return user.role === "employee" && user.id === state.currentUser?.id;
     });
 
-    state.currentUser = normalizeSessionUser({...(matchingEmployee || getEmployeeSessionUser()),...(state.currentUser?.permissions?{permissions:state.currentUser.permissions}:{})});
+    state.currentUser = normalizeSessionUser({...(matchingEmployee || getEmployeeSessionUser()),...(state.currentUser?.permissions?{permissions:state.currentUser.permissions}:{}),...(state.currentUser?.actions?{actions:state.currentUser.actions}:{})});
     saveSessionUser(state.currentUser);
   } else {
     const adminUser = state.settings.users.find((user) => user.role === "admin");
@@ -2556,10 +2563,10 @@ function validatePieceQuantity(product, rawQuantity) {
   const reserved = state.ticket
     .filter((item) => item.productId === product?.id && item.unit === "pieza")
     .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-  const existing = state.ticket.find((item) => item.productId === product?.id && item.unit === "pieza" && Number(item.price) === Number(product?.price));
+  const existing = state.ticket.find((item) => item.productId === product?.id && item.unit === "pieza");
   const lineRemaining = Math.max(0, 100 - Number(existing?.quantity || 0));
   const available = typeof product?.stockQuantity === "number" && Number.isFinite(product.stockQuantity)
-    ? Math.max(0, product.stockQuantity - reserved) : null;
+    ? Math.max(0, (product.saleableQuantity??product.stockQuantity) - reserved) : null;
   let error = "";
   if (!product || product.unit !== "pieza" || product.active === false) error = "Este producto ya no está disponible.";
   else if (available === null) error = "Existencias sin verificar. Registra primero el conteo inicial.";
@@ -2631,7 +2638,7 @@ function confirmPieceQuantity() {
   state.detectedQuantity = result.quantity;
   state.quantitySource = "manual";
   addCurrentProductToTicket();
-  $("ticketItems")?.querySelector?.('[data-ticket-quantity="'+state.ticket.findIndex(item=>item.productId===product.id&&item.unit==='pieza'&&Number(item.price)===Number(product.price))+'"]')?.focus({preventScroll:true});
+  $("ticketItems")?.querySelector?.('[data-ticket-quantity="'+state.ticket.findIndex(item=>item.productId===product.id&&item.unit==='pieza')+'"]')?.focus({preventScroll:true});
 }
 
 function renderWeighPanel() {
@@ -2669,7 +2676,7 @@ function renderWeighPanel() {
     delete photo.dataset.fallbackTried;
     photo.src = imagePath;
   }
-  $("weighAvailableStock").textContent = typeof product.stockQuantity==='number'?`Disponible: ${quantityText(product.stockQuantity, product.unit)}`:'Existencias sin verificar';
+  $("weighAvailableStock").textContent = typeof product.stockQuantity==='number'?`Disponible: ${quantityText(product.saleableQuantity??product.stockQuantity, product.unit)}${product.expiredQuantity>0?' · Hay lotes caducados en Inventario':''}`:'Existencias sin verificar';
   $("weighDescription").textContent = isKg
     ? invalidKgWeight
       ? `Peso máximo permitido: ${MAX_SCALE_WEIGHT_KG.toFixed(0)} kg.`
@@ -2698,7 +2705,7 @@ function getTicketStockErrors(items = state.ticket) {
   for (const [id, amount] of totals) {
     const product = state.products.find(p=>p.id===id);
     if (typeof product.stockQuantity!=='number'||!Number.isFinite(product.stockQuantity)) errors.push(`${product.name}: existencias sin verificar; registra el conteo inicial.`);
-    else if (amount>Math.round(product.stockQuantity*1000)) errors.push(`${product.name}: solicitado ${quantityText(amount/1000,product.unit)}; disponible ${quantityText(product.stockQuantity,product.unit)}.`);
+    else if (amount>Math.round((product.saleableQuantity??product.stockQuantity)*1000)) errors.push(`${product.name}: solicitado ${quantityText(amount/1000,product.unit)}; disponible ${quantityText(product.saleableQuantity??product.stockQuantity,product.unit)}.`);
   }
   return errors;
 }
@@ -2718,7 +2725,7 @@ function getTicketPieceLimit(index){
   const item=state.ticket[index],product=state.products.find(p=>p.id===item?.productId);
   if(!item||item.unit!=='pieza'||!product||product.active===false||typeof product.stockQuantity!=='number')return null;
   const reserved=state.ticket.reduce((sum,line,i)=>sum+(i!==index&&line.productId===item.productId?Number(line.quantity):0),0);
-  return Math.min(100,Math.max(0,Math.floor(product.stockQuantity-reserved)));
+  return Math.min(100,Math.max(0,Math.floor((product.saleableQuantity??product.stockQuantity)-reserved)));
 }
 
 function stepTicketQuantity(index,delta){
@@ -2755,7 +2762,7 @@ function addCurrentProductToTicket() {
   const quantity = getEffectiveQuantity(product);
 
   const preview=state.ticket.map(item=>({...item}));
-  const merge=product.unit==='pieza'?preview.find(item=>item.productId===product.id&&item.unit===product.unit&&Number(item.price)===Number(product.price)):null;
+  const merge=product.unit==='pieza'?preview.find(item=>item.productId===product.id&&item.unit===product.unit):null;
   if(merge)merge.quantity=Number(merge.quantity)+quantity;else preview.push({productId:product.id,unit:product.unit,quantity});
   const stockErrors=getTicketStockErrors(preview);
   if(stockErrors.length){showToast(stockErrors.join(' '),'error');return;}
@@ -2777,7 +2784,7 @@ function addCurrentProductToTicket() {
   const total = roundCurrency(quantity * price);
   const lineCost = roundCurrency(quantity * costPrice);
   const existingIndex = product.unit === "pieza"
-    ? state.ticket.findIndex((item) => item.productId === product.id && item.unit === product.unit && Number(item.price) === price)
+    ? state.ticket.findIndex((item) => item.productId === product.id && item.unit === product.unit)
     : -1;
   let toastMessage = "Producto agregado.";
 
@@ -2814,6 +2821,7 @@ function addCurrentProductToTicket() {
 }
 
 function renderTicket() {
+  if(typeof repriceCommercialTicket==='function')repriceCommercialTicket();
   const ticketItems = $("ticketItems");
   // Retirar un campo enfocado puede emitir change durante innerHTML: esa captura ya fue reemplazada.
   ticketItems.querySelectorAll('[data-ticket-quantity]').forEach(input=>input.__ticketReplacing=true);
@@ -2828,7 +2836,7 @@ function renderTicket() {
           <article class="ticket-item">
             <div class="pos-ticket-copy">
               <div class="pos-ticket-product"><strong>${escapeHtml(item.name)}</strong>${piece?'':`<span class="pos-ticket-quantity">${escapeHtml(quantityText(item.quantity, item.unit))}</span>`}</div>
-              <div class="pos-ticket-details"><span class="pos-ticket-unit">${money(item.price)} ${piece?'c/u':'/ '+escapeHtml(getUnitLabel(item.unit))}</span>${piece?`<div class="ticket-piece-control"><div class="ticket-quantity-stepper" role="group" aria-label="Cantidad de ${escapeHtml(item.name)}"><button class="ticket-quantity-step" type="button" data-ticket-index="${index}" data-ticket-step="-1" aria-label="Quitar una pieza de ${escapeHtml(item.name)}" ${item.quantity<=1?'disabled':''}>−</button><input class="ticket-quantity-edit" data-ticket-quantity="${index}" aria-label="Cantidad de ${escapeHtml(item.name)}" type="number" inputmode="numeric" min="1" max="${limit??100}" step="1" style="--ticket-quantity-digits:${String(item.quantity).length}" value="${item.quantity}" /><button class="ticket-quantity-step" type="button" data-ticket-index="${index}" data-ticket-step="1" aria-label="Agregar una pieza de ${escapeHtml(item.name)}" ${limit===null||item.quantity>=limit?'disabled':''}>+</button></div><span class="ticket-piece-unit" aria-hidden="true">${item.quantity===1?'pza':'pzas'}</span></div>`:`<small>${item.source === "scale" ? "Báscula" : "Manual autorizado"}</small>`}</div>
+              <div class="pos-ticket-details"><span class="pos-ticket-unit">${money(item.price)} ${piece?'c/u':'/ '+escapeHtml(getUnitLabel(item.unit))}${item.priceSource==='customer'?' · Cliente':item.priceSource==='wholesale'?' · Mayoreo':''}</span>${piece?`<div class="ticket-piece-control"><div class="ticket-quantity-stepper" role="group" aria-label="Cantidad de ${escapeHtml(item.name)}"><button class="ticket-quantity-step" type="button" data-ticket-index="${index}" data-ticket-step="-1" aria-label="Quitar una pieza de ${escapeHtml(item.name)}" ${item.quantity<=1?'disabled':''}>−</button><input class="ticket-quantity-edit" data-ticket-quantity="${index}" aria-label="Cantidad de ${escapeHtml(item.name)}" type="number" inputmode="numeric" min="1" max="${limit??100}" step="1" style="--ticket-quantity-digits:${String(item.quantity).length}" value="${item.quantity}" /><button class="ticket-quantity-step" type="button" data-ticket-index="${index}" data-ticket-step="1" aria-label="Agregar una pieza de ${escapeHtml(item.name)}" ${limit===null||item.quantity>=limit?'disabled':''}>+</button></div><span class="ticket-piece-unit" aria-hidden="true">${item.quantity===1?'pza':'pzas'}</span></div>`:`<small>${item.source === "scale" ? "Báscula" : "Manual autorizado"}</small>`}</div>
             </div>
             <b>${money(item.total)}</b>
             <button class="icon-btn" type="button" data-remove-item="${index}" aria-label="Quitar producto"><svg class="pos-remove-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg></button>
@@ -3087,7 +3095,7 @@ async function chargeSale(invoiceRequested = false) {
   }
 
   state.checkoutPending = { ownerId, payload:JSON.parse(JSON.stringify({
-    checkoutIntentId:getCheckoutIntentId(), items:state.ticket, paymentMethod:state.paymentMethod,
+    checkoutIntentId:getCheckoutIntentId(), items:state.ticket, customerId:state.customerId||null, paymentMethod:state.paymentMethod,
     paymentDetails:{reference:state.paymentReference}, discount:state.discount, invoiceRequested,
     cashSessionId:cashShift.id, businessDate:cashShift.businessDate
   })) };
@@ -3112,6 +3120,7 @@ async function chargeSale(invoiceRequested = false) {
     persistPendingCheckout();
 
     state.ticket = [];
+    state.customerId = null;
     state.discount = 0;
     state.paymentReference = "";
     if ($('paymentReferenceInput')) $('paymentReferenceInput').value = "";
@@ -3188,6 +3197,7 @@ function buildReceipt(sale, invoiceRequested = false) {
       <div class="line"></div>
       ${itemsHtml}
       <div class="line"></div>
+      ${sale.customer?.name?`<p>Cliente: ${escapeHtml(sale.customer.name)}</p>`:''}
       <div class="receipt-row"><span>Subtotal</span><strong>${money(sale.subtotal)}</strong></div>
       <div class="receipt-row"><span>Total</span><strong>${money(sale.total)}</strong></div>
       <div class="receipt-row"><span>Pago</span><strong>${escapeHtml(getPaymentLabel(sale.paymentMethod))}</strong></div>
@@ -3272,6 +3282,7 @@ function updateProductProjection() {
   $('productProjectedProfit').textContent = hasUsefulData ? money(projection.profit) : 'Pendiente';
   $('productMarginPercent').textContent = hasUsefulData ? `${projection.margin.toFixed(2)}%` : 'Pendiente';
   $('productUnitProfit').textContent = hasUsefulData ? `${money(projection.unitProfit)} / ${unit}` : 'Pendiente';
+  if(typeof updateUnitMargin==='function')updateUnitMargin();
   $('productProjectionStatus').textContent = hasUsefulData
     ? `${quantityText(projection.quantity, $('productUnitInput')?.value || 'kg')} disponibles`
     : 'Captura costo y existencia';
@@ -3301,6 +3312,7 @@ function fillProductForm(product) {
   $("productUnitInput").value = product.unit;
   $("productPriceInput").value = product.price;
   $("productCostInput").value = product.costPrice || "";
+  $("productWholesaleMin").value=product.wholesaleMin??'';$("productWholesalePrice").value=product.wholesalePrice??'';
   $("productMinStockInput").value =
     typeof product.minStock === "number" ? product.minStock : "";
   $("productFormStatusTitle").textContent = "Editar producto";
@@ -3562,6 +3574,7 @@ function resetInventoryEntryForm() {
 }
 
 async function loadInventoryEntries() {
+  if(!canAction("inventory.history")){state.inventoryEntries=[];return;}
   const owner=state.currentUser?.id,generation=state.checkoutGeneration;
   try {
     const entries=await fetchJson("/api/inventory/entries");
@@ -3929,7 +3942,7 @@ const lastPurchaseText = lastPurchase
             </label>
             <label class="wide">
               Motivo del ajuste
-              <input type="text" maxlength="180" placeholder="Ej. Conteo físico o merma" data-inventory-reason="${escapeHtml(product.id)}" />
+              <select data-inventory-reason="${escapeHtml(product.id)}">${inventoryReasonOptions(typeof product.stockQuantity==='number'?'adjustment':'count')}</select><input type="text" maxlength="174" placeholder="Explica Otro" hidden data-inventory-explanation="${escapeHtml(product.id)}" />
             </label>
             ${typeof product.stockQuantity==='number'?`<label>Movimiento<select data-inventory-kind="${escapeHtml(product.id)}"><option value="adjustment">Ajuste</option><option value="waste">Merma</option></select></label>`:'<p>Conteo inicial: establece la existencia física verificada.</p>'}
             <span class="status-badge ${statusKind}">${statusLabel}</span>
@@ -4120,7 +4133,7 @@ function renderSaleDetail(saleId) {
       <div><span>Solicitud</span><strong>${escapeHtml(getInvoiceLabel(sale))}</strong></div>
       <div class="sales-detail-total"><span>Total</span><strong>${money(sale.total)}</strong></div>
     </div>
-    <div class="detail-actions"><button class="quiet-btn" type="button" data-reprint-sale="${escapeHtml(sale.id)}">Reimprimir</button><button class="solid-btn" type="button" data-invoice-sale="${escapeHtml(sale.id)}">Registrar solicitud</button><button class="danger-soft-btn" type="button" data-cancel-sale="${escapeHtml(sale.id)}" ${status === "cancelada" || !isAdminUser() ? "disabled" : ""}>Cancelar</button></div>`;
+    <div class="detail-actions"><button class="quiet-btn" type="button" data-reprint-sale="${escapeHtml(sale.id)}">Reimprimir</button><button class="solid-btn" type="button" data-invoice-sale="${escapeHtml(sale.id)}">Registrar solicitud</button><button class="danger-soft-btn" type="button" data-cancel-sale="${escapeHtml(sale.id)}" ${status === "cancelada" || !canAction("sales.cancel") ? "disabled" : ""}>Cancelar</button></div>`;
   panel.querySelectorAll("[data-sale-photo]").forEach((photo) => on(photo, "error", () => photo.remove()));
 
   on(panel.querySelector("[data-reprint-sale]"), "click", () => {
@@ -4139,7 +4152,7 @@ function renderSaleDetail(saleId) {
 }
 
 async function cancelSale(saleId) {
-  if (!isAdminUser()) {
+  if (!canAction("sales.cancel")) {
     showToast("Esta acción requiere permisos de administrador.");
     return;
   }
@@ -5638,7 +5651,7 @@ function renderCashRegister() {
   if ($('cashHistoryNotice')) $('cashHistoryNotice').hidden = isAdminUser();
 
   const movementsSection = $('cashMovementsSection');
-  const canManageMovements = isOpen && isAdminUser();
+  const canManageMovements = isOpen && (canAction('cash.entry')||canAction('cash.withdraw'));
   if (movementsSection) movementsSection.classList.toggle('hidden', !canManageMovements);
   if ($('cashMovementsNotice')) {
     $('cashMovementsNotice').hidden = canManageMovements;
@@ -5745,7 +5758,7 @@ async function openCashShift() {
 }
 
 async function addCashMovement() {
-  if (!isAdminUser()) {
+  if (!canAction($('cashMovementType')?.value==='in'?'cash.entry':'cash.withdraw')) {
     showToast('Solo el administrador puede registrar movimientos de efectivo.');
     return;
   }
@@ -5776,7 +5789,7 @@ async function addCashMovement() {
     const result = await fetchJson(`/api/cash-sessions/${session.id}/movements`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, amount })
+      body: JSON.stringify({ type, amount,classification:type==='out'?$('cashMovementClass').value:'other',description:$('cashMovementDescription').value.trim() })
     });
 
     state.currentCashSession = result.session;
@@ -5847,6 +5860,7 @@ async function closeCashShift() {
 }
 
 function printCashSession(sessionId) {
+  if(!canAction('cash.print')){showToast('No tienes permiso para esta acción.');return;}
   const session = state.cashSessions.find((item) => item.id === sessionId);
   if (!session) {
     showToast('Corte no encontrado.');
@@ -5892,6 +5906,7 @@ function printCashSession(sessionId) {
 }
 
 function printCashCut() {
+  if(!canAction('cash.print')){showToast('No tienes permiso para esta acción.');return;}
   const dateString = $('cutDateInput').value || getLocalDateString();
 
   $('printArea').innerHTML = `
@@ -6286,6 +6301,7 @@ async function loadReports() {
 }
 
 function exportGeneratedReport() {
+  if(!canAction('reports.export')){showToast('No tienes permiso para esta acción.');return;}
   const report = state.generatedReport || getGeneratedReport();
   const quote = (value) => `"${safeCsvCell(value).replace(/"/g, '""')}"`;
   const csv = [report.headers, ...report.rows].map((row) => row.map(quote).join(",")).join("\r\n");
@@ -6307,6 +6323,7 @@ function safeCsvCell(value) {
 }
 
 function printGeneratedReport() {
+  if(!canAction('reports.print')){showToast('No tienes permiso para esta acción.');return;}
   const report = state.generatedReport || getGeneratedReport();
   const rows = report.rows.map((row) => {
     return `<div class="receipt-row"><span>${escapeHtml(row.slice(0, -1).join(" · "))}</span><strong>${escapeHtml(row.at(-1) || "")}</strong></div>`;

@@ -1,0 +1,3 @@
+// Host fixture: real pixel decoding, not an Android physical-device certificate.
+const sharp=require(process.env.EL_MUELLE_TEST_SHARP||'sharp');
+(async()=>{const chunks=[];let size=0;for await(const part of process.stdin){size+=part.length;if(size>5242880)throw Error('IMAGE_SIZE');chunks.push(part);}const image=sharp(Buffer.concat(chunks),{limitInputPixels:32000000,failOn:'error'}),info=await image.metadata();if(!info.width||!info.height||info.width>8192||info.height>8192)throw Error('IMAGE_DIMENSIONS');await image.raw().toBuffer();process.stdout.write('VALID');})().catch(()=>{process.exitCode=1;});

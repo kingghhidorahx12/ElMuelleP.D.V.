@@ -43,6 +43,7 @@ const settingsPath = path.join(dataDir, "settings.json");
 const inventoryEntriesPath = path.join(dataDir, "inventory-entries.json");
 const database = new PosDatabase(dataDir);
 persistence.ensureKeyCheck(database, DATA_ENCRYPTION_KEY);
+const commerce=require('./commerce').createCommerce({app,database,dataDir,requireAdminUser,requireSessionUser,readJson,productsPath,salesPath,readCashSessions,encryptSensitivePayload,decryptSensitivePayload,withDataTransaction,recordAuditEvent,onPolicyChanged:()=>{for(const session of authSessions.values())if(session.role==='admin')session.expiresAt=Date.now()+commerce.sessionMs(session);}});
 
 const corsOrigins = String(process.env.CORS_ORIGIN || "")
   .split(",")
@@ -105,7 +106,7 @@ app.use('/api', (req, _res, next) => {
 app.use(express.static(path.join(__dirname, "..", "public")));
 app.use('/api', (req, res, next) => {
   const send = res.json.bind(res);
-  res.json = value => { if (database.backupStatus.failed) res.set('X-ElMuelle-Backup', 'pending'); return send(serializeFinancialForUser(value, req.validatedSessionUser)); };
+  res.json = value => { if(req.validatedSessionUser){const token=getCookies(req).el_muelle_session;if(authSessions.has(token))writeSessionCookie(res,token);} if (database.backupStatus.failed) res.set('X-ElMuelle-Backup', 'pending'); return send(serializeFinancialForUser(value, req.validatedSessionUser)); };
   next();
 });
 
@@ -397,7 +398,8 @@ function createAuthSession(user) {
   authSessions.set(token, {
     userId: user.id,
     role: user.role,
-    expiresAt: Date.now() + AUTH_SESSION_MS
+    absoluteExpiresAt:user.role==='admin'?Infinity:Date.now()+AUTH_SESSION_MS,
+    expiresAt: Date.now() + commerce.sessionMs(user)
   });
   return token;
 }
@@ -426,9 +428,10 @@ function writeSessionCookie(res, token) {
     `el_muelle_session=${encodeURIComponent(token)}`,
     "HttpOnly",
     "SameSite=Strict",
-    "Path=/",
-    `Max-Age=${Math.floor(AUTH_SESSION_MS / 1000)}`
+    "Path=/"
   ];
+  const session=authSessions.get(token),duration=Math.min(commerce.sessionMs(session),(session?.absoluteExpiresAt??Infinity)-Date.now());
+  if(Number.isFinite(duration))attributes.push(`Max-Age=${Math.floor(duration/1000)}`);
   if (REQUIRE_HTTPS) attributes.push("Secure");
   res.setHeader("Set-Cookie", attributes.join("; "));
 }
@@ -465,7 +468,7 @@ function getSessionUser(req, touch = true) {
     return null;
   }
 
-  if (touch) session.expiresAt = Date.now() + AUTH_SESSION_MS;
+  if (touch&&(user.role!=='admin'||req.method!=='GET'||req.get('X-POS-Active')==='1')) session.expiresAt = Math.min(session.absoluteExpiresAt??Infinity,Date.now() + commerce.sessionMs(user));
   authSessions.set(token, session);
   req.validatedSessionUser = user;
   return user;
@@ -658,6 +661,7 @@ function normalizeProductPayload(body, existingProduct = {}) {
     unit,
     price: validate.number(body.price === undefined ? existingProduct.price ?? 0 : body.price, 'Precio'),
     costPrice: validate.number(body.costPrice === undefined ? existingProduct.costPrice ?? 0 : body.costPrice, 'Costo'),
+    ...commerce.productFields(body,existingProduct,unit),
     stockQuantity: stockValue,
     minStock: minStockValue,
     active:
@@ -799,6 +803,7 @@ function normalizeCashMovement(movement = {}) {
     type: movement.type === "out" ? "out" : "in",
     amount: Math.max(0, roundMoney(movement.amount || 0)),
     reason: String(movement.reason || "").trim(),
+    classification: ['business_expense','inventory_purchase','owner_withdrawal','other'].includes(movement.classification)?movement.classification:'unclassified',
     createdAt: movement.createdAt || new Date().toISOString(),
     createdBy: movement.createdBy || null
   };
@@ -1320,10 +1325,10 @@ app.get("/api/products", (req, res) => {
   const user = requireSessionUser(req, res);
   if (!user) return;
 
-  res.json(readJson(productsPath, []));
+  res.json(readJson(productsPath, []).map(p=>({...p,...commerce.availability(p)})));
 });
 
-require('./catalog-operations').registerCatalog({app,database,dataDir,requireAdminUser,requireSessionUser,normalizeProductPayload,readJson,writeJson,productsPath,inventoryEntriesPath,withDataTransaction,recordAuditEvent});
+require('./catalog-operations').registerCatalog({app,database,dataDir,requireAdminUser,requireSessionUser,normalizeProductPayload,readJson,writeJson,productsPath,inventoryEntriesPath,withDataTransaction,recordAuditEvent,commerce,access});
 
 app.get("/api/sales", (req, res) => {
   const user = requireSessionUser(req, res);
@@ -1400,7 +1405,7 @@ app.get("/api/cash-sessions/current", (req, res) => {
 });
 
 app.post("/api/cash-sessions/open", (req, res) => {
-  const user = requireSessionUser(req, res);
+  const user = access.requireAction(req,res,"cash.open");
   if (!user) return;
 
   const sessions = readCashSessions();
@@ -1451,7 +1456,7 @@ app.post("/api/cash-sessions/open", (req, res) => {
 });
 
 app.post("/api/cash-sessions/:id/movements", (req, res) => {
-  const user = requireAdminUser(req, res);
+  const user = access.requireAction(req,res,req.body.type==="out"?"cash.withdraw":"cash.entry");
   if (!user) return;
 
   const sessions = readCashSessions();
@@ -1469,6 +1474,10 @@ app.post("/api/cash-sessions/:id/movements", (req, res) => {
   if (!['in', 'out'].includes(type)) validate.invalid('Tipo de movimiento inválido.');
   const amount = validate.number(req.body.amount, 'Importe del movimiento');
   const reason = type === "out" ? "Retiro de efectivo" : "Entrada de efectivo";
+  const classification=req.body.classification??'unclassified';
+  if(!['unclassified','business_expense','inventory_purchase','owner_withdrawal','other'].includes(classification)||type==='in'&&classification==='business_expense')validate.invalid('Clasificación del movimiento inválida.');
+  const description=validate.text(req.body.description??'','Descripción',180,{optional:true});
+  if(classification==='business_expense'&&description.length<3)validate.invalid('Describe el gasto del negocio.');
 
   if (amount <= 0) {
     return res.status(400).json({
@@ -1480,7 +1489,8 @@ app.post("/api/cash-sessions/:id/movements", (req, res) => {
     id: getNextCashMovementId(sessions[sessionIndex]),
     type,
     amount,
-    reason,
+    reason:description||reason,
+    classification,
     createdAt: new Date().toISOString(),
     createdBy: toPublicUser(user)
   });
@@ -1504,7 +1514,7 @@ app.post("/api/cash-sessions/:id/movements", (req, res) => {
 });
 
 app.post("/api/cash-sessions/:id/close", (req, res) => {
-  const user = requireSessionUser(req, res);
+  const user = access.requireAction(req,res,"cash.close");
   if (!user) return;
 
   const sessions = readCashSessions();
@@ -1590,7 +1600,7 @@ function checkoutFingerprint(body) {
 }
 
 app.post('/api/authorizations/manual-weight', limitAuthenticationAttempts, (req, res) => {
-  const operator = requireSessionUser(req, res);
+  const operator = access.requireAction(req,res,"pos.manualWeight");
   if (!operator) return;
   const pin = typeof req.body.pin === 'string' ? req.body.pin.trim() : '';
   if (!PIN_PATTERN.test(pin) || !isAdminPin(pin)) {
@@ -1624,7 +1634,8 @@ app.post('/api/authorizations/manual-weight', limitAuthenticationAttempts, (req,
 });
 
 app.post("/api/sales", (req, res) => {
-  const operator = getSessionUser(req);
+  const operator = access.requireAction(req,res,"pos.sell");
+  if(!operator)return;
 
   if (!operator) {
     return res.status(401).json({
@@ -1649,6 +1660,7 @@ app.post("/api/sales", (req, res) => {
       }
       const products = readJson(productsPath, []);
       const items = buildSaleItems(req.body?.items, products);
+      const customer=commerce.priceItems(items,products,req.body.customerId,req.body.items);
       const cashSessions = readCashSessions();
       const activeCashSession = getOpenCashSession(cashSessions);
 
@@ -1689,7 +1701,7 @@ app.post("/api/sales", (req, res) => {
         error.statusCode = 400;
         throw error;
       }
-      if (discount > 0 && operator.role !== "admin") {
+      if (discount > 0 && !access.allowsAction(operator,"pos.discount")) {
         const error = new Error("Solo el administrador puede aplicar descuentos.");
         error.statusCode = 403;
         throw error;
@@ -1732,6 +1744,7 @@ app.post("/api/sales", (req, res) => {
           role: operator.role
         },
         items,
+        customer,
         paymentMethod,
         paymentDetails: {
           reference: paymentMethod === "efectivo" ? "" : paymentReference
@@ -1753,6 +1766,8 @@ app.post("/api/sales", (req, res) => {
         }
       };
 
+      const lotProducts=new Map(products.map(p=>[p.id,{...p}]));
+      for(const item of items){const p=lotProducts.get(item.productId);item.lotAllocations=commerce.allocate(p,item.quantity,{sale:true});p.stockQuantity=roundQuantity(p.stockQuantity-item.quantity);}
       sales.push(sale);
       calculateCashSessionSummary(activeCashSession, sales);
       const inventoryChanged = updateInventoryAfterSale(items, products);
@@ -1783,7 +1798,7 @@ app.post("/api/sales", (req, res) => {
 });
 
 app.patch("/api/sales/:id/invoice", (req, res) => {
-  const user = requireAdminUser(req, res);
+  const user = access.requireAction(req,res,"billing.request");
   if (!user) return;
 
   const sales = readJson(salesPath, []);
@@ -1794,6 +1809,8 @@ app.patch("/api/sales/:id/invoice", (req, res) => {
       message: "Venta no encontrada."
     });
   }
+
+  if(user.role!=='admin'&&sales[saleIndex].operator?.id!==user.id)return res.status(403).json({message:'Sólo puedes modificar ventas propias.'});
 
   if (sales[saleIndex].status === 'cancelada') return res.status(409).json({message:'No se puede solicitar factura de una venta cancelada.'});
   if (sales[saleIndex].invoice?.status === 'solicitada') return res.status(409).json({message:'Esta venta ya tiene una solicitud registrada.'});
@@ -1841,7 +1858,7 @@ app.patch("/api/sales/:id/invoice", (req, res) => {
 });
 
 app.patch("/api/sales/:id/cancel", (req, res) => {
-  const cancelUser = requireAdminUser(req, res);
+  const cancelUser = access.requireAction(req,res,"sales.cancel");
   if (!cancelUser) return;
 
   const sales = readJson(salesPath, []);
@@ -1852,6 +1869,8 @@ app.patch("/api/sales/:id/cancel", (req, res) => {
       message: "Venta no encontrada."
     });
   }
+
+  if(cancelUser.role!=='admin'&&sales[saleIndex].operator?.id!==cancelUser.id)return res.status(403).json({message:'Sólo puedes modificar ventas propias.'});
 
   if (sales[saleIndex].status === "cancelada") {
     return res.status(400).json({
@@ -1876,6 +1895,7 @@ app.patch("/api/sales/:id/cancel", (req, res) => {
         if(!database.readDocument('inventory-restitutions',id)){database.saveDocument('inventory-restitutions',id,{id,saleId:canceledSale.id,productId:item.productId,quantity:item.quantity,unit:item.unit,status:'pending',createdAt:new Date().toISOString(),reason:cancelReason});recordAuditEvent('inventory_restitution_pending','product',item.productId,cancelUser,{saleId:canceledSale.id,quantity:item.quantity,reason:cancelReason});}
         return;
       }
+      commerce.restore(product,item,canceledSale.id,index);
       product.stockQuantity = validate.number(product.stockQuantity + item.quantity, 'Existencia repuesta', {decimals:3});
       product.updatedAt = new Date().toISOString();
       inventoryChanged = true;
@@ -1926,6 +1946,7 @@ app.get("/api/scale/status", (req, res) => {
 });
 
 const configuration = require('./configuration').registerConfiguration({app,database,requireAdminUser,requireSessionUser,encryptSensitivePayload,decryptSensitivePayload,recordAuditEvent,canUsePos:user=>access.allows(user,['pos']),notifyScanner:access.notifyScanner,notifyPaymentMethods:access.notifyPaymentMethods});
+commerce.register();
 require('./mailbox').registerMailbox({app,database,requireSessionUser,requireAdminUser,encryptSensitivePayload,decryptSensitivePayload,recordAuditEvent});
 
 app.use((error, _req, res, _next) => {

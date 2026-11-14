@@ -11,6 +11,7 @@ const accessDescriptions={
   reports:'Permite consultar, exportar e imprimir reportes de ventas propias, productos vendidos e inventario actual. No concede acciones administrativas ni acceso a ventas ajenas.',
   settings:'Permite usar preferencias personales, apariencia, báscula e impresión del navegador. No permite administrar empleados, permisos, datos del negocio, auditoría ni mantenimiento.'
 };
+
 let accessStream=null,accessStreamOwner=null,permissionEditorVersion=0;
 const personalSettingsSections=['general','scale','appearance','peripherals'];
 function hasScreenPermission(module) {return module==='cash'?canAccessView('reports','cash'):module==='reports'?canAccessView('reports','reports'):canAccessView(module);}
@@ -45,13 +46,13 @@ function syncEmployeeScreenUi() {
   const motionRow=$('settingsMotionSlot')?.closest('.configuration-option');if(motionRow)motionRow.hidden=!admin;
   const mode=document.querySelector('.settings-layout')?.dataset.settingsMode;
   if(!admin&&mode&&!personalSettingsSections.includes(mode))setSettingsMode('general');
-  if(!admin&&document.querySelector('.products-layout')?.dataset.productsMode==='form')setProductMode('list');
-  if(!admin&&document.querySelector('.inventory-management-layout')?.dataset.inventoryMode==='entry')setInventoryMode('stock');
-  ['products','inventory','dashboard'].forEach(id=>{const view=$(id+'View');if(!view)return;let note=view.querySelector('.screen-role-note');if(!note){note=document.createElement('p');note.className='screen-role-note';note.textContent='Acceso de consulta. Las modificaciones requieren al administrador; las ventas disponibles corresponden a tu usuario.';view.prepend(note);}note.hidden=admin;});
+  if(!admin&&!['products.create','products.edit','products.prices','products.status'].some(canAction)&&document.querySelector('.products-layout')?.dataset.productsMode==='form')setProductMode('list');
+  if(!admin&&!['inventory.receive','inventory.adjustUp','inventory.adjustDown','inventory.waste'].some(canAction)&&document.querySelector('.inventory-management-layout')?.dataset.inventoryMode==='entry')setInventoryMode('stock');
+  ['products','inventory','dashboard'].forEach(id=>{const view=$(id+'View');if(!view)return;let note=view.querySelector('.screen-role-note');if(!note){note=document.createElement('p');note.className='screen-role-note';note.textContent='Las acciones disponibles corresponden a los permisos asignados por el administrador. Los importes internos permanecen protegidos.';view.prepend(note);}note.hidden=admin;});
 }
 function applyAccessUser(user) {
   if(!state.sessionAuthenticated||user.id!==state.currentUser?.id)return;
-  const changed=JSON.stringify(state.currentUser.permissions)!==JSON.stringify(user.permissions);
+  const changed=JSON.stringify([state.currentUser.permissions,state.currentUser.actions])!==JSON.stringify([user.permissions,user.actions]);
   state.currentUser=normalizeSessionUser(user);saveSessionUser(state.currentUser);renderSessionUi();
   ensureAllowedScreen();
   if(changed){
@@ -84,11 +85,12 @@ function syncAccessSession() {
 }
 function buildPermissionEditor() {
   const pane=$('configurationUserPane-permissions');if(!pane)return;
-  pane.innerHTML=configurationCard('Permisos por empleado','lock','<div class="permission-editor-toolbar"><label>Empleado<select id="permissionEmployeeSelect" aria-label="Empleado para permisos"></select></label><span id="permissionEmployeeRole">Encargado</span><button id="permissionReloadBtn" class="quiet-btn" type="button">Recuperar permisos</button></div><p>Permitir una pantalla no autoriza acciones administrativas. Los PIN y roles se conservan.</p><fieldset id="permissionModules" class="permission-modules" disabled><legend class="sr-only">Acceso por pantalla</legend>'+accessModules.map(([id,label])=>'<label class="configuration-option"><span><strong>'+label+'</strong><small id="permissionDescription-'+id+'" class="permission-description">'+accessDescriptions[id]+'</small><small data-saved-permission="'+id+'">Sin cargar</small></span><input type="checkbox" role="switch" data-permission-module="'+id+'" aria-label="Permitir '+label+'" aria-describedby="permissionDescription-'+id+'" /></label>').join('')+'</fieldset><div class="permission-editor-actions"><button id="permissionSaveBtn" class="solid-btn" type="button" disabled>Guardar permisos</button><p id="permissionStatus" role="status">Selecciona un empleado.</p></div>');
+  pane.innerHTML=configurationCard('Permisos por empleado','lock','<div class="permission-editor-toolbar"><label>Empleado<select id="permissionEmployeeSelect" aria-label="Empleado para permisos"></select></label><span id="permissionEmployeeRole">Encargado</span><button id="permissionReloadBtn" class="quiet-btn" type="button">Recuperar permisos</button></div><p>Activa toda una sección o abre sus acciones para personalizarla. Los costos, márgenes, usuarios y permisos siguen siendo administrativos.</p><fieldset id="permissionModules" class="permission-modules" disabled><legend class="sr-only">Accesos y acciones</legend>'+accessModules.map(([id,label])=>'<section class="permission-section"><label class="configuration-option"><span><strong>'+label+'</strong><small data-saved-permission="'+id+'">Sin cargar</small></span><input type="checkbox" data-permission-module="'+id+'" aria-label="Permitir '+label+'" /></label>'+(PermissionActions.groups[id].length?'<details><summary>Personalizar acciones</summary>'+PermissionActions.groups[id].map(([action,title])=>'<label class="permission-action"><input type="checkbox" data-permission-action="'+id+'.'+action+'" /> '+title+'</label>').join('')+'</details>':'<small>Sección de consulta.</small>')+'</section>').join('')+'</fieldset><div class="permission-editor-actions"><button id="permissionSaveBtn" class="solid-btn" type="button" disabled>Guardar permisos</button><p id="permissionStatus" role="status">Selecciona un empleado.</p></div>');
   $('permissionEmployeeSelect').addEventListener('change',loadEmployeePermissions);
   $('permissionReloadBtn').addEventListener('click',loadEmployeePermissions);
   $('permissionSaveBtn').addEventListener('click',saveEmployeePermissions);
-  $$('[data-permission-module]').forEach(input=>input.addEventListener('change',()=>{$('permissionStatus').textContent='Cambios sin guardar.';}));
+  $$('[data-permission-module]').forEach(input=>input.addEventListener('change',()=>{input.indeterminate=false;$$('[data-permission-action]').filter(a=>a.dataset.permissionAction.startsWith(input.dataset.permissionModule+'.')).forEach(a=>{a.checked=input.checked;a.disabled=!input.checked;});$('permissionStatus').textContent='Cambios sin guardar.';}));
+  $$('[data-permission-action]').forEach(input=>input.addEventListener('change',()=>{syncPermissionPartial();$('permissionStatus').textContent='Cambios sin guardar.';}));
 }
 function loadPermissionEmployees() {
   if(!isAdminUser()||!$('permissionEmployeeSelect'))return;
@@ -97,10 +99,12 @@ function loadPermissionEmployees() {
   if([...select.options].some(option=>option.value===previous))select.value=previous;
   loadEmployeePermissions();
 }
+function syncPermissionPartial(){$$('[data-permission-module]').forEach(input=>{const actions=$$('[data-permission-action]').filter(a=>a.dataset.permissionAction.startsWith(input.dataset.permissionModule+'.'));input.indeterminate=input.checked&&actions.some(a=>!a.checked);actions.forEach(a=>a.disabled=!input.checked);});}
 function renderEmployeePermissions(result) {
+  const effective=result.actions||PermissionActions.effective(result.permissions);$$('[data-permission-action]').forEach(input=>input.checked=effective[input.dataset.permissionAction]===true);
   $$('[data-permission-module]').forEach(input=>input.checked=result.permissions[input.dataset.permissionModule]===true);
   $$('[data-saved-permission]').forEach(label=>label.textContent=result.permissions[label.dataset.savedPermission]?'Guardado: permitido':'Guardado: bloqueado');
-  $('permissionEmployeeRole').textContent=result.employee.name+' · Encargado';
+  syncPermissionPartial();$('permissionEmployeeRole').textContent=result.employee.name+' · Encargado';
 }
 async function loadEmployeePermissions() {
   const version=++permissionEditorVersion,id=$('permissionEmployeeSelect').value;
@@ -117,7 +121,7 @@ async function saveEmployeePermissions() {
   if(!id||!isAdminUser())return;
   const permissions=Object.fromEntries($$('[data-permission-module]').map(input=>[input.dataset.permissionModule,input.checked]));
   $('permissionSaveBtn').disabled=true;$('permissionModules').disabled=true;$('permissionEmployeeSelect').disabled=true;$('permissionReloadBtn').disabled=true;$('permissionStatus').textContent='Guardando permisos…';
-  try{const result=await fetchJson('/api/users/'+encodeURIComponent(id)+'/permissions',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({permissions})});if(version!==permissionEditorVersion||!isAdminUser())return;renderEmployeePermissions(result);$('permissionStatus').textContent='Permisos guardados y aplicados a las sesiones activas.';}catch(error){if(version===permissionEditorVersion)$('permissionStatus').textContent=error.message+' No se pudo confirmar el guardado. Usa Recuperar permisos para comprobar el estado.';}finally{if(version===permissionEditorVersion){$('permissionSaveBtn').disabled=false;$('permissionModules').disabled=false;$('permissionEmployeeSelect').disabled=false;$('permissionReloadBtn').disabled=false;}}
+  try{const result=await fetchJson('/api/users/'+encodeURIComponent(id)+'/permissions',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({permissions,actions:Object.fromEntries($$('[data-permission-action]').map(input=>[input.dataset.permissionAction,input.checked]))})});if(version!==permissionEditorVersion||!isAdminUser())return;renderEmployeePermissions(result);$('permissionStatus').textContent='Permisos guardados y aplicados a las sesiones activas.';}catch(error){if(version===permissionEditorVersion)$('permissionStatus').textContent=error.message+' No se pudo confirmar el guardado. Usa Recuperar permisos para comprobar el estado.';}finally{if(version===permissionEditorVersion){$('permissionSaveBtn').disabled=false;$('permissionModules').disabled=false;$('permissionEmployeeSelect').disabled=false;$('permissionReloadBtn').disabled=false;}}
 }
 function initAccessControl() {
   if(initAccessControl.ready)return;initAccessControl.ready=true;

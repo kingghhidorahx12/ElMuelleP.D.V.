@@ -26,7 +26,7 @@ public final class BrandedStartupView extends View {
   float unit=Math.min(getResources().getDisplayMetrics().density*1.3f,Math.min(w/640f,h/310f));
   float cx=w/2,top=(h-256*unit)/2,logoSize=176*unit;
   paint.setColor(Color.WHITE);
-  if(logo!=null)canvas.drawBitmap(logo,null,new RectF(cx-logoSize/2,top,cx+logoSize/2,top+logoSize),paint);
+  if(logo!=null){float[] bounds=BrandGeometry.fit(logo.getWidth(),logo.getHeight(),cx,top,logoSize);canvas.drawBitmap(logo,null,new RectF(bounds[0],bounds[1],bounds[2],bounds[3]),paint);}
   paint.setTextAlign(Paint.Align.CENTER);paint.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));paint.setTextSize(25*unit);
   canvas.drawText("EL MUELLE",cx,top+188*unit,paint);
   paint.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));paint.setTextSize(12*unit);paint.setColor(Color.rgb(246,202,104));

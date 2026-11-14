@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="./configuration.css" />
   <link rel="stylesheet" href="./access-control.css" />
   <link rel="stylesheet" href="./support.css" />
+  <link rel="stylesheet" href="./commerce.css" />
 </head>
 <body class="atelier auth-locked">
   <section id="setupScreen" class="access-screen setup-screen hidden" aria-label="Configuración inicial del punto de venta">
@@ -90,7 +91,7 @@
       <div class="brand-mark"><img src="./assets/brand/el-muelle-logo.png" alt="El Muelle" /></div>
       <div>
         <h1>El Muelle</h1>
-        <p>Marisquería</p>
+        <p>Pescadería</p>
       </div>
       <span id="clockText" class="sidebar-clock">--:--</span>
     </div>
@@ -394,15 +395,16 @@
               </label>
 
               <label>
-                Precio de venta (MXN)
+                Precio al público (MXN)
                 <input id="productPriceInput" type="number" min="0" step="0.01" placeholder="0.00" />
               </label>
 
               <label>
-                Costo (MXN)
-                <input id="productCostInput" type="number" min="0" step="0.01" placeholder="0.00" />
+                Costo al proveedor (MXN)
+                <input id="productCostInput" type="number" min="0" step="0.01" placeholder="0.00" /><small>Lo que pagas al proveedor, por kg o por pieza.</small>
               </label>
 
+              <label>Mayoreo desde (kg o piezas)<input id="productWholesaleMin" type="number" min="0.001" step="0.001" /><small>Cantidad de este producto en una misma venta.</small></label><label>Precio de mayoreo por unidad<input id="productWholesalePrice" type="number" min="0.01" step="0.01" /></label><p id="unitMarginPreview" class="field-hint wide" aria-live="polite"></p>
               <p class="field-hint wide">Las existencias se registran desde Inventario mediante conteo y movimientos con motivo.</p>
 
               <label>
@@ -523,12 +525,12 @@
               </label>
 
               <label>
-                Costo por unidad
+                Costo al proveedor por unidad
                 <input id="inventoryEntryUnitCostInput" type="number" min="0" step="0.01" placeholder="0.00" />
               </label>
 
               <label>
-                Precio de venta
+                Precio al público
                 <input id="inventoryEntrySalePriceInput" type="number" min="0" step="0.01" placeholder="0.00" />
               </label>
 
@@ -537,6 +539,7 @@
                 <input id="inventoryEntryDateInput" type="date" />
               </label>
 
+              <label >Caducidad (opcional)<input id="inventoryExpiryInput" type="date" /></label><label >Lote (opcional)<input id="inventoryLotInput" maxlength="80" /></label>
               <label class="wide">Proveedor (opcional)<input id="inventorySupplierInput" type="text" maxlength="120" /></label>
               <label class="wide">
                 <span id="inventoryReasonLabel">Motivo de recepción</span>
@@ -774,7 +777,7 @@
               <section class="cashdesk-card"><h3>Registrar entrada o retiro</h3><p>Movimiento manual de la caja actual. Disponible para el administrador.</p>
                 <div class="cashdesk-movement-form">
                   <label>Tipo<select id="cashMovementType"><option value="out">Retiro</option><option value="in">Entrada</option></select></label>
-                  <label>Importe<input id="cashMovementAmount" type="number" min="0.01" step="0.01" placeholder="0.00" inputmode="decimal" /></label>
+                  <label>Clasificación<select id="cashMovementClass"><option value="owner_withdrawal">Retiro del propietario</option><option value="business_expense">Gasto del negocio</option><option value="inventory_purchase">Compra de inventario</option><option value="other">Otro movimiento</option></select></label><label>Descripción<input id="cashMovementDescription" maxlength="180" placeholder="Ej. Pago de luz" /></label><label>Importe<input id="cashMovementAmount" type="number" min="0.01" step="0.01" placeholder="0.00" inputmode="decimal" /></label>
                   <button id="addCashMovementBtn" class="solid-btn" type="button">Guardar movimiento</button>
                 </div>
               </section>
@@ -1117,7 +1120,11 @@
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <script src="./pricing.js"></script>
+  <script src="./permission-actions.js"></script>
+  <script src="./inventory-reasons.js"></script>
   <script src="./app.js"></script>
+  <script src="./inventory-reasons-ui.js"></script>
   <script src="./catalog-workflows.js"></script>
   <script src="./settings-center.js"></script>
   <script src="./access-control.js"></script>
@@ -1125,5 +1132,7 @@
   <script src="./payment-methods.js"></script>
   <script src="./panel-help.js"></script>
   <script src="./support.js"></script>
+  <script src="./commerce-center.js"></script>
+  <script src="./action-ui.js"></script>
 </body>
 </html>
